@@ -1,42 +1,55 @@
 :root{
-  --bronze:#c7915b;
-  --bronze-dk:#83542e;
-  --bronze-lt:#f5ebe3;
-  --bg:#fbf8f5;
+  /* Primary: medical teal. Accent: coral for due/alert states. Bg: cool clinical white. */
+  --bronze:#14b8a6;        /* teal-500 — primary */
+  --bronze-dk:#0f766e;     /* teal-700 — primary dark */
+  --bronze-lt:#ccfbf1;     /* teal-100 — primary light/tint */
+  --accent:#f97316;        /* orange-500 — "due" alert */
+  --accent-dk:#c2410c;
+  --bg:#f6faf9;            /* near-white with hint of mint */
   --surface:#ffffff;
-  --surface-alt:#f5ebe3;
-  --ink:#2a2118;
-  --muted:#7d6e5e;
-  --line:#ece1d3;
-  --danger:#c0392b;
-  --ok:#3a7d44;
+  --surface-alt:#eefaf7;
+  --ink:#0f172a;           /* slate-900 */
+  --muted:#64748b;         /* slate-500 */
+  --line:#e2e8f0;          /* slate-200 */
+  --danger:#dc2626;
+  --ok:#10b981;
   --radius:14px;
-  --shadow:0 1px 2px rgba(60,40,20,.05),0 6px 18px rgba(60,40,20,.06);
+  --shadow:0 1px 2px rgba(15,23,42,.04),0 6px 18px rgba(15,23,42,.06);
+  --grad:linear-gradient(135deg,#14b8a6 0%,#0d9488 50%,#0f766e 100%);
+  --grad-due:linear-gradient(135deg,#f97316 0%,#ea580c 50%,#c2410c 100%);
 }
 [data-theme="dark"]{
-  --bronze:#d6a578;
-  --bronze-dk:#e0b48c;
-  --bronze-lt:#3a2c20;
-  --bg:#15110d;
-  --surface:#1f1812;
-  --surface-alt:#2a2118;
-  --ink:#f1e7d9;
-  --muted:#a89682;
-  --line:#332820;
-  --shadow:0 1px 2px rgba(0,0,0,.3),0 6px 18px rgba(0,0,0,.4);
+  --bronze:#2dd4bf;        /* teal-400 */
+  --bronze-dk:#5eead4;     /* teal-300 — lighter for dark surface contrast */
+  --bronze-lt:#134e4a;     /* teal-900 */
+  --accent:#fb923c;        /* orange-400 */
+  --accent-dk:#fdba74;
+  --bg:#0b1220;
+  --surface:#111a2c;
+  --surface-alt:#1a2540;
+  --ink:#e2e8f0;
+  --muted:#94a3b8;
+  --line:#1e293b;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 8px 24px rgba(0,0,0,.45);
+  --grad:linear-gradient(135deg,#0d9488 0%,#0f766e 50%,#134e4a 100%);
+  --grad-due:linear-gradient(135deg,#ea580c 0%,#c2410c 50%,#9a3412 100%);
 }
 @media (prefers-color-scheme: dark){
   :root:not([data-theme="light"]){
-    --bronze:#d6a578;
-    --bronze-dk:#e0b48c;
-    --bronze-lt:#3a2c20;
-    --bg:#15110d;
-    --surface:#1f1812;
-    --surface-alt:#2a2118;
-    --ink:#f1e7d9;
-    --muted:#a89682;
-    --line:#332820;
-    --shadow:0 1px 2px rgba(0,0,0,.3),0 6px 18px rgba(0,0,0,.4);
+    --bronze:#2dd4bf;
+    --bronze-dk:#5eead4;
+    --bronze-lt:#134e4a;
+    --accent:#fb923c;
+    --accent-dk:#fdba74;
+    --bg:#0b1220;
+    --surface:#111a2c;
+    --surface-alt:#1a2540;
+    --ink:#e2e8f0;
+    --muted:#94a3b8;
+    --line:#1e293b;
+    --shadow:0 1px 2px rgba(0,0,0,.3),0 8px 24px rgba(0,0,0,.45);
+    --grad:linear-gradient(135deg,#0d9488 0%,#0f766e 50%,#134e4a 100%);
+    --grad-due:linear-gradient(135deg,#ea580c 0%,#c2410c 50%,#9a3412 100%);
   }
 }
 *{box-sizing:border-box}
@@ -67,7 +80,8 @@ h2{font-size:1rem}
 .card-head h2{font-size:.75rem;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;font-weight:600}
 .link{color:var(--bronze-dk);font-size:.85rem;text-decoration:none}
 
-.countdown-card{background:linear-gradient(135deg,var(--bronze) 0%,var(--bronze-dk) 100%);color:#fff;padding:10px 14px;border-radius:var(--radius);box-shadow:var(--shadow);display:grid;grid-template-columns:1fr auto;align-items:center;gap:10px}
+.countdown-card{background:var(--grad);color:#fff;padding:10px 14px;border-radius:var(--radius);box-shadow:var(--shadow);display:grid;grid-template-columns:1fr auto;align-items:center;gap:10px}
+.countdown-card.due{background:var(--grad-due)}
 .countdown-info{min-width:0}
 .countdown-label{opacity:.8;font-size:.7rem;text-transform:uppercase;letter-spacing:.8px;line-height:1}
 .countdown-value{font-size:1.5rem;font-weight:700;margin:2px 0 1px;font-variant-numeric:tabular-nums;line-height:1.1}
@@ -82,7 +96,8 @@ h2{font-size:1rem}
 .btn-ghost:hover{background:var(--bronze-lt)}
 .btn-danger{background:transparent;border-color:var(--danger);color:var(--danger)}
 .btn-primary:hover{filter:brightness(1.05)}
-.countdown-card .btn-primary{background:#fff;color:#83542e;border-color:#fff}
+.countdown-card .btn-primary{background:#fff;color:#0f766e;border-color:#fff;font-weight:700}
+.countdown-card.due .btn-primary{color:#c2410c}
 
 .shot-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
 .shot-list li{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);cursor:pointer}

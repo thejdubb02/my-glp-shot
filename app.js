@@ -337,7 +337,7 @@ function applyTheme() {
   const meta = document.querySelector('meta[name="theme-color"]');
   if (meta) {
     const dark = t === 'dark' || (t === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
-    meta.setAttribute('content', dark ? '#15110d' : '#83542e');
+    meta.setAttribute('content', dark ? '#0b1220' : '#0f766e');
   }
 }
 
@@ -365,7 +365,7 @@ async function renderWeights() {
   if (weightChart) weightChart.destroy();
   weightChart = new Chart(ctx, {
     type: 'line',
-    data: { labels, datasets: [{ data, borderColor: '#83542e', backgroundColor: 'rgba(199,145,91,.2)', tension: .3, fill: true, pointRadius: 3 }] },
+    data: { labels, datasets: [{ data, borderColor: '#0f766e', backgroundColor: 'rgba(20,184,166,.2)', tension: .3, fill: true, pointRadius: 3 }] },
     options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: false } } }
   });
 }
@@ -397,7 +397,7 @@ function renderLevelChart(shots) {
   if (levelChart) levelChart.destroy();
   levelChart = new Chart(ctx, {
     type: 'line',
-    data: { labels, datasets: [{ data, borderColor: '#c7915b', backgroundColor: 'rgba(199,145,91,.25)', tension: .35, fill: true, pointRadius: 0 }] },
+    data: { labels, datasets: [{ data, borderColor: '#14b8a6', backgroundColor: 'rgba(20,184,166,.25)', tension: .35, fill: true, pointRadius: 0 }] },
     options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, title: { display: true, text: 'mg-equivalent' } } } }
   });
 }
