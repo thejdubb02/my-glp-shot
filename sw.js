@@ -1,10 +1,10 @@
-// ShotClock service worker — offline app shell.
-const CACHE = 'shotclock-v1';
+// ShotClock service worker — offline app shell + notification click handling.
+const CACHE = 'shotclock-v2';
 const ASSETS = [
   './',
   'index.html',
-  'styles.css?v=1',
-  'app.js?v=1',
+  'styles.css?v=2',
+  'app.js?v=2',
   'manifest.webmanifest',
   'lib/chart.min.js',
   'icons/icon-192.png',
@@ -38,4 +38,25 @@ self.addEventListener('fetch', (e) => {
       }).catch(() => caches.match('index.html'));
     })
   );
+});
+
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  const url = (e.notification.data && e.notification.data.url) || '/shotclock/';
+  e.waitUntil((async () => {
+    const clientsList = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    for (const c of clientsList) {
+      if (c.url.includes('/shotclock/') && 'focus' in c) return c.focus();
+    }
+    if (self.clients.openWindow) return self.clients.openWindow(url);
+  })());
+});
+
+// Optional: real Web Push fallback (won't fire without backend; harmless to define)
+self.addEventListener('push', (e) => {
+  let data = {};
+  try { data = e.data ? e.data.json() : {}; } catch (_) { data = { title: 'ShotClock', body: e.data ? e.data.text() : '' }; }
+  const title = data.title || 'ShotClock';
+  const opts = { body: data.body || 'Shot reminder', icon: 'icons/icon-192.png', data: { url: '/shotclock/' } };
+  e.waitUntil(self.registration.showNotification(title, opts));
 });

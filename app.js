@@ -11,6 +11,8 @@ const DEFAULT_SETTINGS = {
   cadenceDays: 7,
   halfLifeDays: 5,
   notify: false,
+  notifyLeadMinutes: 60,
+  theme: 'system',
   lastBackup: null,
 };
 
@@ -283,8 +285,24 @@ document.addEventListener('DOMContentLoaded', async () => {
       settings.notify = false;
     }
     await saveSettings();
+    updateNotifyStatus();
     maybeScheduleNotification();
   });
+  $('#set-lead').addEventListener('change', async (e) => {
+    settings.notifyLeadMinutes = parseInt(e.target.value, 10) || 0;
+    await saveSettings();
+    maybeScheduleNotification();
+  });
+  $('#set-theme').addEventListener('change', async (e) => {
+    settings.theme = e.target.value;
+    await saveSettings();
+    applyTheme();
+  });
+  $('#test-notify').addEventListener('click', sendTestNotification);
+  if (window.matchMedia) {
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
+  }
+  window.addEventListener('pageshow', () => maybeScheduleNotification());
 
   $('#export-btn').addEventListener('click', exportData);
   $('#import-btn').addEventListener('click', () => $('#import-file').click());
@@ -305,6 +323,22 @@ function applySettingsToInputs() {
   $('#set-cadence').value = settings.cadenceDays;
   $('#set-halflife').value = settings.halfLifeDays;
   $('#set-notify').checked = !!settings.notify && (typeof Notification !== 'undefined' && Notification.permission === 'granted');
+  $('#set-lead').value = String(settings.notifyLeadMinutes ?? 60);
+  $('#set-theme').value = settings.theme || 'system';
+  applyTheme();
+  updateNotifyStatus();
+}
+
+function applyTheme() {
+  const t = settings.theme || 'system';
+  if (t === 'system') document.documentElement.removeAttribute('data-theme');
+  else document.documentElement.setAttribute('data-theme', t);
+  try { localStorage.setItem('theme', t); } catch(e){}
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) {
+    const dark = t === 'dark' || (t === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    meta.setAttribute('content', dark ? '#15110d' : '#83542e');
+  }
 }
 
 async function getLastWeightUnit() {
@@ -457,20 +491,113 @@ async function downloadICS() {
   URL.revokeObjectURL(url);
 }
 
-// ---------- Notifications (best-effort, browser-side) ----------
+// ---------- Notifications ----------
+// Strategy:
+//   1. Notification Triggers API (Chrome/Edge, esp. installed Android PWA) → real scheduled push, fires when app is closed.
+//   2. Fallback: setTimeout while app is open (any browser).
+//   3. iOS PWA: requestPermission works on iOS 16.4+ when installed to home screen. Triggers API not supported, but iOS reschedules our SW periodically; we re-schedule in `pageshow` so reminders work when user opens the app.
+
 let notifyTimer = null;
+const TRIGGERS_SUPPORTED = (typeof window !== 'undefined') && ('Notification' in window) && ('showTrigger' in Notification.prototype || (typeof TimestampTrigger !== 'undefined'));
+
 async function maybeScheduleNotification() {
   if (notifyTimer) { clearTimeout(notifyTimer); notifyTimer = null; }
   if (!settings.notify) return;
   if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+
   const shots = await getShotsSorted();
   if (!shots.length) return;
   const next = nextShotDate(shots[0].when);
-  const ms = next - new Date();
-  if (ms <= 0 || ms > 86400000 * 14) return;
-  notifyTimer = setTimeout(() => {
-    new Notification('ShotClock', { body: `${settings.medication} shot is due now.`, icon: 'icons/icon-192.png' });
+  const lead = (settings.notifyLeadMinutes || 0) * 60000;
+  const fireAt = new Date(next.getTime() - lead);
+  const ms = fireAt - new Date();
+  if (ms > 86400000 * 30) return; // don't schedule more than 30d out
+
+  const title = 'ShotClock';
+  const body = lead > 0
+    ? `Your ${settings.medication} shot is due in ${humanLead(lead)}.`
+    : `${settings.medication} shot is due now.`;
+  const tag = `shot-${next.toISOString()}`;
+
+  // Path 1: Notification Triggers API via service worker
+  if (TRIGGERS_SUPPORTED && 'serviceWorker' in navigator) {
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      // Clear prior scheduled to avoid duplicates
+      const existing = await reg.getNotifications({ includeTriggered: true });
+      existing.forEach(n => { if (n.tag && n.tag.startsWith('shot-')) n.close(); });
+      if (ms > 0) {
+        await reg.showNotification(title, {
+          body, tag, icon: 'icons/icon-192.png', badge: 'icons/icon-192.png',
+          showTrigger: new TimestampTrigger(fireAt.getTime()),
+          data: { url: '/shotclock/' },
+        });
+        return;
+      }
+    } catch (e) { /* fall through to setTimeout */ }
+  }
+
+  // Path 2: setTimeout (works while app is open)
+  if (ms <= 0) return;
+  if (ms > 86400000 * 14) return;
+  notifyTimer = setTimeout(async () => {
+    if ('serviceWorker' in navigator) {
+      try {
+        const reg = await navigator.serviceWorker.ready;
+        await reg.showNotification(title, { body, tag, icon: 'icons/icon-192.png', data: { url: '/shotclock/' } });
+        return;
+      } catch (e) {}
+    }
+    new Notification(title, { body, icon: 'icons/icon-192.png' });
   }, ms);
+}
+
+function humanLead(ms) {
+  const m = Math.round(ms / 60000);
+  if (m < 60) return `${m} min`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `${h} hour${h !== 1 ? 's' : ''}`;
+  const d = Math.round(h / 24);
+  return `${d} day${d !== 1 ? 's' : ''}`;
+}
+
+function updateNotifyStatus() {
+  const el = $('#notify-status');
+  if (!el) return;
+  const standalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+  if (typeof Notification === 'undefined') {
+    el.textContent = 'Notifications not supported in this browser.'; return;
+  }
+  if (Notification.permission === 'denied') {
+    el.textContent = 'Notifications blocked. Enable them in browser settings to receive shot reminders.'; return;
+  }
+  if (isIOS && !standalone) {
+    el.textContent = 'On iOS, install ShotClock to your Home Screen first — notifications only work for installed PWAs.'; return;
+  }
+  if (TRIGGERS_SUPPORTED) {
+    el.textContent = settings.notify ? '✓ Reminders scheduled (work when app is closed).' : 'Toggle on for scheduled push reminders.';
+  } else {
+    el.textContent = settings.notify ? '✓ Reminders enabled. Open the app at least once between shots so it can re-schedule.' : 'Toggle on to enable reminders.';
+  }
+}
+
+async function sendTestNotification() {
+  if (typeof Notification === 'undefined') { alert('Not supported'); return; }
+  if (Notification.permission !== 'granted') {
+    const p = await Notification.requestPermission();
+    if (p !== 'granted') { alert('Permission not granted'); return; }
+  }
+  const title = 'ShotClock test';
+  const body = 'Notifications are working. Real reminders fire before each shot.';
+  if ('serviceWorker' in navigator) {
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      await reg.showNotification(title, { body, icon: 'icons/icon-192.png', data: { url: '/shotclock/' } });
+      return;
+    } catch (e) {}
+  }
+  new Notification(title, { body, icon: 'icons/icon-192.png' });
 }
 
 // ---------- PWA install banner ----------

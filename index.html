@@ -12,7 +12,16 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
-<link rel="stylesheet" href="styles.css?v=1">
+<link rel="stylesheet" href="styles.css?v=2">
+<script>
+(function(){
+  // Apply saved theme synchronously to avoid flash. Settings live in IndexedDB; theme also mirrored to localStorage for fast read.
+  try {
+    var t = localStorage.getItem('theme') || 'system';
+    if (t === 'dark' || t === 'light') document.documentElement.setAttribute('data-theme', t);
+  } catch(e){}
+})();
+</script>
 <meta name="description" content="Offline-first GLP-1 / peptide injection tracker. Log doses, sites, weight, side effects. Your data stays on your device.">
 </head>
 <body>
@@ -77,10 +86,33 @@
   </section>
 
   <section class="card">
+    <h2>Appearance</h2>
+    <label>Theme
+      <select id="set-theme">
+        <option value="system">Match system</option>
+        <option value="light">Light</option>
+        <option value="dark">Dark</option>
+      </select>
+    </label>
+  </section>
+
+  <section class="card">
     <h2>Reminders</h2>
-    <label class="row"><input id="set-notify" type="checkbox"> Browser notification when shot is due</label>
+    <label class="row"><input id="set-notify" type="checkbox"> Push notification when shot is due</label>
+    <label>Lead time
+      <select id="set-lead">
+        <option value="0">At shot time</option>
+        <option value="30">30 minutes before</option>
+        <option value="60">1 hour before</option>
+        <option value="180">3 hours before</option>
+        <option value="720">12 hours before</option>
+        <option value="1440">1 day before</option>
+      </select>
+    </label>
+    <p id="notify-status" class="muted small"></p>
+    <button id="test-notify" class="btn-ghost">Send test notification</button>
     <button id="download-ics" class="btn-ghost">Download calendar reminder (.ics)</button>
-    <p class="muted small">For iOS, .ics import to Calendar gives reliable native reminders even when the app is closed.</p>
+    <p class="muted small">Best results: install ShotClock to your home screen first. On Android Chrome, scheduled reminders fire even when the app is closed. On iOS 16.4+, install to Home Screen and enable notifications when prompted.</p>
   </section>
 
   <section class="card">
@@ -148,6 +180,6 @@
 </dialog>
 
 <script src="lib/chart.min.js"></script>
-<script src="app.js?v=1"></script>
+<script src="app.js?v=2"></script>
 </body>
 </html>
