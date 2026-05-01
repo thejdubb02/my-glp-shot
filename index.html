@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#83542e">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="ShotClock">
+<title>ShotClock — GLP-1 shot tracker</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="stylesheet" href="styles.css?v=1">
+<meta name="description" content="Offline-first GLP-1 / peptide injection tracker. Log doses, sites, weight, side effects. Your data stays on your device.">
+</head>
+<body>
+
+<div id="install-banner" class="banner hidden">
+  <div class="banner-body">
+    <strong>📱 Install ShotClock</strong>
+    <p id="install-text">For reliable reminders and data that survives a browser clear.</p>
+    <div class="banner-actions">
+      <button id="install-btn" class="btn-primary">Install</button>
+      <button id="install-dismiss" class="btn-ghost">Later</button>
+    </div>
+  </div>
+</div>
+
+<header class="app-header">
+  <div class="brand"><span class="brand-mark">●</span> ShotClock</div>
+  <button id="settings-btn" class="icon-btn" aria-label="Settings">⚙</button>
+</header>
+
+<main id="view-home" class="view active">
+  <section class="countdown-card">
+    <div class="countdown-label">Next shot</div>
+    <div id="countdown-value" class="countdown-value">—</div>
+    <div id="countdown-sub" class="countdown-sub"></div>
+    <button id="log-shot-btn" class="btn-primary big">+ Log Shot</button>
+  </section>
+
+  <section class="card">
+    <div class="card-head"><h2>Recent shots</h2><a href="#" id="view-all-history" class="link">View all</a></div>
+    <ul id="recent-shots" class="shot-list"></ul>
+    <p id="empty-shots" class="empty hidden">No shots logged yet.</p>
+  </section>
+
+  <section class="card">
+    <div class="card-head"><h2>Weight</h2><button id="add-weight-btn" class="btn-ghost">+ Add</button></div>
+    <canvas id="weight-chart" height="160"></canvas>
+    <p id="empty-weight" class="empty">No weight entries yet.</p>
+  </section>
+
+  <section class="card">
+    <div class="card-head"><h2>Estimated medication level</h2></div>
+    <canvas id="level-chart" height="140"></canvas>
+    <p class="muted small">Simple exponential decay model. Tirzepatide t½ ≈ 5 days. Educational only — not medical advice.</p>
+  </section>
+</main>
+
+<main id="view-history" class="view">
+  <header class="sub-header"><button class="back" data-back>‹</button><h1>History</h1></header>
+  <ul id="full-history" class="shot-list"></ul>
+</main>
+
+<main id="view-settings" class="view">
+  <header class="sub-header"><button class="back" data-back>‹</button><h1>Settings</h1></header>
+
+  <section class="card">
+    <h2>Medication</h2>
+    <label>Name <input id="set-med" type="text" placeholder="Tirzepatide"></label>
+    <label>Default dose (mg) <input id="set-dose" type="number" step="0.1" min="0"></label>
+    <label>Cadence (days between shots) <input id="set-cadence" type="number" min="1" max="30"></label>
+    <label>Half-life (days, for level chart) <input id="set-halflife" type="number" step="0.1" min="0.1"></label>
+  </section>
+
+  <section class="card">
+    <h2>Reminders</h2>
+    <label class="row"><input id="set-notify" type="checkbox"> Browser notification when shot is due</label>
+    <button id="download-ics" class="btn-ghost">Download calendar reminder (.ics)</button>
+    <p class="muted small">For iOS, .ics import to Calendar gives reliable native reminders even when the app is closed.</p>
+  </section>
+
+  <section class="card">
+    <h2>Backup</h2>
+    <p id="last-backup" class="muted small"></p>
+    <div class="row-buttons">
+      <button id="export-btn" class="btn-primary">Export JSON</button>
+      <button id="import-btn" class="btn-ghost">Import JSON</button>
+      <input id="import-file" type="file" accept="application/json,.json" hidden>
+    </div>
+    <p class="muted small">Your data is stored only on this device. Export regularly. Installing as a PWA dramatically reduces the chance of losing data on a browser clear.</p>
+  </section>
+
+  <section class="card">
+    <h2>Danger zone</h2>
+    <button id="wipe-btn" class="btn-danger">Erase all data on this device</button>
+  </section>
+
+  <p class="muted small center">ShotClock — local-first PWA · <a href="https://github.com/thejdubb02/wsg-shotclock" target="_blank" rel="noopener">source</a></p>
+</main>
+
+<dialog id="shot-dialog" class="modal">
+  <form id="shot-form" method="dialog">
+    <h2 id="shot-form-title">Log Shot</h2>
+    <input type="hidden" id="shot-id">
+    <label>Medication <input id="shot-med" type="text" required></label>
+    <label>Dose (mg) <input id="shot-dose-amt" type="number" step="0.1" min="0" required></label>
+    <label>Date &amp; time <input id="shot-when" type="datetime-local" required></label>
+    <label>Injection site
+      <select id="shot-site">
+        <option value="">— select —</option>
+        <option>Abdomen — Left</option>
+        <option>Abdomen — Right</option>
+        <option>Thigh — Left</option>
+        <option>Thigh — Right</option>
+        <option>Upper arm — Left</option>
+        <option>Upper arm — Right</option>
+      </select>
+    </label>
+    <p id="site-suggestion" class="muted small"></p>
+    <label>Notes <textarea id="shot-notes" rows="2"></textarea></label>
+    <div class="modal-actions">
+      <button type="button" id="shot-delete" class="btn-danger hidden">Delete</button>
+      <span class="spacer"></span>
+      <button type="button" id="shot-cancel" class="btn-ghost">Cancel</button>
+      <button type="submit" class="btn-primary">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="weight-dialog" class="modal">
+  <form id="weight-form" method="dialog">
+    <h2>Log Weight</h2>
+    <label>Weight <input id="weight-val" type="number" step="0.1" min="0" required></label>
+    <label>Unit
+      <select id="weight-unit"><option value="lb">lb</option><option value="kg">kg</option></select>
+    </label>
+    <label>Date <input id="weight-date" type="date" required></label>
+    <div class="modal-actions">
+      <span class="spacer"></span>
+      <button type="button" id="weight-cancel" class="btn-ghost">Cancel</button>
+      <button type="submit" class="btn-primary">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<script src="lib/chart.min.js"></script>
+<script src="app.js?v=1"></script>
+</body>
+</html>
