@@ -17,7 +17,7 @@
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="icon" type="image/png" sizes="512x512" href="icons/icon-512.png">
 <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png">
-<link rel="stylesheet" href="styles.css?v=22">
+<link rel="stylesheet" href="styles.css?v=23">
 <script>
 (function(){
   // Apply saved theme synchronously to avoid flash. Settings live in IndexedDB; theme also mirrored to localStorage for fast read.
@@ -335,12 +335,20 @@
     <label>Default dose (mg) <input id="set-dose" type="number" step="0.1" min="0"></label>
     <label>Cadence (days between shots) <input id="set-cadence" type="number" min="1" max="30"></label>
     <label>Half-life (days, for level chart) <input id="set-halflife" type="number" step="0.1" min="0.1"></label>
+    <div class="btn-row">
+      <button id="save-medication" class="btn-primary" type="button" data-save-group="medication">Save</button>
+      <span class="save-status muted small" data-save-status="medication"></span>
+    </div>
   </section>
 
   <section class="card">
     <h2>Weight goals</h2>
     <label>Starting weight (lb) <input id="set-start-weight" type="number" step="0.1" min="0" placeholder="auto-detected from first entry"></label>
     <label>Goal weight (lb) <input id="set-goal-weight" type="number" step="0.1" min="0"></label>
+    <div class="btn-row">
+      <button id="save-weight-goals" class="btn-primary" type="button" data-save-group="weight">Save</button>
+      <span class="save-status muted small" data-save-status="weight"></span>
+    </div>
   </section>
 
   <section class="card">
@@ -368,6 +376,10 @@
       </select>
     </label>
     <p id="notify-status" class="muted small"></p>
+    <div class="btn-row">
+      <button id="save-reminders" class="btn-primary" type="button" data-save-group="reminders">Save</button>
+      <span class="save-status muted small" data-save-status="reminders"></span>
+    </div>
     <button id="test-notify" class="btn-ghost">Send test notification</button>
     <button id="download-ics" class="btn-ghost">Download calendar reminder (.ics)</button>
     <p class="muted small">Best results: install My GLP Shot to your home screen first. On Android Chrome, scheduled reminders fire even when the app is closed. On iOS 16.4+, install to Home Screen and enable notifications when prompted.</p>
@@ -687,6 +699,6 @@
 </nav>
 
 <script src="lib/chart.min.js"></script>
-<script src="app.js?v=22"></script>
+<script src="app.js?v=23"></script>
 </body>
 </html>

@@ -5,7 +5,7 @@
 
 const DB_NAME = 'shotclock';
 const DB_VERSION = 2;
-const APP_VERSION = '0.22.0';
+const APP_VERSION = '0.23.0';
 const STORES = { shots: 'shots', weights: 'weights', settings: 'settings', moods: 'moods' };
 const SETTINGS_KEY = 'app';
 const DEFAULT_SETTINGS = {
@@ -562,10 +562,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     markSyncDirty();
   });
 
-  $('#set-med').addEventListener('change', async (e) => { settings.medication = e.target.value.trim() || 'Tirzepatide'; await saveSettings(); });
-  $('#set-dose').addEventListener('change', async (e) => { settings.defaultDose = parseFloat(e.target.value) || 0; await saveSettings(); });
-  $('#set-cadence').addEventListener('change', async (e) => { settings.cadenceDays = parseInt(e.target.value, 10) || 7; await saveSettings(); await renderShots(); });
-  $('#set-halflife').addEventListener('change', async (e) => { settings.halfLifeDays = parseFloat(e.target.value) || 5; await saveSettings(); await renderShots(); });
+  $('#set-med').addEventListener('change', async (e) => { settings.medication = e.target.value.trim() || 'Tirzepatide'; await saveSettings(); markSyncDirty(); });
+  $('#set-dose').addEventListener('change', async (e) => { settings.defaultDose = parseFloat(e.target.value) || 0; await saveSettings(); markSyncDirty(); });
+  $('#set-cadence').addEventListener('change', async (e) => { settings.cadenceDays = parseInt(e.target.value, 10) || 7; await saveSettings(); markSyncDirty(); await renderShots(); });
+  $('#set-halflife').addEventListener('change', async (e) => { settings.halfLifeDays = parseFloat(e.target.value) || 5; await saveSettings(); markSyncDirty(); await renderShots(); });
   $('#set-notify').addEventListener('change', async (e) => {
     if (e.target.checked) {
       const perm = await Notification.requestPermission();
@@ -575,17 +575,20 @@ document.addEventListener('DOMContentLoaded', async () => {
       settings.notify = false;
     }
     await saveSettings();
+    markSyncDirty();
     updateNotifyStatus();
     maybeScheduleNotification();
   });
   $('#set-lead').addEventListener('change', async (e) => {
     settings.notifyLeadMinutes = parseInt(e.target.value, 10) || 0;
     await saveSettings();
+    markSyncDirty();
     maybeScheduleNotification();
   });
   $('#set-theme').addEventListener('change', async (e) => {
     settings.theme = e.target.value;
     await saveSettings();
+    markSyncDirty();
     applyTheme();
   });
   $('#test-notify').addEventListener('click', sendTestNotification);
@@ -594,8 +597,53 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
   window.addEventListener('pageshow', () => maybeScheduleNotification());
 
-  $('#set-start-weight').addEventListener('change', async (e) => { settings.startWeight = e.target.value ? parseFloat(e.target.value) : null; await saveSettings(); await renderShots(); });
-  $('#set-goal-weight').addEventListener('change', async (e) => { settings.goalWeight = e.target.value ? parseFloat(e.target.value) : null; await saveSettings(); await renderShots(); });
+  $('#set-start-weight').addEventListener('change', async (e) => { settings.startWeight = e.target.value ? parseFloat(e.target.value) : null; await saveSettings(); markSyncDirty(); await renderShots(); });
+  $('#set-goal-weight').addEventListener('change', async (e) => { settings.goalWeight = e.target.value ? parseFloat(e.target.value) : null; await saveSettings(); markSyncDirty(); await renderShots(); });
+
+  // Explicit Save buttons (medication, weight goals, reminders).
+  // Auto-save on `change` already runs; these buttons re-read the inputs (in case user typed without blurring),
+  // immediately push to the account if signed in, and show ✓ Saved confirmation.
+  async function flushSaveGroup(group) {
+    if (group === 'medication') {
+      settings.medication = ($('#set-med').value || '').trim() || 'Tirzepatide';
+      settings.defaultDose = parseFloat($('#set-dose').value) || 0;
+      settings.cadenceDays = parseInt($('#set-cadence').value, 10) || 7;
+      settings.halfLifeDays = parseFloat($('#set-halflife').value) || 5;
+    } else if (group === 'weight') {
+      settings.startWeight = $('#set-start-weight').value ? parseFloat($('#set-start-weight').value) : null;
+      settings.goalWeight = $('#set-goal-weight').value ? parseFloat($('#set-goal-weight').value) : null;
+    } else if (group === 'reminders') {
+      settings.notifyLeadMinutes = parseInt($('#set-lead').value, 10) || 0;
+    }
+    await saveSettings();
+    if (group === 'medication' || group === 'weight') await renderShots();
+    if (group === 'reminders') maybeScheduleNotification();
+  }
+  $$('[data-save-group]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const group = btn.dataset.saveGroup;
+      const status = document.querySelector(`[data-save-status="${group}"]`);
+      btn.disabled = true;
+      const origText = btn.textContent;
+      btn.textContent = 'Saving…';
+      try {
+        await flushSaveGroup(group);
+        if (account.user && account.encryptionKey) {
+          try { await accountSyncPush(); status.textContent = '✓ Saved & synced'; }
+          catch (e) { status.textContent = '✓ Saved locally (sync will retry)'; markSyncDirty(); }
+        } else {
+          status.textContent = '✓ Saved on this device';
+        }
+        status.classList.add('ok');
+        setTimeout(() => { status.textContent = ''; status.classList.remove('ok'); }, 3500);
+      } catch (e) {
+        status.textContent = 'Save failed: ' + (e && e.message ? e.message : 'unknown');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = origText;
+      }
+    });
+  });
 
   // Mood picker
   $$('.mood-btn').forEach(btn => btn.addEventListener('click', async () => {
