@@ -5,7 +5,7 @@
 
 const DB_NAME = 'shotclock';
 const DB_VERSION = 2;
-const APP_VERSION = '0.14.0';
+const APP_VERSION = '0.15.0';
 const STORES = { shots: 'shots', weights: 'weights', settings: 'settings', moods: 'moods' };
 const SETTINGS_KEY = 'app';
 const DEFAULT_SETTINGS = {
@@ -1779,7 +1779,8 @@ async function deriveAccountCreds(email, password) {
     baseKey, 512
   );
   const buf = new Uint8Array(bits);
-  const aesKey = await crypto.subtle.importKey('raw', buf.slice(0, 32), 'AES-GCM', false, ['encrypt', 'decrypt']);
+  // Extractable so we can persist the raw AES key locally (instead of the password) for session restore.
+  const aesKey = await crypto.subtle.importKey('raw', buf.slice(0, 32), 'AES-GCM', true, ['encrypt', 'decrypt']);
   const authToken = HEX(buf.slice(32, 64));
   return { aesKey, authToken, email: e };
 }
@@ -1799,7 +1800,7 @@ async function accountSignup(email, password) {
   }
   const j = await r.json();
   account = { user: j.user, encryptionKey: creds.aesKey };
-  rememberSignedIn(email, password);
+  rememberSignedIn(creds.email, creds.aesKey);
   return j.user;
 }
 
@@ -1812,7 +1813,7 @@ async function accountLogin(email, password) {
   }
   const j = await r.json();
   account = { user: j.user, encryptionKey: creds.aesKey };
-  rememberSignedIn(email, password);
+  rememberSignedIn(creds.email, creds.aesKey);
   return j.user;
 }
 
@@ -1838,14 +1839,37 @@ function isPremium() {
   return !!(account.user && account.user.isPremium);
 }
 
-function rememberSignedIn(email, password) {
-  try { localStorage.setItem('account.cred', JSON.stringify({ email, password })); } catch (e) {}
+// Persist the derived AES encryption key (NOT the password) for session restore.
+// XSS can still steal this key, but it can't steal a password the user may have reused elsewhere.
+// The auth_token (server-side bcrypt-hashed) is never persisted; the session cookie is the auth credential.
+async function rememberSignedIn(email, aesKey) {
+  try {
+    const raw = await crypto.subtle.exportKey('raw', aesKey);
+    const b64 = btoa(String.fromCharCode(...new Uint8Array(raw)));
+    localStorage.setItem('account.cred', JSON.stringify({ email, k: b64, v: 2 }));
+    // Migrate away from any old plaintext-password entries on this device.
+    localStorage.removeItem('account.cred.legacy');
+  } catch (e) {}
 }
 function getRememberedSignIn() {
-  try { return JSON.parse(localStorage.getItem('account.cred') || 'null'); } catch (e) { return null; }
+  try {
+    const raw = JSON.parse(localStorage.getItem('account.cred') || 'null');
+    if (!raw) return null;
+    if (raw.v === 2 && raw.email && raw.k) return raw;
+    // Old format had plaintext password. Discard it — user will need to sign in again on this device.
+    localStorage.removeItem('account.cred');
+    return null;
+  } catch (e) { return null; }
 }
 function clearRememberedSignIn() {
   try { localStorage.removeItem('account.cred'); } catch (e) {}
+}
+
+async function importStoredAesKey(b64) {
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return crypto.subtle.importKey('raw', bytes, 'AES-GCM', true, ['encrypt', 'decrypt']);
 }
 
 async function tryRestoreAccount() {
@@ -1853,10 +1877,9 @@ async function tryRestoreAccount() {
   if (!user) return false;
   account.user = user;
   const remembered = getRememberedSignIn();
-  if (remembered && remembered.email && remembered.password) {
+  if (remembered && remembered.email && remembered.k) {
     try {
-      const creds = await deriveAccountCreds(remembered.email, remembered.password);
-      account.encryptionKey = creds.aesKey;
+      account.encryptionKey = await importStoredAesKey(remembered.k);
     } catch (e) {}
   }
   return true;

@@ -90,6 +90,11 @@ CREATE TABLE IF NOT EXISTS password_resets (
     expires_at  INTEGER NOT NULL,
     used_at     INTEGER
 );
+CREATE TABLE IF NOT EXISTS stripe_events (
+    id          TEXT PRIMARY KEY,
+    type        TEXT NOT NULL,
+    received_at INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS legacy_blobs (
     lookup_id   TEXT PRIMARY KEY,
     iv          TEXT NOT NULL,
@@ -342,6 +347,7 @@ def reset_password():
     db.execute('UPDATE users SET password_hash = ? WHERE id = ?', (pw_hash, row['user_id']))
     db.execute('UPDATE password_resets SET used_at = ? WHERE token = ?', (now_ts(), token))
     db.execute('DELETE FROM sync_blobs WHERE user_id = ?', (row['user_id'],))  # E2EE: cloud copy can't be decrypted
+    db.execute('DELETE FROM share_links WHERE user_id = ?', (row['user_id'],))  # Old shares contain pre-reset data
     db.execute('DELETE FROM sessions WHERE user_id = ?', (row['user_id'],))
     db.commit()
     return jsonify(ok=True, lostCloudData=True)
@@ -581,8 +587,7 @@ def billing_checkout():
     plan = (data.get('plan') or 'yearly').lower()
     price_id = STRIPE_PRICE_YEARLY if plan == 'yearly' else STRIPE_PRICE_MONTHLY
     customer_id = _ensure_customer(user)
-    base = APP_BASE_URL.rstrip('/')
-    app_base = 'https://app.myglpshot.com'
+    app_base = os.environ.get('APP_URL', 'https://app.myglpshot.com').rstrip('/')
     try:
         sess = stripe.checkout.Session.create(
             mode='subscription',
@@ -610,7 +615,7 @@ def billing_portal():
         return err('unauthorized', 'Not signed in.', 401)
     if not user['stripe_customer_id']:
         return err('no_customer', 'No billing record yet — start a subscription first.', 400)
-    app_base = 'https://app.myglpshot.com'
+    app_base = os.environ.get('APP_URL', 'https://app.myglpshot.com').rstrip('/')
     try:
         sess = stripe.billing_portal.Session.create(
             customer=user['stripe_customer_id'],
@@ -690,7 +695,19 @@ def stripe_webhook():
         return err('bad_signature', 'Invalid signature.', 400)
 
     et = event['type']
+    eid = event.get('id')
     obj = event['data']['object']
+    # Idempotency: skip events we've already processed.
+    if eid:
+        db = get_db()
+        seen = db.execute('SELECT 1 FROM stripe_events WHERE id = ?', (eid,)).fetchone()
+        if seen:
+            return jsonify(received=True, duplicate=True)
+        db.execute(
+            'INSERT INTO stripe_events (id, type, received_at) VALUES (?, ?, ?)',
+            (eid, et, now_ts()),
+        )
+        db.commit()
     try:
         if et == 'checkout.session.completed':
             # Link customer to user via metadata, then refresh the subscription.
