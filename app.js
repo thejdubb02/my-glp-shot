@@ -421,19 +421,170 @@ async function importData(e) {
   if (!file) return;
   try {
     const text = await file.text();
-    const parsed = JSON.parse(text);
-    if (!parsed || !Array.isArray(parsed.shots)) throw new Error('Invalid file');
-    if (!confirm(`Import ${parsed.shots.length} shots and ${(parsed.weights || []).length} weight entries? This will MERGE with existing data.`)) return;
-    for (const s of parsed.shots) { delete s.id; await dbAdd(STORES.shots, s); }
-    for (const w of (parsed.weights || [])) { delete w.id; await dbAdd(STORES.weights, w); }
-    if (parsed.settings) { settings = { ...settings, ...parsed.settings }; await saveSettings(); applySettingsToInputs(); }
-    await renderShots();
-    await renderWeights();
-    alert('Imported.');
+    const isCSV = /\.csv$/i.test(file.name) || (!text.trim().startsWith('{') && text.includes(','));
+    if (isCSV) {
+      await importShotsyCSV(text);
+    } else {
+      const parsed = JSON.parse(text);
+      if (!parsed || !Array.isArray(parsed.shots)) throw new Error('Invalid JSON file');
+      if (!confirm(`Import ${parsed.shots.length} shots and ${(parsed.weights || []).length} weight entries? This will MERGE with existing data.`)) return;
+      for (const s of parsed.shots) { delete s.id; await dbAdd(STORES.shots, s); }
+      for (const w of (parsed.weights || [])) { delete w.id; await dbAdd(STORES.weights, w); }
+      if (parsed.settings) { settings = { ...settings, ...parsed.settings }; await saveSettings(); applySettingsToInputs(); }
+      await renderShots();
+      await renderWeights();
+      alert('Imported.');
+    }
   } catch (err) {
     alert('Import failed: ' + err.message);
   }
   e.target.value = '';
+}
+
+// ---------- Shotsy CSV import ----------
+// Parses CSV with full RFC-4180 quoting (handles embedded newlines and double-quote escapes).
+function parseCSV(text) {
+  const rows = [];
+  let row = [];
+  let field = '';
+  let inQuotes = false;
+  let i = 0;
+  while (i < text.length) {
+    const c = text[i];
+    if (inQuotes) {
+      if (c === '"') {
+        if (text[i + 1] === '"') { field += '"'; i += 2; continue; }
+        inQuotes = false; i++; continue;
+      }
+      field += c; i++;
+    } else {
+      if (c === '"') { inQuotes = true; i++; continue; }
+      if (c === ',') { row.push(field); field = ''; i++; continue; }
+      if (c === '\r') { i++; continue; }
+      if (c === '\n') { row.push(field); rows.push(row); row = []; field = ''; i++; continue; }
+      field += c; i++;
+    }
+  }
+  if (field.length || row.length) { row.push(field); rows.push(row); }
+  return rows;
+}
+
+// Maps Shotsy site labels to ShotClock site labels.
+function mapShotsySite(s) {
+  if (!s) return null;
+  const t = s.trim().toLowerCase();
+  const map = {
+    'left arm': 'Upper arm — Left',
+    'right arm': 'Upper arm — Right',
+    'upper arm left': 'Upper arm — Left',
+    'upper arm right': 'Upper arm — Right',
+    'left thigh': 'Thigh — Left',
+    'right thigh': 'Thigh — Right',
+    'left abdomen': 'Abdomen — Left',
+    'right abdomen': 'Abdomen — Right',
+    'abdomen left': 'Abdomen — Left',
+    'abdomen right': 'Abdomen — Right',
+    'left stomach': 'Abdomen — Left',
+    'right stomach': 'Abdomen — Right',
+  };
+  return map[t] || s.trim();
+}
+
+// Parses Shotsy "Shot" cell, e.g. "Tirzepatide 5.0 mg" → { med: 'Tirzepatide', dose: 5.0 }
+function parseShotCell(s) {
+  if (!s || !s.trim()) return null;
+  const m = s.trim().match(/^(.+?)\s+([\d.]+)\s*mg\b/i);
+  if (!m) return { med: s.trim(), dose: 0 };
+  return { med: m[1].trim(), dose: parseFloat(m[2]) };
+}
+
+async function importShotsyCSV(text) {
+  const rows = parseCSV(text);
+  if (rows.length < 2) throw new Error('CSV is empty or malformed');
+  const header = rows[0].map(h => h.trim().toLowerCase());
+  const colIdx = (name) => header.indexOf(name.toLowerCase());
+  const cDate = colIdx('date');
+  const cShot = colIdx('shot');
+  const cTime = colIdx('time');
+  const cSite = colIdx('site');
+  const cShotNotes = colIdx('shot notes');
+  const cPain = colIdx('pain level');
+  const cWeight = header.findIndex(h => h.startsWith('recorded weight'));
+  const cDayNotes = colIdx('day notes');
+  if (cDate < 0) throw new Error('CSV missing required "Date" column — is this a Shotsy export?');
+
+  const shotsToAdd = [];
+  const weightsToAdd = [];
+
+  for (let r = 1; r < rows.length; r++) {
+    const row = rows[r];
+    if (!row || row.length === 0) continue;
+    const date = (row[cDate] || '').trim();
+    if (!date) continue;
+
+    // Shot cells can contain multiple shots separated by newlines (multi-shot day in Shotsy export)
+    const shotCells = (cShot >= 0 ? (row[cShot] || '').split('\n') : []).map(s => s.trim()).filter(Boolean);
+    const timeCells = (cTime >= 0 ? (row[cTime] || '').split('\n') : []).map(s => s.trim());
+    const siteCells = (cSite >= 0 ? (row[cSite] || '').split('\n') : []).map(s => s.trim());
+    const notesCells = (cShotNotes >= 0 ? (row[cShotNotes] || '').split('\n') : []).map(s => s.trim());
+    const painCells = (cPain >= 0 ? (row[cPain] || '').split('\n') : []).map(s => s.trim());
+
+    for (let k = 0; k < shotCells.length; k++) {
+      const parsed = parseShotCell(shotCells[k]);
+      if (!parsed) continue;
+      const time = timeCells[k] || timeCells[0] || '00:00';
+      const when = new Date(`${date}T${time.length === 5 ? time : (time.padStart(5, '0'))}:00`);
+      if (isNaN(when.getTime())) continue;
+      const noteParts = [];
+      if (notesCells[k]) noteParts.push(notesCells[k]);
+      const dayNote = cDayNotes >= 0 ? (row[cDayNotes] || '').trim() : '';
+      if (dayNote && k === 0) noteParts.push(dayNote);
+      const pain = painCells[k] || painCells[0];
+      if (pain && parseFloat(pain) > 0) noteParts.push(`Pain: ${pain}/10`);
+      shotsToAdd.push({
+        med: parsed.med,
+        dose: parsed.dose,
+        when: when.toISOString(),
+        site: mapShotsySite(siteCells[k] || siteCells[0]),
+        notes: noteParts.join(' · ') || null,
+      });
+    }
+
+    if (cWeight >= 0) {
+      const w = (row[cWeight] || '').trim();
+      if (w && !isNaN(parseFloat(w))) {
+        weightsToAdd.push({ value: parseFloat(w), unit: 'lb', date });
+      }
+    }
+  }
+
+  // Dedupe: identical when+med+dose collapsed to a single record (Shotsy's export sometimes lists a shot twice).
+  const seen = new Set();
+  const dedupedShots = shotsToAdd.filter(s => {
+    const k = `${s.when}|${s.med}|${s.dose}`;
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+  const seenW = new Set();
+  const dedupedWeights = weightsToAdd.filter(w => {
+    const k = `${w.date}|${w.value}|${w.unit}`;
+    if (seenW.has(k)) return false;
+    seenW.add(k);
+    return true;
+  });
+
+  if (!dedupedShots.length && !dedupedWeights.length) {
+    throw new Error('No shots or weight entries found in CSV');
+  }
+  if (!confirm(`Import ${dedupedShots.length} shots and ${dedupedWeights.length} weight entries from Shotsy? This will MERGE with existing data.`)) return;
+
+  for (const s of dedupedShots) await dbAdd(STORES.shots, s);
+  for (const w of dedupedWeights) await dbAdd(STORES.weights, w);
+  await ensurePersisted();
+  await renderShots();
+  await renderWeights();
+  alert(`Imported ${shotsToAdd.length} shots and ${weightsToAdd.length} weight entries.`);
 }
 function updateBackupLabel() {
   const el = $('#last-backup');

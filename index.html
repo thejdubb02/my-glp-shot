@@ -12,7 +12,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
-<link rel="stylesheet" href="styles.css?v=4">
+<link rel="stylesheet" href="styles.css?v=5">
 <script>
 (function(){
   // Apply saved theme synchronously to avoid flash. Settings live in IndexedDB; theme also mirrored to localStorage for fast read.
@@ -122,10 +122,11 @@
     <p id="last-backup" class="muted small"></p>
     <div class="row-buttons">
       <button id="export-btn" class="btn-primary">Export JSON</button>
-      <button id="import-btn" class="btn-ghost">Import JSON</button>
-      <input id="import-file" type="file" accept="application/json,.json" hidden>
+      <button id="import-btn" class="btn-ghost">Import JSON / Shotsy CSV</button>
+      <input id="import-file" type="file" accept="application/json,.json,.csv,text/csv" hidden>
     </div>
     <p class="muted small">Your data is stored only on this device. Export regularly. Installing as a PWA dramatically reduces the chance of losing data on a browser clear.</p>
+    <p class="muted small"><strong>Switching from Shotsy?</strong> In the Shotsy app: Settings → Export Data → CSV. Then tap "Import" above and select the file. Shots, weight, sites, doses, and notes will all transfer.</p>
   </section>
 
   <section class="card">
@@ -182,6 +183,6 @@
 </dialog>
 
 <script src="lib/chart.min.js"></script>
-<script src="app.js?v=4"></script>
+<script src="app.js?v=5"></script>
 </body>
 </html>

@@ -1,10 +1,10 @@
 // ShotClock service worker — offline app shell + notification click handling.
-const CACHE = 'shotclock-v4';
+const CACHE = 'shotclock-v5';
 const ASSETS = [
   './',
   'index.html',
-  'styles.css?v=4',
-  'app.js?v=4',
+  'styles.css?v=5',
+  'app.js?v=5',
   'manifest.webmanifest',
   'lib/chart.min.js',
   'icons/icon-192.png',
