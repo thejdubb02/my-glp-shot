@@ -279,13 +279,13 @@ async function probe(name, fn) {
       const resp = await fetch('/api/share', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tok },
-        body: JSON.stringify({ blob: 'ZmFrZQ==', label: 'qa-test', ttlHours: 24 }),
+        body: JSON.stringify({ iv: 'AAAAAAAAAAAAAAAA', ciphertext: 'Y2lwaGVydGV4dA==', label: 'qa-test' }),
       });
       return { status: resp.status, body: (await resp.json().catch(() => ({}))) };
     });
     if (r.status !== 200) throw new Error('share create ' + r.status + ' ' + JSON.stringify(r.body));
-    if (!r.body.url) throw new Error('no share url returned');
-    return r.body.url.slice(0, 60) + '…';
+    if (!r.body.token) throw new Error('no share token returned');
+    return 'token=' + r.body.token.slice(0, 12) + '…';
   });
 
   // === 13. Service worker version matches expected ===

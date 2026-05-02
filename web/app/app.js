@@ -4,8 +4,10 @@
 'use strict';
 
 const DB_NAME = 'shotclock';
-const DB_VERSION = 2;
-const APP_VERSION = '0.24.0';
+// v3 bump: 'supplies' store is added in onupgradeneeded instead of being created lazily by ensureStore().
+// Lazy creation drifted IDB to v3 on premium devices while DB_VERSION stayed at 2, causing VersionError on every later open.
+const DB_VERSION = 3;
+const APP_VERSION = '0.25.0';
 
 // Umami event tracker. Aggregates only — no PII (no email, no IDs). Safe to call before umami loads.
 function track(event, props) {
@@ -15,7 +17,7 @@ function track(event, props) {
     else window.umami.track(event);
   } catch (_) { /* never let analytics break the app */ }
 }
-const STORES = { shots: 'shots', weights: 'weights', settings: 'settings', moods: 'moods' };
+const STORES = { shots: 'shots', weights: 'weights', settings: 'settings', moods: 'moods', supplies: 'supplies' };
 const SETTINGS_KEY = 'app';
 const DEFAULT_SETTINGS = {
   medication: 'Tirzepatide',
@@ -101,6 +103,9 @@ function openDB() {
       }
       if (!db.objectStoreNames.contains(STORES.moods)) {
         db.createObjectStore(STORES.moods, { keyPath: 'date' });
+      }
+      if (!db.objectStoreNames.contains(STORES.supplies)) {
+        db.createObjectStore(STORES.supplies, { keyPath: 'id', autoIncrement: true });
       }
     };
     req.onsuccess = () => resolve(req.result);
@@ -2473,22 +2478,9 @@ function setupReconCalc() {
 }
 
 // ----- Supply tracking (premium) -----
-async function ensureStore(name, opts) {
-  const db = await openDB();
-  if (!db.objectStoreNames.contains(name)) {
-    db.close();
-    _dbPromise = null;
-    await new Promise((resolve, reject) => {
-      const r = indexedDB.open(DB_NAME, db.version + 1);
-      r.onupgradeneeded = (e) => {
-        const d = e.target.result;
-        if (!d.objectStoreNames.contains(name)) d.createObjectStore(name, opts || { keyPath: 'id', autoIncrement: true });
-      };
-      r.onsuccess = () => { r.result.close(); resolve(); };
-      r.onerror = () => reject(r.error);
-    });
-  }
-}
+// 'supplies' store is now created in openDB()'s onupgradeneeded at DB_VERSION=3.
+// This shim is kept as a no-op so the rest of the supply code can call it without changes.
+async function ensureStore(_name, _opts) { await openDB(); }
 
 async function getSupplies() {
   await ensureStore('supplies');
