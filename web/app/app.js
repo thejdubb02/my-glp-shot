@@ -152,6 +152,17 @@ function showView(name) {
   window.scrollTo(0, 0);
 }
 
+function setHomeTab(tab) {
+  document.body.classList.remove('tab-home', 'tab-insights', 'tab-more');
+  document.body.classList.add('tab-' + tab);
+  const nav = document.getElementById('bottom-nav');
+  if (nav) {
+    nav.querySelectorAll('.nav-btn').forEach(b => {
+      b.classList.toggle('active', b.getAttribute('data-nav-tab') === tab);
+    });
+  }
+}
+
 // ---------- Data getters ----------
 async function getShotsSorted() {
   const all = (await dbAll(STORES.shots)) || [];
@@ -298,9 +309,21 @@ document.addEventListener('DOMContentLoaded', async () => {
   setInterval(async () => renderCountdown(await getShotsSorted()), 60000);
 
   $('#log-shot-btn').addEventListener('click', () => openShotDialog());
-  $('#settings-btn').addEventListener('click', () => showView('settings'));
   $('#view-all-history').addEventListener('click', (e) => { e.preventDefault(); showView('history'); });
-  $$('[data-back]').forEach(b => b.addEventListener('click', () => showView('home')));
+  $$('[data-back]').forEach(b => b.addEventListener('click', () => { showView('home'); setHomeTab('home'); }));
+
+  // Bottom nav
+  $$('#bottom-nav .nav-btn').forEach(btn => btn.addEventListener('click', () => {
+    const tab = btn.getAttribute('data-nav-tab');
+    if (tab === 'settings') {
+      showView('settings');
+      $$('#bottom-nav .nav-btn').forEach(b => b.classList.toggle('active', b === btn));
+    } else {
+      showView('home');
+      setHomeTab(tab);
+    }
+  }));
+  setHomeTab('home');
 
   $('#shot-cancel').addEventListener('click', () => $('#shot-dialog').close());
   $('#shot-form').addEventListener('submit', async (e) => {
@@ -1745,37 +1768,17 @@ function subscriptionStatusText(u) {
 
 function applyPremiumGates() {
   const premium = isPremium();
-  // Toggle .lock-pill on premium feature cards
+  // Toggle .lock-pill on premium feature cards. Tapping the pill opens the upgrade modal.
   ['#supply-lock', '#measurements-lock', '#labs-lock', '#cost-lock'].forEach(sel => {
     const el = document.querySelector(sel);
-    if (el) el.classList.toggle('unlocked', premium);
-  });
-  // Add/remove blur overlay on premium-only cards
-  ['#supply-card', '#measurements-card', '#labs-card', '#cost-card'].forEach(sel => {
-    const card = document.querySelector(sel);
-    if (!card) return;
-    card.classList.toggle('premium-locked', !premium && !!account.user);  // only blur if signed in & not premium
-    let overlay = card.querySelector('.premium-overlay');
-    if (!premium && account.user) {
-      if (!overlay) {
-        const o = document.createElement('div');
-        o.className = 'premium-overlay';
-        o.innerHTML = '<strong>⭐ Premium</strong><span>Tap to upgrade</span>';
-        o.addEventListener('click', () => $('#upgrade-dialog').showModal());
-        card.appendChild(o);
-      }
-      // Wrap inner content in premium-locked-content
-      let inner = card.querySelector(':scope > :not(.premium-overlay)');
-      while (inner) {
-        if (!inner.classList.contains('premium-locked-content')) inner.classList.add('premium-locked-content');
-        inner = inner.nextElementSibling;
-        if (inner && inner.classList.contains('premium-overlay')) break;
-      }
-    } else {
-      if (overlay) overlay.remove();
-      card.querySelectorAll('.premium-locked-content').forEach(el => el.classList.remove('premium-locked-content'));
+    if (!el) return;
+    el.classList.toggle('unlocked', premium);
+    if (!premium && !el._wired) {
+      el.addEventListener('click', () => $('#upgrade-dialog').showModal());
+      el._wired = true;
     }
   });
+  // No blur, no paywall overlay. Cards stay fully usable; the pill labels the tier.
 }
 
 // ----- Reconstitution calculator -----

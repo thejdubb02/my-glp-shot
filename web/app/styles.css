@@ -303,9 +303,35 @@ canvas{width:100% !important;height:auto !important;max-height:200px}
 .premium-list{list-style:none;padding:0;margin:8px 0}
 .premium-list li{padding:6px 0;font-size:.92rem}
 
-/* Lock overlay on premium-locked cards */
-.premium-locked{position:relative}
-.premium-locked .premium-locked-content{filter:blur(2px);opacity:.55;pointer-events:none}
-.premium-locked .premium-overlay{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:var(--surface);border:2px solid var(--bronze-dk);padding:12px 20px;border-radius:12px;text-align:center;box-shadow:var(--shadow);z-index:5;cursor:pointer}
-.premium-locked .premium-overlay strong{display:block;color:var(--bronze-dk);margin-bottom:4px}
-.premium-locked .premium-overlay span{font-size:.78rem;color:var(--muted)}
+/* Premium feature cards — soft, non-paywall presentation. The .lock-pill marks them; tapping the upgrade CTA in the empty state or lock pill opens the upgrade modal. */
+.lock-pill{cursor:pointer}
+.lock-pill.unlocked{cursor:default}
+
+/* Mood SVG faces — tinted in brand teal */
+.mood-svg{width:34px;height:34px;display:block;margin:0 auto}
+.mood-bg{fill:var(--bronze-lt);stroke:var(--bronze-dk);stroke-width:1.5}
+.mood-eye{fill:var(--bronze-dk)}
+.mood-eye-arc{stroke:var(--bronze-dk);stroke-width:1.6;stroke-linecap:round;fill:none}
+.mood-mouth{stroke:var(--bronze-dk);stroke-width:1.8;stroke-linecap:round;fill:none}
+.mood-mouth-fill{fill:var(--bronze-dk);stroke:var(--bronze-dk);stroke-width:1.2;stroke-linejoin:round}
+.mood-btn{padding:10px 0}
+.mood-btn.selected .mood-bg{fill:var(--bronze);stroke:var(--bronze-dk)}
+.mood-btn.selected .mood-eye{fill:#fff}
+.mood-btn.selected .mood-eye-arc{stroke:#fff}
+.mood-btn.selected .mood-mouth{stroke:#fff}
+.mood-btn.selected .mood-mouth-fill{fill:#fff;stroke:#fff}
+
+/* Bottom nav (4 tabs) */
+.bottom-nav{position:fixed;left:0;right:0;bottom:0;background:var(--surface);border-top:1px solid var(--line);display:grid;grid-template-columns:repeat(4,1fr);padding:6px 0 calc(env(safe-area-inset-bottom) + 6px);z-index:40;box-shadow:0 -2px 12px rgba(15,23,42,.06)}
+.nav-btn{background:none;border:0;color:var(--muted);font:inherit;font-size:.7rem;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 4px;cursor:pointer;border-radius:8px;transition:color .2s ease,background .2s ease}
+.nav-btn .nav-icon{width:22px;height:22px;fill:currentColor}
+.nav-btn.active{color:var(--bronze-dk)}
+.nav-btn.active .nav-icon{fill:var(--bronze-dk)}
+.nav-btn:hover{background:var(--bronze-lt)}
+body{padding-bottom:calc(env(safe-area-inset-bottom) + 76px)}
+
+/* Tab filtering inside #view-home — hide sections whose data-tab doesn't match the active tab.
+   Other views (history, settings) are unaffected because their .view rule already controls display. */
+body.tab-home #view-home > [data-tab]:not([data-tab="home"]){display:none}
+body.tab-insights #view-home > [data-tab]:not([data-tab="insights"]){display:none}
+body.tab-more #view-home > [data-tab]:not([data-tab="more"]){display:none}

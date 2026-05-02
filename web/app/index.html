@@ -17,7 +17,7 @@
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="icon" type="image/png" sizes="512x512" href="icons/icon-512.png">
 <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png">
-<link rel="stylesheet" href="styles.css?v=8">
+<link rel="stylesheet" href="styles.css?v=9">
 <script>
 (function(){
   // Apply saved theme synchronously to avoid flash. Settings live in IndexedDB; theme also mirrored to localStorage for fast read.
@@ -58,12 +58,11 @@
   <div class="brand"><span class="brand-mark">●</span> My GLP Shot</div>
   <div class="hdr-actions">
     <span id="hdr-account-pill" class="acct-pill hidden"></span>
-    <button id="settings-btn" class="icon-btn" aria-label="Settings">⚙</button>
   </div>
 </header>
 
-<main id="view-home" class="view active">
-  <section class="countdown-card">
+<main id="view-home" class="view active" data-tab="home">
+  <section class="countdown-card" data-tab="home">
     <div class="countdown-ring-wrap" aria-hidden="true">
       <svg class="countdown-ring" viewBox="0 0 64 64">
         <circle class="countdown-ring-track" cx="32" cy="32" r="28" />
@@ -78,19 +77,19 @@
     <button id="log-shot-btn" class="btn-primary big">+ Log</button>
   </section>
 
-  <section id="hero-card" class="hero-card hidden">
+  <section id="hero-card" class="hero-card hidden" data-tab="home">
     <div class="hero-row">
       <div class="hero-stat">
         <div class="hero-num" id="hero-weight-delta">—</div>
-        <div class="hero-label">since start</div>
+        <div class="hero-label">lost so far</div>
       </div>
       <div class="hero-stat">
         <div class="hero-num" id="hero-streak">—</div>
-        <div class="hero-label">week streak</div>
+        <div class="hero-label">weeks on track</div>
       </div>
       <div class="hero-stat">
         <div class="hero-num" id="hero-shots">—</div>
-        <div class="hero-label">shots logged</div>
+        <div class="hero-label">shots taken</div>
       </div>
     </div>
     <div id="hero-goal-wrap" class="hero-goal hidden">
@@ -99,79 +98,50 @@
     </div>
   </section>
 
-  <section id="badges-card" class="card hidden">
-    <div class="card-head"><h2>Milestones</h2></div>
-    <div id="badges-list" class="badges-list"></div>
+  <section class="card mood-card" data-tab="home">
+    <div class="card-head"><h2>How are you feeling today?</h2><span id="mood-saved" class="mood-saved muted small"></span></div>
+    <div id="mood-picker" class="mood-picker">
+      <button data-mood="1" class="mood-btn" type="button" aria-label="Awful"><svg viewBox="0 0 32 32" class="mood-svg"><circle cx="16" cy="16" r="14" class="mood-bg"/><circle cx="11" cy="13" r="1.5" class="mood-eye"/><circle cx="21" cy="13" r="1.5" class="mood-eye"/><path d="M10 22 Q16 17 22 22" fill="none" class="mood-mouth"/></svg></button>
+      <button data-mood="2" class="mood-btn" type="button" aria-label="Low"><svg viewBox="0 0 32 32" class="mood-svg"><circle cx="16" cy="16" r="14" class="mood-bg"/><circle cx="11" cy="13" r="1.5" class="mood-eye"/><circle cx="21" cy="13" r="1.5" class="mood-eye"/><path d="M11 21 Q16 18 21 21" fill="none" class="mood-mouth"/></svg></button>
+      <button data-mood="3" class="mood-btn" type="button" aria-label="Okay"><svg viewBox="0 0 32 32" class="mood-svg"><circle cx="16" cy="16" r="14" class="mood-bg"/><circle cx="11" cy="13" r="1.5" class="mood-eye"/><circle cx="21" cy="13" r="1.5" class="mood-eye"/><line x1="11" y1="20" x2="21" y2="20" class="mood-mouth"/></svg></button>
+      <button data-mood="4" class="mood-btn" type="button" aria-label="Good"><svg viewBox="0 0 32 32" class="mood-svg"><circle cx="16" cy="16" r="14" class="mood-bg"/><circle cx="11" cy="13" r="1.5" class="mood-eye"/><circle cx="21" cy="13" r="1.5" class="mood-eye"/><path d="M10 19 Q16 24 22 19" fill="none" class="mood-mouth"/></svg></button>
+      <button data-mood="5" class="mood-btn" type="button" aria-label="Great"><svg viewBox="0 0 32 32" class="mood-svg"><circle cx="16" cy="16" r="14" class="mood-bg"/><path d="M9 12 Q11 11 13 12" fill="none" class="mood-eye-arc"/><path d="M19 12 Q21 11 23 12" fill="none" class="mood-eye-arc"/><path d="M9 18 Q16 26 23 18 Z" class="mood-mouth-fill"/></svg></button>
+    </div>
   </section>
 
   <section class="card recon-card" data-tab="home">
-    <div class="card-head"><h2>🧪 Reconstitution calculator</h2><span class="muted small">Free</span></div>
-    <p class="muted small">For compound peptide users — figure out how many units to draw.</p>
+    <div class="card-head"><h2>Mixing calculator</h2><span class="muted small">Free · for compound peptide users</span></div>
+    <p class="muted small">Tells you how many units to draw on your insulin syringe.</p>
     <div class="recon-grid">
-      <label>Vial total (mg)<input id="recon-vial" type="number" step="0.1" min="0" value="10"></label>
-      <label>Bac water (mL)<input id="recon-water" type="number" step="0.1" min="0.1" value="2"></label>
-      <label>Desired dose (mg)<input id="recon-dose" type="number" step="0.1" min="0" value="5"></label>
+      <label>Vial (mg)<input id="recon-vial" type="number" step="0.1" min="0" value="10"></label>
+      <label>BAC water (mL)<input id="recon-water" type="number" step="0.1" min="0.1" value="2"></label>
+      <label>Your dose (mg)<input id="recon-dose" type="number" step="0.1" min="0" value="5"></label>
     </div>
     <div id="recon-output" class="recon-output"></div>
-    <p class="muted small">Educational only. Verify with your prescribing clinician. Not medical advice.</p>
+    <p class="muted small">For learning — always double-check with your provider.</p>
   </section>
 
-  <section id="supply-card" class="card" data-tab="track">
-    <div class="card-head">
-      <h2>💊 Supply <span class="lock-pill" id="supply-lock">Premium</span></h2>
-      <button id="add-supply-btn" class="btn-ghost">+ Add</button>
-    </div>
-    <ul id="supply-list" class="supply-list"></ul>
-    <p id="supply-empty" class="empty"><span class="empty-illus">📦</span><br>No active supplies. Add a pen or vial to track expiration + doses remaining.</p>
+  <section class="card" data-tab="home">
+    <div class="card-head"><h2>Latest shots</h2><a href="#" id="view-all-history" class="link">See all</a></div>
+    <ul id="recent-shots" class="shot-list"></ul>
+    <p id="empty-shots" class="empty hidden">No shots logged yet — tap <strong>+ Log</strong> above to start.</p>
   </section>
 
-  <section id="measurements-card" class="card" data-tab="track">
-    <div class="card-head">
-      <h2>📏 Body measurements <span class="lock-pill" id="measurements-lock">Premium</span></h2>
-      <button id="add-measurement-btn" class="btn-ghost">+ Add</button>
-    </div>
-    <div id="measurement-summary" class="measurement-summary"></div>
-    <p id="measurements-empty" class="empty"><span class="empty-illus">📏</span><br>Track waist, hips, chest, thigh, arm. Trends with weight.</p>
+  <section id="badges-card" class="card hidden" data-tab="home">
+    <div class="card-head"><h2>Achievements</h2></div>
+    <div id="badges-list" class="badges-list"></div>
   </section>
 
-  <section id="labs-card" class="card" data-tab="track">
-    <div class="card-head">
-      <h2>🔬 Lab results <span class="lock-pill" id="labs-lock">Premium</span></h2>
-      <button id="add-lab-btn" class="btn-ghost">+ Add</button>
-    </div>
-    <div id="lab-summary" class="lab-summary"></div>
-    <p id="labs-empty" class="empty"><span class="empty-illus">🧪</span><br>A1c, glucose, BP, lipids. See how your numbers change with treatment.</p>
-  </section>
+  <!-- INSIGHTS TAB -->
 
-  <section id="cost-card" class="card" data-tab="track">
-    <div class="card-head"><h2>💰 Cost tracker <span class="lock-pill" id="cost-lock">Premium</span></h2></div>
-    <div id="cost-summary" class="cost-summary"></div>
-  </section>
-
-  <section id="plateau-card" class="card hidden" data-tab="insights">
-    <div class="card-head"><h2>⚠️ Plateau detected</h2></div>
-    <div id="plateau-body"></div>
-  </section>
-
-  <section class="card mood-card" data-tab="home">
-    <div class="card-head"><h2>How are you feeling?</h2><span id="mood-saved" class="mood-saved muted small"></span></div>
-    <div id="mood-picker" class="mood-picker">
-      <button data-mood="1" class="mood-btn" type="button" aria-label="Awful">😣</button>
-      <button data-mood="2" class="mood-btn" type="button" aria-label="Low">🙁</button>
-      <button data-mood="3" class="mood-btn" type="button" aria-label="Okay">😐</button>
-      <button data-mood="4" class="mood-btn" type="button" aria-label="Good">🙂</button>
-      <button data-mood="5" class="mood-btn" type="button" aria-label="Great">😄</button>
-    </div>
-  </section>
-
-  <section class="card">
-    <div class="card-head"><h2>Injection sites</h2><span id="site-suggest-label" class="muted small"></span></div>
+  <section class="card" data-tab="insights">
+    <div class="card-head"><h2>Where you inject</h2><span id="site-suggest-label" class="muted small"></span></div>
     <div id="body-diagram-wrap" class="body-diagram-wrap"></div>
     <div id="site-legend" class="site-legend"></div>
   </section>
 
-  <section class="card">
-    <div class="card-head"><h2>Adherence</h2><span id="heatmap-summary" class="muted small"></span></div>
+  <section class="card" data-tab="insights">
+    <div class="card-head"><h2>Calendar</h2><span id="heatmap-summary" class="muted small"></span></div>
     <div id="heatmap-wrap" class="heatmap-wrap"></div>
     <div class="heatmap-legend">
       <span class="muted small">Less</span>
@@ -184,31 +154,76 @@
     </div>
   </section>
 
-  <section class="card">
-    <div class="card-head"><h2>Recent shots</h2><a href="#" id="view-all-history" class="link">View all</a></div>
-    <ul id="recent-shots" class="shot-list"></ul>
-    <p id="empty-shots" class="empty hidden">No shots logged yet.</p>
-  </section>
-
-  <section class="card">
-    <div class="card-head"><h2>Weight &amp; dose</h2><button id="add-weight-btn" class="btn-ghost">+ Add</button></div>
+  <section class="card" data-tab="insights">
+    <div class="card-head"><h2>Weight</h2><button id="add-weight-btn" class="btn-ghost">+ Add</button></div>
     <canvas id="weight-chart" height="160"></canvas>
     <p id="empty-weight" class="empty">
-      <span class="empty-illus">⚖</span><br>No weight entries yet.
+      <span class="empty-illus">⚖</span><br>No weight entries yet — tap <strong>+ Add</strong> to log your first one.
     </p>
     <div id="dose-timeline-wrap" class="dose-timeline-wrap"></div>
   </section>
 
-  <section class="card">
-    <div class="card-head"><h2>Side effects (last 30 days)</h2></div>
+  <section class="card" data-tab="insights">
+    <div class="card-head"><h2>How you've been feeling</h2><span class="muted small">Last 30 days</span></div>
     <div id="side-effects-summary" class="side-effects-summary"></div>
-    <p id="empty-side-effects" class="empty"><span class="empty-illus">✓</span><br>No side effects logged.</p>
+    <p id="empty-side-effects" class="empty"><span class="empty-illus">✓</span><br>No symptoms logged. Add them when you log a shot.</p>
   </section>
 
-  <section class="card">
-    <div class="card-head"><h2>Estimated medication level</h2></div>
+  <section class="card" data-tab="insights">
+    <div class="card-head"><h2>How much is in your system</h2></div>
     <canvas id="level-chart" height="140"></canvas>
-    <p class="muted small">Simple exponential decay model. Tirzepatide t½ ≈ 5 days. Educational only — not medical advice.</p>
+    <p class="muted small">Estimate based on the half-life setting (Tirzepatide ≈ 5 days). Helps you understand the cycle — not a clinical measurement.</p>
+  </section>
+
+  <section id="plateau-card" class="card hidden" data-tab="insights">
+    <div class="card-head"><h2>Hit a plateau?</h2></div>
+    <div id="plateau-body"></div>
+  </section>
+
+  <!-- MORE TAB (premium tracking) -->
+
+  <section id="supply-card" class="card" data-tab="more">
+    <div class="card-head">
+      <h2>Pens &amp; vials <span class="lock-pill" id="supply-lock">Premium</span></h2>
+      <button id="add-supply-btn" class="btn-ghost">+ Add</button>
+    </div>
+    <ul id="supply-list" class="supply-list"></ul>
+    <p id="supply-empty" class="empty"><span class="empty-illus">💊</span><br>Track your pens or vials so you know when they expire and how many doses you have left.</p>
+  </section>
+
+  <section id="measurements-card" class="card" data-tab="more">
+    <div class="card-head">
+      <h2>Measurements <span class="lock-pill" id="measurements-lock">Premium</span></h2>
+      <button id="add-measurement-btn" class="btn-ghost">+ Add</button>
+    </div>
+    <div id="measurement-summary" class="measurement-summary"></div>
+    <p id="measurements-empty" class="empty"><span class="empty-illus">📏</span><br>Waist, hips, and other measurements show progress that the scale doesn't.</p>
+  </section>
+
+  <section id="labs-card" class="card" data-tab="more">
+    <div class="card-head">
+      <h2>Lab numbers <span class="lock-pill" id="labs-lock">Premium</span></h2>
+      <button id="add-lab-btn" class="btn-ghost">+ Add</button>
+    </div>
+    <div id="lab-summary" class="lab-summary"></div>
+    <p id="labs-empty" class="empty"><span class="empty-illus">🧪</span><br>Track A1c, blood pressure, cholesterol, and more.</p>
+  </section>
+
+  <section id="cost-card" class="card" data-tab="more">
+    <div class="card-head"><h2>Spending <span class="lock-pill" id="cost-lock">Premium</span></h2></div>
+    <div id="cost-summary" class="cost-summary"></div>
+  </section>
+
+  <section class="card" data-tab="more">
+    <div class="card-head"><h2>Save a PDF for your doctor</h2></div>
+    <p class="muted small">Generate a 90-day summary you can print or share at your next appointment.</p>
+    <div class="btn-row"><button id="show-export-pdf-more" class="btn-primary" type="button">📄 Make PDF</button></div>
+  </section>
+
+  <section class="card" data-tab="more">
+    <div class="card-head"><h2>Share with your doctor</h2></div>
+    <p class="muted small">Generate a private link you can text or email. Expires in 24 hours. Read-only.</p>
+    <div class="btn-row"><button id="show-share-more" class="btn-primary" type="button">🔗 Make a share link</button></div>
   </section>
 </main>
 
@@ -545,7 +560,26 @@
   </form>
 </dialog>
 
+<nav id="bottom-nav" class="bottom-nav" role="tablist">
+  <button class="nav-btn active" data-nav-tab="home" type="button">
+    <svg viewBox="0 0 24 24" class="nav-icon" aria-hidden="true"><path d="M3 11l9-8 9 8v10a1 1 0 0 1-1 1h-5v-7h-6v7H4a1 1 0 0 1-1-1V11z"/></svg>
+    <span>Home</span>
+  </button>
+  <button class="nav-btn" data-nav-tab="insights" type="button">
+    <svg viewBox="0 0 24 24" class="nav-icon" aria-hidden="true"><path d="M4 19V5h2v14H4zm5 0v-9h2v9H9zm5 0v-6h2v6h-2zm5 0V8h2v11h-2z"/></svg>
+    <span>Insights</span>
+  </button>
+  <button class="nav-btn" data-nav-tab="more" type="button">
+    <svg viewBox="0 0 24 24" class="nav-icon" aria-hidden="true"><path d="M4 6h16v2H4V6zm0 5h16v2H4v-2zm0 5h16v2H4v-2z"/></svg>
+    <span>More</span>
+  </button>
+  <button class="nav-btn" data-nav-tab="settings" type="button">
+    <svg viewBox="0 0 24 24" class="nav-icon" aria-hidden="true"><path d="M19.4 13a7.5 7.5 0 0 0 0-2l2-1.6-2-3.4-2.4 1a7.5 7.5 0 0 0-1.7-1L15 3.5h-4l-.3 2.5a7.5 7.5 0 0 0-1.7 1l-2.4-1-2 3.4L6.6 11a7.5 7.5 0 0 0 0 2l-2 1.6 2 3.4 2.4-1a7.5 7.5 0 0 0 1.7 1l.3 2.5h4l.3-2.5a7.5 7.5 0 0 0 1.7-1l2.4 1 2-3.4-2-1.6zM12 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z"/></svg>
+    <span>Settings</span>
+  </button>
+</nav>
+
 <script src="lib/chart.min.js"></script>
-<script src="app.js?v=8"></script>
+<script src="app.js?v=9"></script>
 </body>
 </html>

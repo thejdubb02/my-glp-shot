@@ -4,20 +4,36 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#0f766e">
-<title>My GLP Shot — Privacy-first GLP-1 tracker</title>
-<meta name="description" content="Track your GLP-1 / Tirzepatide shots, weight, side effects, and more. Local-first, end-to-end encrypted, $19.99/yr — 60% less than Shotsy.">
+<title>My GLP Shot — Track your weight-loss shots, privately</title>
+<meta name="description" content="Track your weekly weight-loss shots, weight, side effects, and supply — on any device. Your data stays on your phone, not on our servers. $19.99/year — 60% less than Shotsy.">
 <link rel="icon" href="/app/icons/favicon.ico">
 <link rel="apple-touch-icon" href="/app/icons/apple-touch-icon.png">
-<link rel="stylesheet" href="/landing.css?v=1">
+<link rel="stylesheet" href="/landing.css?v=2">
+<script>
+(function(){
+  try {
+    var t = localStorage.getItem('mgs-theme');
+    if (t === 'dark' || t === 'light') document.documentElement.setAttribute('data-theme', t);
+  } catch(e){}
+})();
+</script>
 </head>
 <body>
 <script>
 (function(){
-  // Anyone who installed the previous PWA at the root path has a service worker
-  // scoped to "/". Send them to the new app domain so their data lives on.
+  // Old installs had a service worker scoped to "/" that served the app.
+  // Unregister it so the landing page can load cleanly going forward.
   try {
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations().then(function(regs){
+        regs.forEach(function(r){
+          if (r.scope === location.origin + '/') r.unregister();
+        });
+      }).catch(function(){});
+    }
+    // If the user is in an installed app, send them to the app path.
     if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone) {
-      location.replace('https://app.myglpshot.com/');
+      location.replace('/app/');
     }
   } catch(e){}
 })();
@@ -29,84 +45,87 @@
     <a href="#pricing">Pricing</a>
     <a href="/privacy.html">Privacy</a>
     <a href="https://app.myglpshot.com/" class="btn-cta-sm">Open app →</a>
+    <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle dark mode" title="Toggle dark mode">
+      <span class="moon">🌙</span><span class="sun">☀️</span>
+    </button>
   </nav>
 </header>
 
 <section class="hero">
   <div class="hero-inner">
-    <p class="eyebrow">Privacy-first GLP-1 / peptide tracker</p>
-    <h1>Track your shots without renting your health data.</h1>
-    <p class="lede">All your tracking — sites, doses, side effects, weight, labs, supply — in one beautiful PWA. End-to-end encrypted. Works on any device. <strong>$19.99/year</strong>, 60% less than Shotsy.</p>
+    <p class="eyebrow">For Tirzepatide, Semaglutide, and other weight-loss shots</p>
+    <h1>Track your shots without giving away your health data.</h1>
+    <p class="lede">Log every shot, your weight, side effects, and supply — on your phone, tablet, or computer. <strong>Your data stays on your devices.</strong> $19.99/year — 60% less than Shotsy.</p>
     <div class="hero-cta">
-      <a href="https://app.myglpshot.com/" class="btn-cta">Start free →</a>
+      <a href="https://app.myglpshot.com/" class="btn-cta">Try it free →</a>
       <a href="#pricing" class="btn-link">See pricing</a>
     </div>
-    <p class="hero-fineprint">14-day premium trial · No credit card required · Local-first, your data stays on your device</p>
+    <p class="hero-fineprint">14-day premium trial · No credit card · Works offline</p>
   </div>
 </section>
 
 <section id="features" class="features">
-  <h2>Everything Shotsy gives you, plus the things they don't</h2>
+  <h2>Everything Shotsy gives you, plus more</h2>
   <div class="feature-grid">
     <div class="feature">
       <div class="feature-icon">💉</div>
-      <h3>Smart shot logging</h3>
-      <p>Dose, time, site, notes. Site rotation suggestions. Body diagram with recency-coded sites.</p>
+      <h3>Easy shot logging</h3>
+      <p>Dose, time, where you injected, notes. We suggest where to rotate next so you don't keep using the same spot.</p>
     </div>
     <div class="feature">
       <div class="feature-icon">🧪</div>
-      <h3>Reconstitution calculator</h3>
-      <p>For compound peptide users — vial mg + bac water mL + desired dose → exact units to draw. <span class="pill">Free</span></p>
+      <h3>Mixing calculator</h3>
+      <p>If you reconstitute your own peptide: tells you exactly how many units to draw on your insulin syringe. <span class="pill">Free</span></p>
     </div>
     <div class="feature">
       <div class="feature-icon">📅</div>
-      <h3>Calendar adherence heatmap</h3>
-      <p>A year of dose history at a glance, color-coded by mg.</p>
+      <h3>A year of doses at a glance</h3>
+      <p>Calendar heatmap colored by dose. See your streak, spot gaps.</p>
     </div>
     <div class="feature">
       <div class="feature-icon">⚖️</div>
       <h3>Weight + dose timeline</h3>
-      <p>Weight trend overlaid with dose changes. Goal progress. Hero stats every time you open the app.</p>
+      <p>See your weight trend with dose changes overlaid. Goal progress front and center every time you open the app.</p>
     </div>
     <div class="feature">
       <div class="feature-icon">📊</div>
-      <h3>Estimated medication levels</h3>
-      <p>Exponential decay model with configurable half-life. <span class="pill free">Free here · paid in Shotsy</span></p>
+      <h3>How much is in your system</h3>
+      <p>Estimates how much medication is still active in your body, so you understand the cycle. <span class="pill free">Free here · paid in Shotsy</span></p>
     </div>
     <div class="feature">
       <div class="feature-icon">🔔</div>
       <h3>Reminders that actually work</h3>
-      <p>Push notifications + ICS calendar export. Lead time configurable from at-shot-time to 1 day out.</p>
+      <p>Push notifications and calendar reminders. Pick how far ahead — at shot time, an hour before, or a day out.</p>
     </div>
     <div class="feature premium">
       <div class="feature-icon">☁️</div>
-      <h3>Multi-device E2EE sync</h3>
-      <p>Phone + desktop + tablet, encrypted in your browser before upload. We literally cannot read your data. <span class="pill">Premium</span></p>
+      <h3>Sync across your devices</h3>
+      <p>Phone, laptop, tablet — same data everywhere. Encrypted on your device first, so we literally can't read it. <span class="pill">Premium</span></p>
     </div>
     <div class="feature premium">
       <div class="feature-icon">💊</div>
-      <h3>Supply &amp; expiration tracking</h3>
-      <p>Pen / vial inventory, "3 doses left" countdowns, 28-day open-shelf-life alerts. <span class="pill">Premium</span></p>
+      <h3>Pen &amp; vial tracking</h3>
+      <p>"3 doses left" countdowns, expiration warnings 7 days out, batch and lot numbers. <span class="pill">Premium</span></p>
     </div>
     <div class="feature premium">
       <div class="feature-icon">📄</div>
-      <h3>Doctor-ready PDF reports</h3>
-      <p>90-day summary with charts, dose timeline, side effects. Bring to your next appointment. <span class="pill">Premium</span></p>
+      <h3>PDF for your doctor</h3>
+      <p>90-day summary with charts, doses, and side effects. Print it or save to your phone for the appointment. <span class="pill">Premium</span></p>
     </div>
     <div class="feature premium">
       <div class="feature-icon">🔗</div>
-      <h3>Doctor share link</h3>
-      <p>24-hour read-only URL of your last 90 days. End-to-end encrypted; recipient gets the key. <span class="pill">Premium</span></p>
+      <h3>Share a link with your doctor</h3>
+      <p>One-tap private link, expires in 24 hours. They get a read-only view of your last 90 days. <span class="pill">Premium</span></p>
     </div>
     <div class="feature premium">
       <div class="feature-icon">📏</div>
-      <h3>Body measurements + labs</h3>
-      <p>Waist, hips, chest, A1c, fasting glucose, BP, lipids — track the full picture, not just weight. <span class="pill">Premium</span></p>
+      <h3>Measurements &amp; lab numbers</h3>
+      <p>Waist, hips, A1c, blood pressure, cholesterol. The scale isn't the whole story. <span class="pill">Premium</span></p>
     </div>
     <div class="feature premium">
       <div class="feature-icon">⚠️</div>
-      <h3>Plateau detection</h3>
-      <p>Stalled four weeks? We surface it with context — common at this dose, here's what to discuss with your doctor. <span class="pill">Premium</span></p>
+      <h3>Plateau alerts</h3>
+      <p>Stalled four weeks? We tell you, with context — what's normal at this dose and what to ask your doctor. <span class="pill">Premium</span></p>
     </div>
   </div>
 </section>
@@ -119,19 +138,19 @@
         <tr><th></th><th>My GLP Shot</th><th>Shotsy</th></tr>
       </thead>
       <tbody>
-        <tr><td>Annual price</td><td><strong>$19.99</strong></td><td>$49.99</td></tr>
-        <tr><td>Monthly price</td><td><strong>$1.99</strong></td><td>$9.99</td></tr>
-        <tr><td>Free trial</td><td>14 days premium</td><td>Free tier only</td></tr>
-        <tr><td>End-to-end encrypted</td><td>✅</td><td>❌</td></tr>
-        <tr><td>Web + mobile (PWA)</td><td>✅ Any device</td><td>❌ Phone only</td></tr>
-        <tr><td>Reconstitution calculator</td><td>✅ Free</td><td>❌</td></tr>
-        <tr><td>Estimated medication levels</td><td>✅ Free</td><td>💰 Premium</td></tr>
-        <tr><td>Pen/vial expiration alerts</td><td>✅</td><td>❌</td></tr>
+        <tr><td>Per year</td><td><strong>$19.99</strong></td><td>$49.99</td></tr>
+        <tr><td>Per month</td><td><strong>$1.99</strong></td><td>$9.99</td></tr>
+        <tr><td>Free trial</td><td>14 days of premium</td><td>Free tier only</td></tr>
+        <tr><td>Your data stays on your device</td><td>✅</td><td>❌</td></tr>
+        <tr><td>Works on phone, tablet, and computer</td><td>✅ Any device</td><td>❌ Phone only</td></tr>
+        <tr><td>Mixing calculator</td><td>✅ Free</td><td>❌</td></tr>
+        <tr><td>How much is in your system</td><td>✅ Free</td><td>💰 Premium</td></tr>
+        <tr><td>Pen / vial expiration alerts</td><td>✅</td><td>❌</td></tr>
         <tr><td>Supply tracking</td><td>✅ Premium</td><td>❌</td></tr>
         <tr><td>Doctor share link</td><td>✅ Premium</td><td>❌</td></tr>
         <tr><td>Lab tracking (A1c, BP, lipids)</td><td>✅ Premium</td><td>❌</td></tr>
-        <tr><td>Plateau detection</td><td>✅ Premium</td><td>❌</td></tr>
-        <tr><td>Open source</td><td>✅</td><td>❌</td></tr>
+        <tr><td>Plateau alerts</td><td>✅ Premium</td><td>❌</td></tr>
+        <tr><td>Open source code (anyone can audit)</td><td>✅</td><td>❌</td></tr>
       </tbody>
     </table>
   </div>
@@ -145,13 +164,13 @@
       <p class="price">$0<span>forever</span></p>
       <ul>
         <li>All shot tracking + body diagram</li>
-        <li>Calendar heatmap, weight, dose timeline</li>
-        <li>Estimated medication levels</li>
+        <li>Calendar, weight, dose timeline</li>
+        <li>How much is in your system</li>
         <li>Side effects, mood, streaks, achievements</li>
-        <li>Reconstitution calculator</li>
-        <li>Local notifications + ICS reminders</li>
-        <li>Single-device cloud backup</li>
-        <li>JSON / CSV import &amp; export</li>
+        <li>Mixing calculator</li>
+        <li>Reminders + calendar export</li>
+        <li>Single-device backup</li>
+        <li>Export your data anytime</li>
       </ul>
       <a href="https://app.myglpshot.com/" class="btn-cta">Get started →</a>
     </div>
@@ -162,29 +181,29 @@
       <p class="price-alt">or $1.99 / month · 14-day free trial</p>
       <ul>
         <li>Everything in Free</li>
-        <li>☁️ Multi-device end-to-end encrypted sync</li>
-        <li>💊 Supply &amp; pen tracking + expiration alerts</li>
-        <li>📏 Body measurements (waist, hips, etc.)</li>
-        <li>🔬 Lab tracking (A1c, BP, lipids)</li>
-        <li>📈 Advanced analytics &amp; insights</li>
-        <li>⚠️ Plateau detection</li>
-        <li>📄 PDF reports for your doctor</li>
+        <li>☁️ Sync across all your devices</li>
+        <li>💊 Pen &amp; vial tracking + expiration alerts</li>
+        <li>📏 Measurements (waist, hips, etc.)</li>
+        <li>🔬 Lab numbers (A1c, BP, lipids)</li>
+        <li>📈 Deeper insights</li>
+        <li>⚠️ Plateau alerts</li>
+        <li>📄 PDF for your doctor</li>
         <li>🔗 24-hour doctor share links</li>
-        <li>💰 Cost / spend tracker</li>
+        <li>💰 Spending tracker</li>
       </ul>
       <a href="https://app.myglpshot.com/" class="btn-cta">Start 14-day trial →</a>
     </div>
   </div>
-  <p class="pricing-fineprint">Cancel anytime. No 30% Apple/Google tax (we're a PWA), so we can charge less. Your data is yours; export anytime; deletion is instant and complete.</p>
+  <p class="pricing-fineprint">Cancel anytime. No 30% Apple/Google fee, so we can charge less. Your data is yours — export it anytime, delete it instantly.</p>
 </section>
 
 <section class="trust">
   <h2>Built privacy-first</h2>
   <div class="trust-grid">
-    <div><strong>End-to-end encrypted.</strong> All cryptography runs in your browser. The server stores opaque ciphertext we cannot decrypt — even under subpoena. Same model as Signal and Bitwarden.</div>
-    <div><strong>No accounts required to start.</strong> The app works fully offline, on your device, with zero signup. Sign up only if you want cloud sync or premium features.</div>
-    <div><strong>No analytics, no trackers, no ads.</strong> No third-party scripts. We don't sell, share, or analyze your health data. Read the <a href="/privacy.html">privacy policy</a>.</div>
-    <div><strong>Open source.</strong> The full app code is on <a href="https://github.com/thejdubb02/wsg-shotclock" target="_blank" rel="noopener">GitHub</a>. Audit the cryptography yourself.</div>
+    <div><strong>Your data stays on your device.</strong> Shots, weight, side effects — none of it leaves your phone unless you turn on sync. Even with sync, it's encrypted before it leaves your device, so we can't read it.</div>
+    <div><strong>No account needed to start.</strong> Just open it and start logging. Sign up only if you want sync or premium features.</div>
+    <div><strong>No tracking, no ads, no data sales.</strong> No third-party scripts. We don't analyze your health data — and we never will. <a href="/privacy.html">Read the privacy policy</a>.</div>
+    <div><strong>Open source.</strong> The full code is on <a href="https://github.com/thejdubb02/wsg-shotclock" target="_blank" rel="noopener">GitHub</a>. Your developer friend can audit it.</div>
   </div>
 </section>
 
@@ -192,7 +211,7 @@
   <div class="ftr-cols">
     <div>
       <strong>My GLP Shot</strong>
-      <p class="muted small">A privacy-first GLP-1 / peptide tracker.</p>
+      <p class="muted small">Track your weight-loss shots, privately.</p>
     </div>
     <div>
       <strong>App</strong>
@@ -212,5 +231,22 @@
   </div>
   <p class="ftr-bottom">© 2026 My GLP Shot. Not medical advice. Talk to your doctor.</p>
 </footer>
+
+<script>
+(function(){
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function(){
+    var cur = document.documentElement.getAttribute('data-theme');
+    var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    var next;
+    if (cur === 'dark') next = 'light';
+    else if (cur === 'light') next = 'dark';
+    else next = prefersDark ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    try { localStorage.setItem('mgs-theme', next); } catch(e){}
+  });
+})();
+</script>
 </body>
 </html>
