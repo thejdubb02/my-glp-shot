@@ -361,8 +361,8 @@ def _set_session_cookie(resp, token):
     )
 
 
-# ---------- E2EE sync (account-bound) ----------
-@app.route('/api/sync', methods=['GET'])
+# ---------- E2EE sync (account-bound, requires login) ----------
+@app.route('/api/me/sync', methods=['GET'])
 def sync_get():
     user = require_user()
     if not user:
@@ -373,7 +373,7 @@ def sync_get():
     return jsonify(exists=True, iv=row['iv'], ciphertext=row['ciphertext'], updatedAt=row['updated_at'])
 
 
-@app.route('/api/sync', methods=['PUT'])
+@app.route('/api/me/sync', methods=['PUT'])
 def sync_put():
     user = require_user()
     if not user:
@@ -396,7 +396,7 @@ def sync_put():
     return jsonify(updatedAt=now_ts())
 
 
-@app.route('/api/sync', methods=['DELETE'])
+@app.route('/api/me/sync', methods=['DELETE'])
 def sync_delete():
     user = require_user()
     if not user:
@@ -474,7 +474,8 @@ def share_list():
 
 
 # ---------- Legacy lookup_id sync (back-compat for jdubb-style accounts) ----------
-@app.route('/api/sync/legacy/<lookup_id>', methods=['GET'])
+# Path stays /api/sync/<lookup_id> so existing PWAs using `api/sync/<id>` keep working.
+@app.route('/api/sync/<lookup_id>', methods=['GET'])
 def legacy_get(lookup_id):
     if not LOOKUP_RE.match(lookup_id):
         return err('invalid_lookup_id', 'Bad lookup id.', 400)
@@ -486,7 +487,7 @@ def legacy_get(lookup_id):
     return jsonify(iv=row['iv'], ciphertext=row['ciphertext'], updated_at=row['updated_at'])
 
 
-@app.route('/api/sync/legacy/<lookup_id>', methods=['PUT'])
+@app.route('/api/sync/<lookup_id>', methods=['PUT'])
 def legacy_put(lookup_id):
     if not LOOKUP_RE.match(lookup_id):
         return err('invalid_lookup_id', 'Bad lookup id.', 400)
@@ -506,7 +507,16 @@ def legacy_put(lookup_id):
     return jsonify(updated_at=now_ts())
 
 
-@app.route('/api/sync/legacy/<lookup_id>/exists')
+@app.route('/api/sync/<lookup_id>', methods=['DELETE'])
+def legacy_delete(lookup_id):
+    if not LOOKUP_RE.match(lookup_id):
+        return err('invalid_lookup_id', 'Bad lookup id.', 400)
+    get_db().execute('DELETE FROM legacy_blobs WHERE lookup_id = ?', (lookup_id,))
+    get_db().commit()
+    return jsonify(deleted=True)
+
+
+@app.route('/api/sync/<lookup_id>/exists')
 def legacy_exists(lookup_id):
     if not LOOKUP_RE.match(lookup_id):
         return err('invalid_lookup_id', 'Bad lookup id.', 400)
