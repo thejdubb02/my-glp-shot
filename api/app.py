@@ -132,6 +132,28 @@ def err(code, message, status=400):
     return jsonify(error=code, message=message), status
 
 
+@app.before_request
+def _enforce_json_for_mutations():
+    """CSRF mitigation: state-changing endpoints must use application/json.
+    Cross-origin form posts can't send that without a preflight (which our CORS rejects),
+    so this structurally blocks CSRF without a token. Stripe webhook is exempt
+    (it sends application/json anyway, but its signature is HMAC-verified).
+    """
+    if request.method not in ('POST', 'PUT', 'DELETE', 'PATCH'):
+        return None
+    p = request.path or ''
+    # Stripe webhook signs its body; no need to gate on content-type.
+    if p == '/api/stripe/webhook':
+        return None
+    ct = (request.headers.get('Content-Type') or '').split(';', 1)[0].strip().lower()
+    # Allow methods with no body to skip the check.
+    if request.content_length in (None, 0) and ct == '':
+        return None
+    if ct != 'application/json':
+        return err('content_type', 'application/json required.', 415)
+    return None
+
+
 def normalize_email(email):
     return (email or '').strip().lower()
 

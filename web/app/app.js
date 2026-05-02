@@ -5,7 +5,7 @@
 
 const DB_NAME = 'shotclock';
 const DB_VERSION = 2;
-const APP_VERSION = '0.15.0';
+const APP_VERSION = '0.16.0';
 const STORES = { shots: 'shots', weights: 'weights', settings: 'settings', moods: 'moods' };
 const SETTINGS_KEY = 'app';
 const DEFAULT_SETTINGS = {
@@ -153,7 +153,15 @@ function showView(name) {
   window.scrollTo(0, 0);
 }
 
+// Direct-manipulation tab filter. Hide/show sections by data-tab attr without
+// relying on CSS class specificity (which has bitten us across SW cache + theme combos).
 function setHomeTab(tab) {
+  const home = document.getElementById('view-home');
+  if (home) {
+    home.querySelectorAll('[data-tab]').forEach(el => {
+      el.style.display = (el.getAttribute('data-tab') === tab) ? '' : 'none';
+    });
+  }
   document.body.classList.remove('tab-home', 'tab-insights', 'tab-more');
   document.body.classList.add('tab-' + tab);
   const nav = document.getElementById('bottom-nav');
@@ -162,6 +170,7 @@ function setHomeTab(tab) {
       b.classList.toggle('active', b.getAttribute('data-nav-tab') === tab);
     });
   }
+  window.scrollTo(0, 0);
 }
 
 // ---------- Data getters ----------
@@ -463,6 +472,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   setupInstallBanner();
   registerSW();
+  checkForStaleBundle();
   await ensurePersisted();
   updateBackupLabel();
   maybeScheduleNotification();
@@ -1289,6 +1299,39 @@ async function ensurePersisted() {
   if (navigator.storage && navigator.storage.persist) {
     try { await navigator.storage.persist(); } catch (e) {}
   }
+}
+
+async function checkForStaleBundle() {
+  // Fetch the live HTML (no-store), parse the app.js?v=N param, compare to ours.
+  // If the server is serving a newer ?v= than we shipped with, the loaded JS is stale -> nuke and reload.
+  try {
+    const r = await fetch('/index.html', { cache: 'no-store' });
+    if (!r.ok) return;
+    const html = await r.text();
+    const m = html.match(/app\.js\?v=(\d+)/);
+    if (!m) return;
+    const liveV = parseInt(m[1], 10);
+    const myMatch = (document.currentScript && document.currentScript.src || '').match(/app\.js\?v=(\d+)/);
+    const myV = myMatch ? parseInt(myMatch[1], 10) : null;
+    // Fallback: scrape the actual <script> tag we came from.
+    const tagSrc = (document.querySelector('script[src*="app.js"]') || {}).src || '';
+    const tagMatch = tagSrc.match(/app\.js\?v=(\d+)/);
+    const effective = myV != null ? myV : (tagMatch ? parseInt(tagMatch[1], 10) : null);
+    if (effective != null && liveV > effective) {
+      console.log(`[mgs] stale bundle (v${effective} -> v${liveV}); force-refresh`);
+      try {
+        if ('caches' in window) {
+          const keys = await caches.keys();
+          await Promise.all(keys.map(k => caches.delete(k)));
+        }
+        if ('serviceWorker' in navigator) {
+          const regs = await navigator.serviceWorker.getRegistrations();
+          await Promise.all(regs.map(r => r.unregister()));
+        }
+      } catch (_) {}
+      window.location.reload();
+    }
+  } catch (_) {}
 }
 
 function registerSW() {

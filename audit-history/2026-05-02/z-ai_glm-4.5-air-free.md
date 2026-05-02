@@ -1,0 +1,23 @@
+- [CRITICAL] api/app.py:signup — authToken sent in plaintext over network, allowing derivation of encryptionKey if email is known. Fix: Use session tokens instead of authToken for authentication; derive encryptionKey client-side only.
+- [CRITICAL] api/app.py:login — authToken sent in plaintext over network, same issue as signup. Fix: Use session tokens instead of authToken for authentication.
+- [CRITICAL] web/app/app.js:deriveAccountCreds — encryptionKey stored in localStorage, accessible via XSS. Fix: Remove encryptionKey from localStorage; require password re-entry for decryption.
+- [HIGH] api/app.py:reset_password — Sessions not invalidated after password reset. Fix: Delete all user sessions in reset_password after updating password.
+- [HIGH] api/app.py:stripe_webhook — Race condition in subscription state updates during webhook processing. Fix: Use database transactions with row locking or sequential event processing.
+- [HIGH] web/app/app.js:accountSyncPush — encryptionKey used from localStorage without validation. Fix: Check for encryptionKey presence and prompt for password if missing.
+- [HIGH] web/app/app.js:syncPushNow — syncCreds stored in localStorage, accessible via XSS. Fix: Remove syncCreds from localStorage; require re-entry for sync.
+- [MEDIUM] web/app/sw.js — Cache version hardcoded, risking update failures. Fix: Use build-time version variable for cache name.
+- [MEDIUM] web/app/app.js:attemptUnlockFromStored — syncCreds stored in plaintext in localStorage. Fix: Remove syncCreds persistence; require re-entry.
+- [MEDIUM] web/app/index.html — No CSP header defined, risking XSS. Fix: Add strict CSP header to disallow inline scripts/styles.
+- [MEDIUM] api/app.py:legacy_get — No rate limiting on lookup_id endpoints, enabling brute-force. Fix: Implement rate limiting on legacy sync endpoints.
+- [LOW] api/app.py:health — No input validation on /api/health. Fix: Add basic request validation.
+- [LOW] web/app/app.js:buildPayload — Settings included in sync payload without sanitization. Fix: Exclude sensitive settings (e.g., sync keys) from payload.
+- [LOW] api/app.py:signup — No email confirmation after signup. Fix: Add email verification flow.
+- [LOW] web/app/app.js:renderShots — No sanitization of shot notes before display. Fix: Escape HTML in user-generated content.
+- [LOW] api/app.py:share_fetch — No rate limiting on share link access. Fix: Implement rate limiting on share endpoint.
+- [LOW] web/app/app.js:exportData — No sanitization of export filename. Fix: Sanitize filenames and use fixed naming pattern.
+- [LOW] api/app.py:signup — authToken length validation only checks min/max, not entropy. Fix: Add entropy check for derived tokens.
+- [LOW] web/app/app.js:setupReconCalc — No validation on reconstitution inputs. Fix: Add bounds checking and sanitization for numeric inputs.
+- [LOW] api/app.py:sync_put — No size limit on sync blob beyond MAX_BLOB_BYTES. Fix: Add stricter size validation and reject oversized payloads.
+- [LOW] web/app/app.js:syncPushNow — No timeout on sync requests. Fix: Add timeout and retry logic for sync operations.
+- [LOW] api/app.py:stripe_webhook — No validation of event metadata structure. Fix: Add schema validation for event data before processing.
+- [LOW] web/app/app.js:renderMood — No sanitization of mood labels. Fix: Escape user-generated mood labels before display.
