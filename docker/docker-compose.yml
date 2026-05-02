@@ -1,0 +1,41 @@
+services:
+  api:
+    build:
+      context: ../api
+      dockerfile: Dockerfile
+    container_name: my-glp-shot-api
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5012:8080"
+    volumes:
+      - mgs-data:/data
+    environment:
+      - MGS_DB=/data/api.db
+      - APP_BASE_URL=https://myglpshot.com
+      - MAIL_FROM=My GLP Shot <hello@myglpshot.com>
+      # Mount via .env or set explicitly:
+      # - RESEND_API_KEY=${RESEND_API_KEY}
+    env_file:
+      - ./api.env
+    networks:
+      - mgs-net
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/api/health').read()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+networks:
+  mgs-net:
+    driver: bridge
+
+volumes:
+  mgs-data:
+    driver: local
