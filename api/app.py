@@ -549,7 +549,7 @@ def _ensure_customer(user):
         return user['stripe_customer_id']
     cust = stripe.Customer.create(
         email=user['email'],
-        metadata={'user_id': str(user['id'])},
+        metadata={'user_id': str(user['id']), 'app': 'myglpshot'},
     )
     get_db().execute(
         'UPDATE users SET stripe_customer_id = ? WHERE id = ?',
@@ -591,9 +591,9 @@ def billing_checkout():
             allow_promotion_codes=True,
             subscription_data={
                 'trial_period_days': TRIAL_DAYS,
-                'metadata': {'user_id': str(user['id'])},
+                'metadata': {'user_id': str(user['id']), 'app': 'myglpshot'},
             },
-            metadata={'user_id': str(user['id'])},
+            metadata={'user_id': str(user['id']), 'app': 'myglpshot'},
             success_url=f'{app_base}/?billing=success&session_id={{CHECKOUT_SESSION_ID}}',
             cancel_url=f'{app_base}/?billing=canceled',
         )
