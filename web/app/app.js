@@ -5,7 +5,7 @@
 
 const DB_NAME = 'shotclock';
 const DB_VERSION = 2;
-const APP_VERSION = '0.16.0';
+const APP_VERSION = '0.17.0';
 const STORES = { shots: 'shots', weights: 'weights', settings: 'settings', moods: 'moods' };
 const SETTINGS_KEY = 'app';
 const DEFAULT_SETTINGS = {
@@ -311,29 +311,68 @@ async function openShotDialog(shot) {
   $('#shot-dialog').showModal();
 }
 
-document.addEventListener('DOMContentLoaded', async () => {
-  await loadSettings();
-  applySettingsToInputs();
-  await renderShots();
-  await renderWeights();
-  setInterval(async () => renderCountdown(await getShotsSorted()), 60000);
-
-  $('#log-shot-btn').addEventListener('click', () => openShotDialog());
-  $('#view-all-history').addEventListener('click', (e) => { e.preventDefault(); showView('history'); });
-  $$('[data-back]').forEach(b => b.addEventListener('click', () => { showView('home'); setHomeTab('home'); }));
-
+// Critical UI listeners that must be attached even if IndexedDB / settings / SW init fail or hang.
+// Wire these synchronously at script load time so bottom-nav and modal closes always work.
+function wireCriticalUI() {
   // Bottom nav
-  $$('#bottom-nav .nav-btn').forEach(btn => btn.addEventListener('click', () => {
-    const tab = btn.getAttribute('data-nav-tab');
-    if (tab === 'settings') {
-      showView('settings');
-      $$('#bottom-nav .nav-btn').forEach(b => b.classList.toggle('active', b === btn));
-    } else {
-      showView('home');
-      setHomeTab(tab);
-    }
-  }));
+  document.querySelectorAll('#bottom-nav .nav-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const tab = btn.getAttribute('data-nav-tab');
+      if (tab === 'settings') {
+        showView('settings');
+        document.querySelectorAll('#bottom-nav .nav-btn').forEach(b => b.classList.toggle('active', b === btn));
+      } else {
+        showView('home');
+        setHomeTab(tab);
+      }
+    });
+  });
   setHomeTab('home');
+  // Back buttons in sub-views
+  document.querySelectorAll('[data-back]').forEach(b => {
+    b.addEventListener('click', () => { showView('home'); setHomeTab('home'); });
+  });
+  // Manual install-prompt trigger from Settings — wire synchronously so it works
+  // even if setupInstallBanner hasn't run yet.
+  const showInstall = document.getElementById('show-install-prompt');
+  if (showInstall) {
+    showInstall.addEventListener('click', () => {
+      if (typeof isStandalone === 'function' && isStandalone()) {
+        alert('Already installed! 🎉');
+        return;
+      }
+      if (typeof showInstallDialog === 'function') showInstallDialog();
+    });
+  }
+  const dismissInstall = document.getElementById('install-dismiss');
+  if (dismissInstall) {
+    dismissInstall.addEventListener('click', () => {
+      try { localStorage.setItem('installDismissedAt', String(Date.now())); } catch (_) {}
+      const d = document.getElementById('install-dialog');
+      if (d && d.open) d.close();
+    });
+  }
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', wireCriticalUI, { once: true });
+} else {
+  wireCriticalUI();
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+  // Surround everything async in try/catch so a single failure doesn't kill all later listener bindings.
+  try { await loadSettings(); } catch (e) { console.error('loadSettings failed:', e); }
+  try { applySettingsToInputs(); } catch (e) { console.error(e); }
+  try { await renderShots(); } catch (e) { console.error(e); }
+  try { await renderWeights(); } catch (e) { console.error(e); }
+  try { setInterval(async () => renderCountdown(await getShotsSorted()), 60000); } catch (e) {}
+
+  // (Listeners that don't depend on IDB/data — attach defensively.)
+  const logBtn = $('#log-shot-btn');
+  if (logBtn) logBtn.addEventListener('click', () => openShotDialog());
+  const viewAll = $('#view-all-history');
+  if (viewAll) viewAll.addEventListener('click', (e) => { e.preventDefault(); showView('history'); });
 
   $('#shot-cancel').addEventListener('click', () => $('#shot-dialog').close());
   $('#shot-form').addEventListener('submit', async (e) => {
@@ -1014,18 +1053,24 @@ function setupInstallBanner() {
     showInstallDialog();
   });
 
-  // Auto-show once: after user is signed in and has logged at least one shot or 30 seconds in.
-  // Skip if: standalone, dismissed within last 7 days, or auth gate is active.
-  const dismissedAt = parseInt(localStorage.getItem('installDismissedAt') || '0', 10);
-  const dismissedRecently = dismissedAt && (Date.now() - dismissedAt) < 7 * 86400 * 1000;
-  if (!isStandalone() && !dismissedRecently && !document.body.classList.contains('auth-active')) {
+}
+
+// Auto-show install dialog once per 7 days, after sign-in. Called from onAccountChanged.
+function maybeAutoShowInstall() {
+  try {
+    if (isStandalone()) return;
+    if (document.body.classList.contains('auth-active')) return;
+    const dismissedAt = parseInt(localStorage.getItem('installDismissedAt') || '0', 10);
+    if (dismissedAt && (Date.now() - dismissedAt) < 7 * 86400 * 1000) return;
+    const dlg = document.getElementById('install-dialog');
+    if (!dlg || dlg.open) return;
     setTimeout(() => {
       if (isStandalone()) return;
       if (document.body.classList.contains('auth-active')) return;
-      if (document.querySelector('#install-dialog').open) return;
+      if (dlg.open) return;
       showInstallDialog();
-    }, 8000);
-  }
+    }, 5000);
+  } catch (_) {}
 }
 
 async function markSyncDirty() {
@@ -2054,6 +2099,7 @@ async function onAccountChanged() {
       $('#view-auth').classList.remove('active');
       $('#view-home').classList.add('active');
     }
+    if (typeof maybeAutoShowInstall === 'function') maybeAutoShowInstall();
   }
   if (u) {
     banner.classList.add('hidden');
