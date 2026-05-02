@@ -17,7 +17,7 @@
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="icon" type="image/png" sizes="512x512" href="icons/icon-512.png">
 <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png">
-<link rel="stylesheet" href="styles.css?v=21">
+<link rel="stylesheet" href="styles.css?v=22">
 <script>
 (function(){
   // Apply saved theme synchronously to avoid flash. Settings live in IndexedDB; theme also mirrored to localStorage for fast read.
@@ -373,9 +373,9 @@
     <p class="muted small">Best results: install My GLP Shot to your home screen first. On Android Chrome, scheduled reminders fire even when the app is closed. On iOS 16.4+, install to Home Screen and enable notifications when prompted.</p>
   </section>
 
-  <section class="card">
-    <h2>Cloud Sync</h2>
-    <p class="muted small">Optional. End-to-end encrypted on this device before upload. Even we cannot read your data.</p>
+  <section class="card" id="legacy-cloud-sync-card">
+    <h2>Cloud Sync (Legacy)</h2>
+    <p class="muted small">Optional. End-to-end encrypted on this device before upload. Even we cannot read your data. If you have an account, your data syncs automatically — this section is hidden.</p>
 
     <div id="sync-disabled-view">
       <p class="muted small">Sync is off. Set up an account to back up and restore on another device.</p>
@@ -687,6 +687,6 @@
 </nav>
 
 <script src="lib/chart.min.js"></script>
-<script src="app.js?v=21"></script>
+<script src="app.js?v=22"></script>
 </body>
 </html>

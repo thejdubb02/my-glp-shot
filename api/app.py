@@ -832,8 +832,8 @@ def import_parse():
     text = (data.get('text') or '')
     if not text or len(text) < 10:
         return err('empty', 'No text to parse.', 400)
-    if len(text) > 200_000:
-        return err('too_large', 'Text exceeds 200 KB. Trim and retry.', 413)
+    if len(text) > 1_500_000:
+        return err('too_large', 'Text exceeds 1.5 MB. Trim and retry.', 413)
 
     import requests as _r
     body = {

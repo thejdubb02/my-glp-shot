@@ -5,7 +5,7 @@
 
 const DB_NAME = 'shotclock';
 const DB_VERSION = 2;
-const APP_VERSION = '0.21.0';
+const APP_VERSION = '0.22.0';
 const STORES = { shots: 'shots', weights: 'weights', settings: 'settings', moods: 'moods' };
 const SETTINGS_KEY = 'app';
 const DEFAULT_SETTINGS = {
@@ -813,8 +813,8 @@ async function smartImport(e) {
   const btn = $('#smart-import-btn');
   const orig = btn.textContent;
   try {
-    if (file.size > 200 * 1024) {
-      throw new Error('File is over 200 KB. Trim it down or split into chunks.');
+    if (file.size > 1500 * 1024) {
+      throw new Error('File is over 1.5 MB. Trim it down or split into chunks.');
     }
     const text = await file.text();
     if (!account.user) {
@@ -2309,10 +2309,14 @@ async function onAccountChanged() {
     }
     $('#upgrade-cta').classList.toggle('hidden', isPremium());
     $('#manage-billing-cta').classList.toggle('hidden', !u.hasStripeCustomer);
+    const legacySync = $('#legacy-cloud-sync-card');
+    if (legacySync) legacySync.classList.add('hidden');
   } else {
     $('#account-signed-out').classList.remove('hidden');
     $('#account-signed-in').classList.add('hidden');
     pill.classList.add('hidden');
+    const legacySync = $('#legacy-cloud-sync-card');
+    if (legacySync) legacySync.classList.remove('hidden');
     if (localStorage.getItem('acct.banner.dismissed') !== '1') {
       banner.classList.remove('hidden');
     }
