@@ -5,7 +5,7 @@
 
 const DB_NAME = 'shotclock';
 const DB_VERSION = 2;
-const APP_VERSION = '0.20.0';
+const APP_VERSION = '0.21.0';
 const STORES = { shots: 'shots', weights: 'weights', settings: 'settings', moods: 'moods' };
 const SETTINGS_KEY = 'app';
 const DEFAULT_SETTINGS = {
@@ -376,8 +376,14 @@ function wireCriticalUI() {
     });
   }
 
-  // Auth gate — Create account / Sign in toggle + form submit. CRITICAL: must
-  // wire synchronously so a hung IDB / settings load can't kill the gate.
+  // Auth gate — show by default. tryRestoreAccount can hide it if a session restores.
+  // Doing this synchronously in wireCriticalUI guarantees the user always sees the
+  // sign-in form even if every other init step fails.
+  document.body.classList.add('auth-active');
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  const authViewEl = document.getElementById('view-auth');
+  if (authViewEl) authViewEl.classList.add('active');
+
   document.querySelectorAll('#view-auth .auth-toggle-btn').forEach(btn => {
     btn.addEventListener('click', () => setAuthMode(btn.getAttribute('data-auth-mode')));
   });
@@ -406,26 +412,45 @@ function wireCriticalUI() {
     }
     if (submit) submit.disabled = true;
     const original = submit ? submit.textContent : '';
-    if (submit) submit.textContent = _authMode === 'signup' ? 'Creating account…' : 'Signing in…';
+    if (submit) submit.textContent = _authMode === 'signup' ? 'Working…' : 'Signing in…';
     try {
-      if (typeof accountSignup !== 'function' || typeof accountLogin !== 'function') {
-        throw new Error('App still loading — wait a moment and try again.');
+      // Self-contained: derive auth token + AES key inline so we don't depend on accountSignup/Login being in scope.
+      const cleanEmail = email.trim().toLowerCase();
+      const enc = new TextEncoder();
+      const saltBuf = await crypto.subtle.digest('SHA-256', enc.encode('myglpshot-v1:' + cleanEmail));
+      const baseKey = await crypto.subtle.importKey('raw', enc.encode(pw), 'PBKDF2', false, ['deriveBits']);
+      const bits = await crypto.subtle.deriveBits(
+        { name: 'PBKDF2', salt: saltBuf, iterations: 600000, hash: 'SHA-256' },
+        baseKey, 512
+      );
+      const buf = new Uint8Array(bits);
+      const aesKey = await crypto.subtle.importKey('raw', buf.slice(0, 32), 'AES-GCM', true, ['encrypt', 'decrypt']);
+      const authToken = Array.from(buf.slice(32, 64)).map(b => b.toString(16).padStart(2, '0')).join('');
+      const path = _authMode === 'signup' ? '/api/signup' : '/api/login';
+      const r = await fetch(path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: cleanEmail, authToken }),
+        credentials: 'include',
+      });
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        throw new Error(j.message || `${_authMode === 'signup' ? 'Signup' : 'Login'} failed (${r.status}).`);
       }
-      if (_authMode === 'signup') await accountSignup(email.trim(), pw);
-      else await accountLogin(email.trim(), pw);
-      await onAccountChanged();
-      if (_authMode === 'login') {
-        try { await accountSyncPull(); } catch (_) {}
-      } else {
-        try { await accountSyncPush(); } catch (_) {}
-      }
-      try { await renderShots(); } catch (_) {}
-      try { await renderWeights(); } catch (_) {}
-      setHomeTab('home');
+      const j = await r.json();
+      // Persist session token + AES key (NOT password).
+      try {
+        localStorage.setItem('mgs_session_token', j.token);
+        const raw = await crypto.subtle.exportKey('raw', aesKey);
+        const b64 = btoa(String.fromCharCode(...new Uint8Array(raw)));
+        localStorage.setItem('account.cred', JSON.stringify({ email: cleanEmail, k: b64, v: 2 }));
+      } catch (_) {}
+      // Reload to fully bootstrap the signed-in state. This is the simplest, most reliable
+      // way to pick up the new session everywhere without juggling state.
+      window.location.reload();
     } catch (ex) {
       if (errEl) errEl.textContent = (ex && ex.message) || 'Something went wrong.';
       console.error('[mgs] auth submit failed:', ex);
-    } finally {
       if (submit) {
         submit.disabled = false;
         submit.textContent = original || (_authMode === 'signup' ? 'Create account & start free trial' : 'Sign in');
@@ -442,7 +467,7 @@ function wireCriticalUI() {
   }
   const authSubmitBtn = document.getElementById('auth-submit');
   if (authSubmitBtn) {
-    // Belt-and-suspenders: also bind click directly so iOS Safari quirks can't drop the submit.
+    // Belt-and-suspenders: also bind click directly (some iOS Safari builds drop submit events).
     authSubmitBtn.addEventListener('click', (e) => {
       e.preventDefault();
       handleAuthSubmit();
@@ -454,6 +479,23 @@ if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', wireCriticalUI, { once: true });
 } else {
   wireCriticalUI();
+}
+
+// Kick off session restore as early as possible (independent of the heavy DOMContentLoaded
+// init pipeline) so a user with an existing cookie sees the home view in <1s.
+function bootstrapSession() {
+  if (typeof tryRestoreAccount !== 'function') {
+    setTimeout(bootstrapSession, 50);
+    return;
+  }
+  tryRestoreAccount()
+    .then(() => onAccountChanged())
+    .catch((e) => { console.error('[mgs] session restore failed:', e); onAccountChanged(); });
+}
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', bootstrapSession, { once: true });
+} else {
+  bootstrapSession();
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -652,8 +694,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupLabUI();
   setupShareUI();
 
-  // Account restore on launch
-  tryRestoreAccount().then(() => onAccountChanged()).catch(() => onAccountChanged());
+  // (Session restore now happens via bootstrapSession() at script load — independent of this pipeline.)
 
   // Refresh premium-gated cards' rendering
   await renderSupplies(await getShotsSorted());
@@ -2007,6 +2048,11 @@ async function deriveAccountCreds(email, password) {
 
 async function accountFetch(path, opts = {}) {
   opts.headers = Object.assign({ 'Content-Type': 'application/json', 'Accept': 'application/json' }, opts.headers || {});
+  // Send Bearer token from localStorage as a fallback for PWAs / environments where cookies are flaky.
+  try {
+    const tok = localStorage.getItem('mgs_session_token');
+    if (tok && !opts.headers.Authorization) opts.headers.Authorization = 'Bearer ' + tok;
+  } catch (_) {}
   opts.credentials = 'same-origin';
   return fetch(`${ACCOUNT_API}/${path}`, opts);
 }
@@ -2021,6 +2067,7 @@ async function accountSignup(email, password) {
   const j = await r.json();
   account = { user: j.user, encryptionKey: creds.aesKey };
   rememberSignedIn(creds.email, creds.aesKey);
+  if (j.token) try { localStorage.setItem('mgs_session_token', j.token); } catch (_) {}
   return j.user;
 }
 
@@ -2034,12 +2081,14 @@ async function accountLogin(email, password) {
   const j = await r.json();
   account = { user: j.user, encryptionKey: creds.aesKey };
   rememberSignedIn(creds.email, creds.aesKey);
+  if (j.token) try { localStorage.setItem('mgs_session_token', j.token); } catch (_) {}
   return j.user;
 }
 
 async function accountLogout(forgetDevice) {
   try { await accountFetch('logout', { method: 'POST' }); } catch (e) {}
   account = { user: null, encryptionKey: null };
+  try { localStorage.removeItem('mgs_session_token'); } catch (_) {}
   if (forgetDevice) clearRememberedSignIn();
 }
 
