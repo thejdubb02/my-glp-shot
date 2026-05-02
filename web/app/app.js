@@ -4,10 +4,10 @@
 'use strict';
 
 const DB_NAME = 'shotclock';
-// v3 bump: 'supplies' store is added in onupgradeneeded instead of being created lazily by ensureStore().
-// Lazy creation drifted IDB to v3 on premium devices while DB_VERSION stayed at 2, causing VersionError on every later open.
-const DB_VERSION = 3;
-const APP_VERSION = '0.26.0';
+// v4 bump: 'measurements' and 'labs' stores added to onupgradeneeded (previously created lazily by ensureStore — caused VersionError when re-opened at lower version).
+// Same root cause as the v3 supplies bump.
+const DB_VERSION = 4;
+const APP_VERSION = '0.28.0';
 
 // Umami event tracker. Aggregates only — no PII (no email, no IDs). Safe to call before umami loads.
 function track(event, props) {
@@ -62,8 +62,8 @@ const SITE_POSITIONS = {
   'Upper arm — Right': { x: 140, y: 90,  short: 'R Arm' },
   'Abdomen — Left':    { x: 84,  y: 145, short: 'L Abd' },
   'Abdomen — Right':   { x: 116, y: 145, short: 'R Abd' },
-  'Thigh — Left':      { x: 84,  y: 220, short: 'L Thigh' },
-  'Thigh — Right':     { x: 116, y: 220, short: 'R Thigh' },
+  'Thigh — Left':      { x: 70,  y: 220, short: 'L Thigh' },
+  'Thigh — Right':     { x: 130, y: 220, short: 'R Thigh' },
 };
 
 const ACHIEVEMENTS = [
@@ -106,6 +106,12 @@ function openDB() {
       }
       if (!db.objectStoreNames.contains(STORES.supplies)) {
         db.createObjectStore(STORES.supplies, { keyPath: 'id', autoIncrement: true });
+      }
+      if (!db.objectStoreNames.contains('measurements')) {
+        db.createObjectStore('measurements', { keyPath: 'id', autoIncrement: true });
+      }
+      if (!db.objectStoreNames.contains('labs')) {
+        db.createObjectStore('labs', { keyPath: 'id', autoIncrement: true });
       }
     };
     req.onsuccess = () => resolve(req.result);
