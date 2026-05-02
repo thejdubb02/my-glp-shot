@@ -5,6 +5,7 @@
 
 const DB_NAME = 'shotclock';
 const DB_VERSION = 2;
+const APP_VERSION = '0.14.0';
 const STORES = { shots: 'shots', weights: 'weights', settings: 'settings', moods: 'moods' };
 const SETTINGS_KEY = 'app';
 const DEFAULT_SETTINGS = {
@@ -429,6 +430,22 @@ document.addEventListener('DOMContentLoaded', async () => {
   $('#import-btn').addEventListener('click', () => $('#import-file').click());
   $('#import-file').addEventListener('change', importData);
   $('#wipe-btn').addEventListener('click', wipeAll);
+  // Surface app version (and SW cache name) in Settings + footer.
+  (async function showVersion() {
+    let swInfo = '';
+    try {
+      if ('caches' in window) {
+        const keys = await caches.keys();
+        const mglp = keys.find(k => k.startsWith('mglp-'));
+        if (mglp) swInfo = ' · sw ' + mglp;
+      }
+    } catch (_) {}
+    const line = $('#app-version-line');
+    if (line) line.textContent = `App v${APP_VERSION}${swInfo}`;
+    const foot = $('#app-version-footer');
+    if (foot) foot.textContent = `v${APP_VERSION}`;
+  })();
+
   $('#force-update-btn').addEventListener('click', async () => {
     try {
       if ('caches' in window) {
@@ -910,42 +927,95 @@ async function sendTestNotification() {
   new Notification(title, { body, icon: 'icons/icon-192.png' });
 }
 
-// ---------- PWA install banner ----------
-let deferredPrompt = null;
+// ---------- Install prompt (iOS + Android + Desktop) ----------
+let deferredInstallPrompt = null;
+
+function detectPlatform() {
+  const ua = navigator.userAgent;
+  const isIOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const isSafari = isIOS && /Safari/.test(ua) && !/CriOS|FxiOS|EdgiOS/.test(ua);
+  const isAndroid = /Android/.test(ua);
+  const isMobile = isIOS || isAndroid;
+  return { isIOS, isSafari, isAndroid, isMobile };
+}
+
+function isStandalone() {
+  return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+}
+
+function showInstallDialog() {
+  const dlg = $('#install-dialog');
+  if (!dlg) return;
+  $('#install-ios').classList.add('hidden');
+  $('#install-ios-other').classList.add('hidden');
+  $('#install-android').classList.add('hidden');
+  $('#install-desktop').classList.add('hidden');
+  const p = detectPlatform();
+  if (p.isIOS && p.isSafari) $('#install-ios').classList.remove('hidden');
+  else if (p.isIOS && !p.isSafari) $('#install-ios-other').classList.remove('hidden');
+  else if (p.isAndroid) $('#install-android').classList.remove('hidden');
+  else $('#install-desktop').classList.remove('hidden');
+  dlg.showModal();
+}
+
 function setupInstallBanner() {
-  const banner = $('#install-banner');
-  const btn = $('#install-btn');
-  const dismiss = $('#install-dismiss');
-  const text = $('#install-text');
-  const standalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
-  if (standalone) return;
-  if (localStorage.getItem('installDismissed') === '1') return;
-
-  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-
+  // Capture Android/Chrome/Edge install event whenever it fires.
   window.addEventListener('beforeinstallprompt', (e) => {
     e.preventDefault();
-    deferredPrompt = e;
-    banner.classList.remove('hidden');
+    deferredInstallPrompt = e;
+  });
+  window.addEventListener('appinstalled', () => {
+    deferredInstallPrompt = null;
+    localStorage.setItem('installDismissed', '1');
+    const dlg = $('#install-dialog');
+    if (dlg && dlg.open) dlg.close();
+    const card = $('#install-card');
+    if (card) card.classList.add('hidden');
   });
 
-  if (isIOS) {
-    text.textContent = 'Tap the Share button in Safari, then "Add to Home Screen" to install.';
-    btn.classList.add('hidden');
-    banner.classList.remove('hidden');
+  // Hide the Settings install card if already installed.
+  if (isStandalone()) {
+    const card = $('#install-card');
+    if (card) card.classList.add('hidden');
   }
 
-  btn.addEventListener('click', async () => {
-    if (!deferredPrompt) return;
-    deferredPrompt.prompt();
-    await deferredPrompt.userChoice;
-    deferredPrompt = null;
-    banner.classList.add('hidden');
+  // Wire dialog buttons.
+  $('#install-dismiss').addEventListener('click', () => {
+    localStorage.setItem('installDismissedAt', String(Date.now()));
+    $('#install-dialog').close();
   });
-  dismiss.addEventListener('click', () => {
-    localStorage.setItem('installDismissed', '1');
-    banner.classList.add('hidden');
+  $('#install-android-btn').addEventListener('click', async () => {
+    if (!deferredInstallPrompt) {
+      // Fallback: tell user to use the menu.
+      $('#install-android-btn').disabled = true;
+      $('#install-android-btn').textContent = 'Use ⋮ menu → Install app';
+      return;
+    }
+    deferredInstallPrompt.prompt();
+    const { outcome } = await deferredInstallPrompt.userChoice;
+    deferredInstallPrompt = null;
+    if (outcome === 'accepted') $('#install-dialog').close();
   });
+  $('#show-install-prompt').addEventListener('click', () => {
+    if (isStandalone()) {
+      alert('Already installed! 🎉');
+      return;
+    }
+    showInstallDialog();
+  });
+
+  // Auto-show once: after user is signed in and has logged at least one shot or 30 seconds in.
+  // Skip if: standalone, dismissed within last 7 days, or auth gate is active.
+  const dismissedAt = parseInt(localStorage.getItem('installDismissedAt') || '0', 10);
+  const dismissedRecently = dismissedAt && (Date.now() - dismissedAt) < 7 * 86400 * 1000;
+  if (!isStandalone() && !dismissedRecently && !document.body.classList.contains('auth-active')) {
+    setTimeout(() => {
+      if (isStandalone()) return;
+      if (document.body.classList.contains('auth-active')) return;
+      if (document.querySelector('#install-dialog').open) return;
+      showInstallDialog();
+    }, 8000);
+  }
 }
 
 async function markSyncDirty() {

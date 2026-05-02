@@ -120,9 +120,21 @@ label.row input{width:auto;margin-top:0}
 .modal h2{margin-bottom:6px}
 .modal-actions{display:flex;align-items:center;gap:8px;margin-top:12px}
 
-.banner{position:fixed;left:8px;right:8px;bottom:calc(env(safe-area-inset-bottom) + 8px);background:var(--surface);border:1px solid var(--bronze);border-radius:var(--radius);padding:14px;box-shadow:var(--shadow);z-index:50;max-width:540px;margin:0 auto}
-.banner-body p{margin:6px 0 10px;font-size:.9rem}
-.banner-actions{display:flex;gap:8px}
+/* Install modal */
+.install-modal{max-width:440px}
+.install-hero{text-align:center;padding:8px 0 12px}
+.install-icon{border-radius:14px;box-shadow:var(--shadow);margin-bottom:8px}
+.install-hero h2{margin:6px 0 4px;font-size:1.15rem}
+.install-steps{background:var(--surface-alt);border-radius:10px;padding:14px;margin:8px 0}
+.install-steps h3{margin:0 0 8px;font-size:.95rem;color:var(--bronze-dk);text-transform:none;letter-spacing:0}
+.install-steps ol{margin:0;padding-left:20px}
+.install-steps ol li{margin:6px 0;font-size:.92rem;line-height:1.5}
+.install-steps p{margin:6px 0;font-size:.92rem;line-height:1.5}
+/* iOS share icon — drawn in CSS to match Safari's icon */
+.ios-share-icon{display:inline-block;width:18px;height:22px;vertical-align:-5px;background:linear-gradient(180deg,transparent 50%,#3478f6 50%);position:relative;border-radius:3px;margin:0 2px}
+.ios-share-icon::before{content:"";position:absolute;top:-2px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-bottom:7px solid #3478f6}
+.ios-share-icon::after{content:"";position:absolute;top:5px;left:50%;transform:translateX(-50%);width:2px;height:9px;background:#3478f6}
+.desktop-install-icon{display:inline-block;background:var(--bronze-lt);color:var(--bronze-dk);padding:1px 6px;border-radius:4px;font-weight:700}
 
 canvas{width:100% !important;height:auto !important;max-height:200px}
 
@@ -335,7 +347,7 @@ body.auth-active #app-header,
 body.auth-active #bottom-nav,
 body.auth-active #account-banner,
 body.auth-active #legacy-migrate-banner,
-body.auth-active #install-banner{display:none !important}
+body.auth-active #install-dialog{display:none !important}
 body.auth-active{padding-bottom:env(safe-area-inset-bottom)}
 .auth-view{padding:0 !important}
 body.auth-active .auth-view{display:flex !important;flex-direction:column;min-height:100vh;justify-content:flex-start;padding:24px 16px 32px !important;background:linear-gradient(180deg,var(--bronze-lt) 0%,var(--bg) 60%)}

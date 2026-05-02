@@ -17,7 +17,7 @@
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="icon" type="image/png" sizes="512x512" href="icons/icon-512.png">
 <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png">
-<link rel="stylesheet" href="styles.css?v=13">
+<link rel="stylesheet" href="styles.css?v=14">
 <script>
 (function(){
   // Apply saved theme synchronously to avoid flash. Settings live in IndexedDB; theme also mirrored to localStorage for fast read.
@@ -43,16 +43,46 @@
   <button id="legacy-migrate-dismiss" class="btn-ghost tiny">×</button>
 </div>
 
-<div id="install-banner" class="banner hidden">
-  <div class="banner-body">
-    <strong>📱 Install My GLP Shot</strong>
-    <p id="install-text">For reliable reminders and data that survives a browser clear.</p>
-    <div class="banner-actions">
-      <button id="install-btn" class="btn-primary">Install</button>
-      <button id="install-dismiss" class="btn-ghost">Later</button>
+<dialog id="install-dialog" class="modal install-modal">
+  <form method="dialog">
+    <div class="install-hero">
+      <img src="icons/icon-192.png" alt="" width="64" height="64" class="install-icon">
+      <h2>Install My GLP Shot</h2>
+      <p class="muted small">Get reliable reminders, faster opens, and data that survives a browser clear. Installs like a real app — no app store.</p>
     </div>
-  </div>
-</div>
+
+    <div id="install-ios" class="install-steps hidden">
+      <h3>On iPhone or iPad</h3>
+      <ol>
+        <li>Tap the <strong>Share</strong> button <span class="ios-share-icon" aria-hidden="true"></span> at the bottom of Safari.</li>
+        <li>Scroll and tap <strong>Add to Home Screen</strong>.</li>
+        <li>Tap <strong>Add</strong> in the top-right.</li>
+      </ol>
+      <p class="muted small">My GLP Shot will appear on your home screen with its own icon.</p>
+    </div>
+
+    <div id="install-ios-other" class="install-steps hidden">
+      <h3>To install on iPhone</h3>
+      <p>You'll need to open this page in <strong>Safari</strong> first. Tap the <strong>···</strong> menu in your current browser and choose <strong>Open in Safari</strong>, then come back here.</p>
+    </div>
+
+    <div id="install-android" class="install-steps hidden">
+      <h3>On Android</h3>
+      <p>Tap the button below to install.</p>
+      <button type="button" id="install-android-btn" class="btn-primary big" style="width:100%">Install app →</button>
+      <p class="muted small">Or tap the <strong>⋮</strong> menu in Chrome and choose <strong>Install app</strong>.</p>
+    </div>
+
+    <div id="install-desktop" class="install-steps hidden">
+      <h3>On computer</h3>
+      <p>Look for the install icon <span class="desktop-install-icon" aria-hidden="true">⊕</span> in your browser's address bar, or use Chrome's <strong>⋮</strong> menu → <strong>Install My GLP Shot</strong>.</p>
+    </div>
+
+    <div class="modal-actions">
+      <button type="button" id="install-dismiss" class="btn-ghost">Maybe later</button>
+    </div>
+  </form>
+</dialog>
 
 <header class="app-header" id="app-header">
   <div class="brand"><span class="brand-mark">●</span> My GLP Shot</div>
@@ -393,9 +423,15 @@
     <p class="muted small"><strong>Switching from another tracker?</strong> In your old app, look for an Export Data option (CSV). Then tap "Import" above and select the file. Shots, weight, sites, doses, and notes will transfer.</p>
   </section>
 
+  <section class="card" id="install-card">
+    <h2>📱 Install the app</h2>
+    <p class="muted small" id="install-card-text">Add My GLP Shot to your home screen for one-tap access and reliable reminders.</p>
+    <button id="show-install-prompt" class="btn-primary" type="button">Show install steps</button>
+  </section>
+
   <section class="card">
     <h2>Troubleshooting</h2>
-    <p class="muted small" id="app-version-line">App version: app.js?v=13 · sw mglp-v11</p>
+    <p class="muted small" id="app-version-line">Loading version…</p>
     <button id="force-update-btn" class="btn-ghost" type="button">Force latest version</button>
     <p class="muted small">Clears the offline cache and reloads the app fresh. Use if something looks stale.</p>
   </section>
@@ -405,7 +441,7 @@
     <button id="wipe-btn" class="btn-danger">Erase all data on this device</button>
   </section>
 
-  <p class="muted small center">My GLP Shot — local-first PWA · <a href="privacy.html">Privacy</a> · <a href="terms.html">Terms</a> · <a href="https://github.com/thejdubb02/wsg-shotclock" target="_blank" rel="noopener">source</a></p>
+  <p class="muted small center">My GLP Shot <span id="app-version-footer"></span> · <a href="privacy.html">Privacy</a> · <a href="terms.html">Terms</a> · <a href="https://github.com/thejdubb02/wsg-shotclock" target="_blank" rel="noopener">source</a></p>
 </main>
 
 <dialog id="shot-dialog" class="modal">
@@ -644,6 +680,6 @@
 </nav>
 
 <script src="lib/chart.min.js"></script>
-<script src="app.js?v=13"></script>
+<script src="app.js?v=14"></script>
 </body>
 </html>
