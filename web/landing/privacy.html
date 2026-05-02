@@ -6,7 +6,13 @@
 <meta name="theme-color" content="#0f766e">
 <title>Privacy — My GLP Shot</title>
 <link rel="icon" href="/app/icons/favicon.ico">
-<link rel="stylesheet" href="styles.css?v=6">
+<link rel="stylesheet" href="/app/styles.css?v=9">
+<style>
+  body{max-width:760px;margin:0 auto;padding:0 16px}
+  .glossary{margin:8px 0 18px}
+  .glossary dt{font-weight:700;color:var(--bronze-dk);margin-top:14px;font-size:.95rem}
+  .glossary dd{margin:4px 0 0 0;color:var(--ink);font-size:.92rem;line-height:1.5}
+</style>
 </head>
 <body>
 <header class="app-header">
@@ -52,6 +58,46 @@
       <li>Lookup ID: derived from the same PBKDF2 output, separate from the encryption key, hex-encoded SHA-256</li>
       <li>All cryptography runs in your browser via the Web Crypto API. The plaintext, the passphrase, and the encryption key never leave your device.</li>
     </ul>
+
+    <h2>Plain-English glossary</h2>
+    <p class="muted small">If any of the terms above are unfamiliar, here&#39;s what they actually mean.</p>
+    <dl class="glossary">
+      <dt>Local-first</dt>
+      <dd>The app runs on your device and saves your data on your device. Nothing leaves the phone or computer unless you explicitly turn on Cloud Sync.</dd>
+
+      <dt>IndexedDB</dt>
+      <dd>A built-in storage area inside your web browser where the app keeps your shots, weight, and settings. It stays on your device — like the notes app on your phone.</dd>
+
+      <dt>End-to-end encrypted (E2EE)</dt>
+      <dd>Your data is scrambled on your device before it&#39;s sent to our server, and only your device has the key to unscramble it. We can&#39;t read it. Same approach used by Signal and Bitwarden.</dd>
+
+      <dt>Ciphertext</dt>
+      <dd>Scrambled data. Without the key, it&#39;s a jumble of random-looking bytes — useless to anyone who steals it, including us.</dd>
+
+      <dt>Encryption key</dt>
+      <dd>The secret that turns ciphertext back into your readable data. We never see it. It&#39;s derived from your password on your device and never leaves.</dd>
+
+      <dt>PBKDF2</dt>
+      <dd>The way we turn your password into an encryption key. We run the password through 600,000 rounds of a math function so it&#39;s slow to guess, even with a powerful computer.</dd>
+
+      <dt>AES-256-GCM</dt>
+      <dd>The actual scrambling method. AES-256 is the gold-standard encryption used by banks and governments. GCM is the mode that also detects if anyone tried to tamper with the ciphertext.</dd>
+
+      <dt>IV (initialization vector) / nonce</dt>
+      <dd>A random number we mix in each time we encrypt, so the same data encrypted twice produces different ciphertext. Stops attackers from spotting patterns.</dd>
+
+      <dt>Lookup ID</dt>
+      <dd>An anonymous ID we use to find <em>your</em> encrypted blob without knowing who you are. We can&#39;t reverse it back into your email or password.</dd>
+
+      <dt>Web Crypto API</dt>
+      <dd>The cryptography toolkit built into every modern browser. It&#39;s what does the encrypting on your device. Standard, audited, and runs locally.</dd>
+
+      <dt>PWA (Progressive Web App)</dt>
+      <dd>A website you can install to your phone or computer like an app. Works offline, sends notifications, no app-store middleman.</dd>
+
+      <dt>HIPAA, GDPR, CCPA</dt>
+      <dd>Health and privacy laws — U.S. health (HIPAA), European general privacy (GDPR), and California consumer privacy (CCPA/CPRA). They give you rights like exporting your data and deleting it. The export/delete buttons in the app cover those rights.</dd>
+    </dl>
 
     <h2>Server logs</h2>
     <p>Our reverse proxy logs basic request metadata (IP address, user agent, timestamp, request size, response status) for security and rate-limiting purposes. These logs are rotated and retained for no longer than 14 days. They are not joined to user data.</p>

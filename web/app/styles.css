@@ -321,6 +321,26 @@ canvas{width:100% !important;height:auto !important;max-height:200px}
 .mood-btn.selected .mood-mouth{stroke:#fff}
 .mood-btn.selected .mood-mouth-fill{fill:#fff;stroke:#fff}
 
+/* Auth gate — fullscreen onboarding, hides app chrome */
+body.auth-active #app-header,
+body.auth-active #bottom-nav,
+body.auth-active #account-banner,
+body.auth-active #legacy-migrate-banner,
+body.auth-active #install-banner{display:none !important}
+body.auth-active{padding-bottom:env(safe-area-inset-bottom)}
+.auth-view{padding:0 !important}
+body.auth-active .auth-view{display:flex !important;flex-direction:column;min-height:100vh;justify-content:flex-start;padding:24px 16px 32px !important;background:linear-gradient(180deg,var(--bronze-lt) 0%,var(--bg) 60%)}
+.auth-hero{text-align:center;margin:24px 0 18px}
+.auth-logo{width:64px;height:64px;margin:0 auto 12px;border-radius:18px;background:var(--grad);color:#fff;font-size:2rem;display:flex;align-items:center;justify-content:center;box-shadow:var(--shadow)}
+.auth-hero h1{font-size:1.6rem;font-weight:800;letter-spacing:-.01em;margin-bottom:4px}
+.auth-tag{color:var(--muted);margin:0;font-size:.95rem}
+.auth-card{max-width:420px;width:100%;margin:0 auto}
+.auth-toggle{display:grid;grid-template-columns:1fr 1fr;gap:4px;background:var(--surface-alt);border-radius:10px;padding:4px;margin-bottom:16px}
+.auth-toggle-btn{background:transparent;border:0;font:inherit;font-weight:600;font-size:.88rem;color:var(--muted);padding:10px;border-radius:8px;cursor:pointer}
+.auth-toggle-btn.active{background:var(--surface);color:var(--bronze-dk);box-shadow:0 1px 3px rgba(15,23,42,.06)}
+.auth-perks{margin:14px 0 0}
+.auth-legal{max-width:420px;margin:14px auto 0;color:var(--muted)}
+
 /* Bottom nav (4 tabs) */
 .bottom-nav{position:fixed;left:0;right:0;bottom:0;background:var(--surface);border-top:1px solid var(--line);display:grid;grid-template-columns:repeat(4,1fr);padding:6px 0 calc(env(safe-area-inset-bottom) + 6px);z-index:40;box-shadow:0 -2px 12px rgba(15,23,42,.06)}
 .nav-btn{background:none;border:0;color:var(--muted);font:inherit;font-size:.7rem;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 4px;cursor:pointer;border-radius:8px;transition:color .2s ease,background .2s ease}

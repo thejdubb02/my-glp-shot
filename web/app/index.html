@@ -54,12 +54,36 @@
   </div>
 </div>
 
-<header class="app-header">
+<header class="app-header" id="app-header">
   <div class="brand"><span class="brand-mark">●</span> My GLP Shot</div>
   <div class="hdr-actions">
     <span id="hdr-account-pill" class="acct-pill hidden"></span>
   </div>
 </header>
+
+<main id="view-auth" class="view auth-view">
+  <div class="auth-hero">
+    <div class="auth-logo">●</div>
+    <h1>My GLP Shot</h1>
+    <p class="auth-tag">Track your weight-loss shots, privately.</p>
+  </div>
+  <section class="card auth-card">
+    <div class="auth-toggle">
+      <button type="button" class="auth-toggle-btn active" data-auth-mode="signup">Create account</button>
+      <button type="button" class="auth-toggle-btn" data-auth-mode="login">Sign in</button>
+    </div>
+    <form id="auth-form" autocomplete="on">
+      <label>Email <input id="auth-email" type="email" required autocomplete="email" inputmode="email" autocapitalize="off"></label>
+      <label>Password <input id="auth-pw" type="password" required minlength="8" autocomplete="new-password"></label>
+      <p id="auth-help" class="muted small">Use a strong password. We encrypt your data with it before it ever leaves your device — if you forget it, your cloud copy is gone (data on each device is preserved).</p>
+      <p id="auth-err" class="acct-err"></p>
+      <button type="submit" id="auth-submit" class="btn-primary big" style="width:100%">Create account &amp; start free trial</button>
+      <p class="muted small center" style="margin-top:10px"><a href="#" id="auth-forgot" class="link">Forgot password?</a></p>
+    </form>
+    <p class="muted small center auth-perks">14-day premium trial included · No credit card · Cancel anytime</p>
+  </section>
+  <p class="muted small center auth-legal">By continuing you agree to the <a href="terms.html">Terms</a> and <a href="privacy.html">Privacy Policy</a>.</p>
+</main>
 
 <main id="view-home" class="view active" data-tab="home">
   <section class="countdown-card" data-tab="home">

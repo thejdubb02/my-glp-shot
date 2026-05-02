@@ -953,6 +953,57 @@ function setupAccountUI() {
   $('#legacy-migrate-cta').addEventListener('click', () => openAccountDialog('signup'));
   $('#legacy-migrate-dismiss').addEventListener('click', () => $('#legacy-migrate-banner').classList.add('hidden'));
   $('#account-form').addEventListener('submit', handleAccountSubmit);
+
+  // Fullscreen auth gate (shown when no account on device)
+  let authMode = 'signup';
+  const setAuthMode = (m) => {
+    authMode = m;
+    $$('#view-auth .auth-toggle-btn').forEach(b => b.classList.toggle('active', b.getAttribute('data-auth-mode') === m));
+    const pwInput = $('#auth-pw');
+    if (m === 'signup') {
+      $('#auth-submit').textContent = 'Create account & start free trial';
+      $('#auth-help').textContent = 'Use a strong password. We encrypt your data with it before it ever leaves your device — if you forget it, your cloud copy is gone (data on each device is preserved).';
+      pwInput.setAttribute('autocomplete', 'new-password');
+      pwInput.setAttribute('minlength', '8');
+    } else {
+      $('#auth-submit').textContent = 'Sign in';
+      $('#auth-help').textContent = 'Welcome back. Sign in to sync this device with your data.';
+      pwInput.setAttribute('autocomplete', 'current-password');
+      pwInput.removeAttribute('minlength');
+    }
+    $('#auth-err').textContent = '';
+  };
+  $$('#view-auth .auth-toggle-btn').forEach(btn => btn.addEventListener('click', () => setAuthMode(btn.getAttribute('data-auth-mode'))));
+  $('#auth-forgot').addEventListener('click', (e) => { e.preventDefault(); $('#forgot-dialog').showModal(); });
+  $('#auth-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const email = $('#auth-email').value.trim();
+    const pw = $('#auth-pw').value;
+    const err = $('#auth-err');
+    const submit = $('#auth-submit');
+    err.textContent = '';
+    submit.disabled = true;
+    submit.textContent = authMode === 'signup' ? 'Creating account…' : 'Signing in…';
+    try {
+      if (authMode === 'signup') await accountSignup(email, pw);
+      else await accountLogin(email, pw);
+      await onAccountChanged();
+      // Pull cloud data on login (signup uploads local, login fetches remote)
+      if (authMode === 'login') {
+        try { await accountSyncPull(); } catch(e) { /* fresh account / no remote yet */ }
+      } else {
+        try { await accountSyncPush(); } catch(e) { /* tolerate */ }
+      }
+      await renderShots();
+      await renderWeights();
+      setHomeTab('home');
+    } catch (ex) {
+      err.textContent = ex.message || 'Something went wrong.';
+    } finally {
+      submit.disabled = false;
+      setAuthMode(authMode);
+    }
+  });
   $('#account-cancel').addEventListener('click', () => $('#account-dialog').close());
   $('#show-forgot').addEventListener('click', (e) => { e.preventDefault(); $('#account-dialog').close(); $('#forgot-dialog').showModal(); });
   $('#forgot-cancel').addEventListener('click', () => $('#forgot-dialog').close());
@@ -1711,6 +1762,20 @@ async function onAccountChanged() {
   const u = account.user;
   const banner = $('#account-banner');
   const pill = $('#hdr-account-pill');
+  // Auth gate: require signup/login on every fresh device. Once signed in, app unlocks.
+  // Legacy users (with old `sync.creds`) bypass the gate so we don't lock them out — they can use the migrate banner to upgrade.
+  const hasLegacyCreds = !!localStorage.getItem('sync.creds');
+  if (!u && !hasLegacyCreds) {
+    document.body.classList.add('auth-active');
+    $$('.view').forEach(v => v.classList.remove('active'));
+    $('#view-auth').classList.add('active');
+  } else {
+    document.body.classList.remove('auth-active');
+    if ($('#view-auth').classList.contains('active')) {
+      $('#view-auth').classList.remove('active');
+      $('#view-home').classList.add('active');
+    }
+  }
   if (u) {
     banner.classList.add('hidden');
     $('#account-signed-out').classList.add('hidden');
