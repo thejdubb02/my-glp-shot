@@ -14,6 +14,13 @@ const DEFAULT_SETTINGS = {
   notifyLeadMinutes: 60,
   theme: 'system',
   lastBackup: null,
+  syncEnabled: false,
+  syncUsername: null,
+  syncLastPushAt: null,
+  syncLastPullAt: null,
+  syncLastUpdatedAt: null,
+  syncAutoPush: true,
+  syncDirty: false,
 };
 
 // ---------- IndexedDB helpers ----------
@@ -243,6 +250,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     $('#shot-dialog').close();
     await renderShots();
     maybeScheduleNotification();
+    markSyncDirty();
   });
   $('#shot-delete').addEventListener('click', async () => {
     const id = parseInt($('#shot-id').value, 10);
@@ -251,6 +259,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     await dbDel(STORES.shots, id);
     $('#shot-dialog').close();
     await renderShots();
+    markSyncDirty();
   });
 
   $('#add-weight-btn').addEventListener('click', async () => {
@@ -270,6 +279,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     await ensurePersisted();
     $('#weight-dialog').close();
     await renderWeights();
+    markSyncDirty();
   });
 
   $('#set-med').addEventListener('change', async (e) => { settings.medication = e.target.value.trim() || 'Tirzepatide'; await saveSettings(); });
@@ -315,6 +325,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   await ensurePersisted();
   updateBackupLabel();
   maybeScheduleNotification();
+  initSyncUI();
 });
 
 function applySettingsToInputs() {
@@ -789,6 +800,12 @@ function setupInstallBanner() {
   });
 }
 
+async function markSyncDirty() {
+  if (!syncCreds || !settings.syncEnabled || !settings.syncAutoPush) return;
+  settings.syncDirty = true;
+  await saveSettings();
+}
+
 async function ensurePersisted() {
   if (navigator.storage && navigator.storage.persist) {
     try { await navigator.storage.persist(); } catch (e) {}
@@ -799,4 +816,326 @@ function registerSW() {
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('sw.js').catch(() => {});
   }
+}
+
+// ============================================================================
+// Cloud Sync — end-to-end encrypted blob storage.
+// All cryptography runs in the browser. The server stores opaque ciphertext
+// keyed by an HMAC-style lookup_id derived from username + passphrase. The
+// server never sees: username, passphrase, encryption key, or plaintext.
+// ============================================================================
+
+const SYNC_API = 'api/sync';
+const SYNC_PBKDF2_ITERS = 600000;
+const SYNC_PROTOCOL = 'shotclock-v1';
+
+// Session-only credential cache. Cleared on tab close. Persisted creds (so the
+// user doesn't have to retype every session) live in localStorage as username
+// + passphrase — same threat model as a logged-in browser session, mitigated
+// by the fact that local data is already in IndexedDB on the same device.
+let syncCreds = null; // { username, aesKey, lookupId }
+
+const b64 = {
+  enc: (buf) => btoa(String.fromCharCode(...new Uint8Array(buf))),
+  dec: (s) => Uint8Array.from(atob(s), c => c.charCodeAt(0)),
+};
+
+async function deriveSyncCreds(username, passphrase) {
+  if (!username || !passphrase) throw new Error('Username and passphrase required');
+  const enc = new TextEncoder();
+  const saltBuf = await crypto.subtle.digest('SHA-256', enc.encode(SYNC_PROTOCOL + ':' + username.trim().toLowerCase()));
+  const baseKey = await crypto.subtle.importKey('raw', enc.encode(passphrase), 'PBKDF2', false, ['deriveBits']);
+  const bits = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', salt: saltBuf, iterations: SYNC_PBKDF2_ITERS, hash: 'SHA-256' },
+    baseKey,
+    512  // 64 bytes
+  );
+  const buf = new Uint8Array(bits);
+  const aesKey = await crypto.subtle.importKey('raw', buf.slice(0, 32), 'AES-GCM', false, ['encrypt', 'decrypt']);
+  const lookupBytes = buf.slice(32, 64);
+  const lookupId = Array.from(lookupBytes).map(b => b.toString(16).padStart(2, '0')).join('');
+  return { username: username.trim(), aesKey, lookupId };
+}
+
+async function syncEncrypt(creds, payload) {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const plaintext = new TextEncoder().encode(JSON.stringify(payload));
+  const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, creds.aesKey, plaintext);
+  return { iv: b64.enc(iv), ciphertext: b64.enc(ct) };
+}
+
+async function syncDecrypt(creds, iv_b64, ct_b64) {
+  const iv = b64.dec(iv_b64);
+  const ct = b64.dec(ct_b64);
+  const plaintext = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, creds.aesKey, ct);
+  return JSON.parse(new TextDecoder().decode(plaintext));
+}
+
+function suggestPassphrase() {
+  // 4 groups of 4 base32-style chars (excluding ambiguous 0/O/1/I/L) ≈ 80 bits.
+  const alpha = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  const buf = crypto.getRandomValues(new Uint8Array(16));
+  let out = '';
+  for (let i = 0; i < 16; i++) {
+    out += alpha[buf[i] % alpha.length];
+    if (i % 4 === 3 && i < 15) out += '-';
+  }
+  return out;
+}
+
+async function buildPayload() {
+  const shots = (await dbAll(STORES.shots)) || [];
+  const weights = (await dbAll(STORES.weights)) || [];
+  return { version: 1, exportedAt: new Date().toISOString(), settings, shots, weights };
+}
+
+async function syncPushNow() {
+  if (!syncCreds) throw new Error('Not signed in to sync');
+  const payload = await buildPayload();
+  const { iv, ciphertext } = await syncEncrypt(syncCreds, payload);
+  const res = await fetch(`${SYNC_API}/${syncCreds.lookupId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ iv, ciphertext }),
+  });
+  if (!res.ok) throw new Error(`Sync server returned ${res.status}`);
+  const j = await res.json();
+  settings.syncLastPushAt = new Date().toISOString();
+  settings.syncLastUpdatedAt = j.updated_at;
+  await saveSettings();
+  return j;
+}
+
+async function syncPullNow() {
+  if (!syncCreds) throw new Error('Not signed in to sync');
+  const res = await fetch(`${SYNC_API}/${syncCreds.lookupId}`, { headers: { 'Accept': 'application/json' } });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`Sync server returned ${res.status}`);
+  const { iv, ciphertext, updated_at } = await res.json();
+  let payload;
+  try {
+    payload = await syncDecrypt(syncCreds, iv, ciphertext);
+  } catch (e) {
+    throw new Error('Decryption failed — wrong username or passphrase');
+  }
+  return { payload, updatedAt: updated_at };
+}
+
+async function syncCloudExists(creds) {
+  const res = await fetch(`${SYNC_API}/${creds.lookupId}/exists`);
+  if (!res.ok) return { exists: false };
+  return res.json();
+}
+
+async function applyPulledPayload(payload) {
+  // Replace local shots/weights with cloud copy. Settings merge (preserve local sync creds).
+  const db = await openDB();
+  await new Promise((resolve, reject) => {
+    const t = db.transaction([STORES.shots, STORES.weights], 'readwrite');
+    t.objectStore(STORES.shots).clear();
+    t.objectStore(STORES.weights).clear();
+    t.oncomplete = resolve; t.onerror = () => reject(t.error);
+  });
+  for (const s of (payload.shots || [])) { delete s.id; await dbAdd(STORES.shots, s); }
+  for (const w of (payload.weights || [])) { delete w.id; await dbAdd(STORES.weights, w); }
+  if (payload.settings) {
+    const preserve = { syncEnabled: settings.syncEnabled, syncUsername: settings.syncUsername, syncLastPushAt: settings.syncLastPushAt, syncLastPullAt: settings.syncLastPullAt, syncLastUpdatedAt: settings.syncLastUpdatedAt };
+    settings = { ...DEFAULT_SETTINGS, ...payload.settings, ...preserve };
+    await saveSettings();
+    applySettingsToInputs();
+  }
+  settings.syncLastPullAt = new Date().toISOString();
+  await saveSettings();
+  await renderShots();
+  await renderWeights();
+}
+
+// ---------- Sync UI ----------
+function syncStatus(el, msg, kind) {
+  const e = $(el);
+  if (!e) return;
+  e.textContent = msg || '';
+  e.classList.remove('ok','err');
+  if (kind) e.classList.add(kind);
+}
+
+function renderSyncUI() {
+  const enabled = !!(settings.syncEnabled && syncCreds);
+  $('#sync-enabled-view').classList.toggle('hidden', !enabled);
+  $('#sync-disabled-view').classList.toggle('hidden', enabled);
+  if (enabled) {
+    $('#sync-current-user').textContent = settings.syncUsername || syncCreds.username;
+    const last = settings.syncLastPushAt || settings.syncLastPullAt;
+    $('#sync-last').textContent = last ? `Last sync: ${new Date(last).toLocaleString()}` : 'No sync yet.';
+  }
+}
+
+async function attemptUnlockFromStored() {
+  // Auto-unlock if we previously persisted creds (per-device convenience).
+  try {
+    const stored = localStorage.getItem('sync.creds');
+    if (!stored) return false;
+    const { u, p } = JSON.parse(stored);
+    if (!u || !p) return false;
+    syncCreds = await deriveSyncCreds(u, p);
+    return true;
+  } catch (e) { return false; }
+}
+
+function persistCreds(u, p) {
+  try { localStorage.setItem('sync.creds', JSON.stringify({ u, p })); } catch (e) {}
+}
+function clearStoredCreds() {
+  try { localStorage.removeItem('sync.creds'); } catch (e) {}
+}
+
+async function handleEnableSync() {
+  const u = $('#sync-user').value.trim();
+  const p = $('#sync-pass').value;
+  if (!u || !p) { syncStatus('#sync-setup-status', 'Username and passphrase are required.', 'err'); return; }
+  if (p.length < 12) { syncStatus('#sync-setup-status', 'Passphrase must be at least 12 characters.', 'err'); return; }
+  syncStatus('#sync-setup-status', 'Deriving keys (this takes a few seconds)…');
+  try {
+    const creds = await deriveSyncCreds(u, p);
+    const exists = await syncCloudExists(creds);
+    if (exists.exists) {
+      syncStatus('#sync-setup-status', 'An account with this username + passphrase already exists. Use "Restore from cloud" to pull its data, or sign in to overwrite.', 'err');
+      // Allow continuing as enable+overwrite via confirm
+      if (!confirm('A cloud copy already exists for this account. Continue and OVERWRITE it with your local data? Choose Cancel and use Restore instead if you want to pull the cloud copy down.')) return;
+    }
+    syncCreds = creds;
+    settings.syncEnabled = true;
+    settings.syncUsername = creds.username;
+    await saveSettings();
+    persistCreds(u, p);
+    syncStatus('#sync-setup-status', 'Encrypting and uploading…');
+    await syncPushNow();
+    syncStatus('#sync-setup-status', '');
+    renderSyncUI();
+    alert('Sync enabled. Your local data has been encrypted and uploaded.');
+  } catch (e) {
+    syncStatus('#sync-setup-status', 'Failed: ' + e.message, 'err');
+  }
+}
+
+async function handleRestoreSync() {
+  const u = $('#sync-user').value.trim();
+  const p = $('#sync-pass').value;
+  if (!u || !p) { syncStatus('#sync-setup-status', 'Username and passphrase are required.', 'err'); return; }
+  syncStatus('#sync-setup-status', 'Deriving keys (this takes a few seconds)…');
+  try {
+    const creds = await deriveSyncCreds(u, p);
+    syncStatus('#sync-setup-status', 'Pulling from cloud…');
+    syncCreds = creds;
+    const result = await syncPullNow();
+    if (!result) {
+      syncCreds = null;
+      syncStatus('#sync-setup-status', 'No cloud copy found for those credentials.', 'err');
+      return;
+    }
+    if (!confirm(`Cloud copy found (${(result.payload.shots || []).length} shots). REPLACE local data with cloud copy?`)) {
+      syncCreds = null;
+      syncStatus('#sync-setup-status', 'Cancelled.');
+      return;
+    }
+    await applyPulledPayload(result.payload);
+    settings.syncEnabled = true;
+    settings.syncUsername = creds.username;
+    await saveSettings();
+    persistCreds(u, p);
+    syncStatus('#sync-setup-status', '');
+    renderSyncUI();
+    alert('Restored. Your local data now matches the cloud copy.');
+  } catch (e) {
+    syncCreds = null;
+    syncStatus('#sync-setup-status', 'Failed: ' + e.message, 'err');
+  }
+}
+
+async function handleSyncNow() {
+  if (!syncCreds) return;
+  syncStatus('#sync-status', 'Syncing…');
+  try {
+    await syncPushNow();
+    renderSyncUI();
+    syncStatus('#sync-status', '✓ Pushed', 'ok');
+    setTimeout(() => syncStatus('#sync-status', ''), 2500);
+  } catch (e) {
+    syncStatus('#sync-status', 'Failed: ' + e.message, 'err');
+  }
+}
+
+async function handleSyncPull() {
+  if (!syncCreds) return;
+  if (!confirm('Pull cloud copy and REPLACE your local data?')) return;
+  syncStatus('#sync-status', 'Pulling…');
+  try {
+    const result = await syncPullNow();
+    if (!result) { syncStatus('#sync-status', 'No cloud copy found.', 'err'); return; }
+    await applyPulledPayload(result.payload);
+    renderSyncUI();
+    syncStatus('#sync-status', '✓ Pulled', 'ok');
+    setTimeout(() => syncStatus('#sync-status', ''), 2500);
+  } catch (e) {
+    syncStatus('#sync-status', 'Failed: ' + e.message, 'err');
+  }
+}
+
+async function handleSyncDisable() {
+  if (!confirm('Sign out of sync on this device? Local data is kept. Cloud copy is NOT deleted.')) return;
+  syncCreds = null;
+  settings.syncEnabled = false;
+  await saveSettings();
+  clearStoredCreds();
+  renderSyncUI();
+}
+
+async function handleSyncDeleteCloud() {
+  if (!syncCreds) return;
+  if (!confirm('Permanently delete the encrypted cloud copy? This cannot be undone. Your local data is kept.')) return;
+  if (!confirm('Are you absolutely sure?')) return;
+  try {
+    await fetch(`${SYNC_API}/${syncCreds.lookupId}`, { method: 'DELETE' });
+    syncStatus('#sync-status', '✓ Cloud copy deleted', 'ok');
+  } catch (e) {
+    syncStatus('#sync-status', 'Failed: ' + e.message, 'err');
+  }
+}
+
+async function initSyncUI() {
+  // Pre-fill known username if we've used sync before
+  if (settings.syncUsername) $('#sync-user').value = settings.syncUsername;
+
+  $('#sync-suggest-pass').addEventListener('click', () => {
+    const pp = suggestPassphrase();
+    $('#sync-pass').value = pp;
+    const dis = $('#sync-suggested');
+    dis.textContent = pp;
+    dis.classList.remove('hidden');
+  });
+  $('#sync-enable').addEventListener('click', handleEnableSync);
+  $('#sync-restore').addEventListener('click', handleRestoreSync);
+  $('#sync-now').addEventListener('click', handleSyncNow);
+  $('#sync-pull').addEventListener('click', handleSyncPull);
+  $('#sync-disable').addEventListener('click', handleSyncDisable);
+  $('#sync-delete-cloud').addEventListener('click', handleSyncDeleteCloud);
+
+  if (settings.syncEnabled) {
+    const ok = await attemptUnlockFromStored();
+    if (!ok) {
+      // creds not found locally — user needs to re-enter
+      settings.syncEnabled = false;
+      await saveSettings();
+    }
+  }
+  renderSyncUI();
+
+  // Auto-push debounced after each shot/weight change. Hook is in the form
+  // submit handlers; here we just register a passive interval as a safety net.
+  setInterval(async () => {
+    if (!syncCreds || !settings.syncEnabled) return;
+    if (!settings.syncAutoPush) return;
+    if (!settings.syncDirty) return;
+    try { await syncPushNow(); settings.syncDirty = false; await saveSettings(); renderSyncUI(); } catch (e) {}
+  }, 60000);
 }

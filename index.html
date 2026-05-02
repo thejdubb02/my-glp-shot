@@ -17,7 +17,7 @@
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="icon" type="image/png" sizes="512x512" href="icons/icon-512.png">
 <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png">
-<link rel="stylesheet" href="styles.css?v=5">
+<link rel="stylesheet" href="styles.css?v=6">
 <script>
 (function(){
   // Apply saved theme synchronously to avoid flash. Settings live in IndexedDB; theme also mirrored to localStorage for fast read.
@@ -123,6 +123,39 @@
   </section>
 
   <section class="card">
+    <h2>Cloud Sync</h2>
+    <p class="muted small">Optional. End-to-end encrypted on this device before upload. Even we cannot read your data.</p>
+
+    <div id="sync-disabled-view">
+      <p class="muted small">Sync is off. Set up an account to back up and restore on another device.</p>
+      <label>Username <input id="sync-user" type="text" placeholder="e.g. jdubb" autocomplete="username" autocapitalize="off"></label>
+      <label>Passphrase <input id="sync-pass" type="password" autocomplete="new-password"></label>
+      <button id="sync-suggest-pass" class="btn-ghost" type="button">Suggest a strong passphrase</button>
+      <div id="sync-suggested" class="passphrase-display hidden"></div>
+      <p class="muted small"><strong>Save your passphrase in a password manager.</strong> If you lose it, your cloud copy is unrecoverable — we have no way to reset it.</p>
+      <div class="btn-row">
+        <button id="sync-enable" class="btn-primary" type="button">Enable Sync (upload local data)</button>
+        <button id="sync-restore" class="btn-ghost" type="button">Restore from cloud</button>
+      </div>
+      <p id="sync-setup-status" class="sync-status"></p>
+    </div>
+
+    <div id="sync-enabled-view" class="hidden">
+      <p class="sync-status ok">✓ Sync enabled for <strong id="sync-current-user"></strong></p>
+      <p id="sync-last" class="muted small"></p>
+      <div class="btn-row">
+        <button id="sync-now" class="btn-primary" type="button">Sync now</button>
+        <button id="sync-pull" class="btn-ghost" type="button">Pull from cloud</button>
+        <button id="sync-disable" class="btn-ghost" type="button">Sign out (keep local)</button>
+      </div>
+      <div class="btn-row">
+        <button id="sync-delete-cloud" class="btn-danger" type="button">Delete cloud copy</button>
+      </div>
+      <p id="sync-status" class="sync-status"></p>
+    </div>
+  </section>
+
+  <section class="card">
     <h2>Backup</h2>
     <p id="last-backup" class="muted small"></p>
     <div class="row-buttons">
@@ -139,7 +172,7 @@
     <button id="wipe-btn" class="btn-danger">Erase all data on this device</button>
   </section>
 
-  <p class="muted small center">ShotClock — local-first PWA · <a href="https://github.com/thejdubb02/wsg-shotclock" target="_blank" rel="noopener">source</a></p>
+  <p class="muted small center">ShotClock — local-first PWA · <a href="privacy.html">Privacy</a> · <a href="terms.html">Terms</a> · <a href="https://github.com/thejdubb02/wsg-shotclock" target="_blank" rel="noopener">source</a></p>
 </main>
 
 <dialog id="shot-dialog" class="modal">
@@ -188,6 +221,6 @@
 </dialog>
 
 <script src="lib/chart.min.js"></script>
-<script src="app.js?v=5"></script>
+<script src="app.js?v=6"></script>
 </body>
 </html>

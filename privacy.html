@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0f766e">
+<title>Privacy — ShotClock</title>
+<link rel="icon" href="icons/favicon.ico">
+<link rel="stylesheet" href="styles.css?v=6">
+</head>
+<body>
+<header class="app-header">
+  <div class="brand"><span class="brand-mark">●</span> ShotClock</div>
+  <a href="./" class="icon-btn" aria-label="Back">×</a>
+</header>
+
+<main class="view active">
+  <section class="card legal">
+    <h1>Privacy Policy</h1>
+    <p class="muted small">Last updated: 2026-05-02</p>
+
+    <h2>The short version</h2>
+    <ul>
+      <li>ShotClock is a local-first app. Your data lives in your browser, on your device.</li>
+      <li>If you turn on Cloud Sync, your data is end-to-end encrypted in your browser before it leaves your device. The server stores opaque ciphertext only.</li>
+      <li>We have no way to decrypt your data. Not through admin tools, not under subpoena, not ever. Lose your passphrase and the cloud copy is unrecoverable.</li>
+      <li>No accounts, no email collection, no analytics, no third-party trackers, no advertising, no data sales.</li>
+    </ul>
+
+    <h2>What stays on your device only</h2>
+    <p>By default, all of this lives in your browser&#39;s IndexedDB on your device and never reaches our servers:</p>
+    <ul>
+      <li>Shot logs (medication, dose, date/time, injection site, notes)</li>
+      <li>Weight entries</li>
+      <li>Settings (cadence, reminders, theme)</li>
+    </ul>
+
+    <h2>What we store if you enable Cloud Sync</h2>
+    <p>Cloud Sync is opt-in. When enabled, an encrypted blob of your data is uploaded so you can restore it on another device. The server stores:</p>
+    <ul>
+      <li>An opaque <code>lookup_id</code> derived from your username + passphrase via PBKDF2 (we cannot reverse it to find your username or passphrase)</li>
+      <li>A ciphertext blob (AES-GCM 256, encrypted in your browser before upload)</li>
+      <li>An IV (random 96-bit nonce per encryption)</li>
+      <li>A last-updated timestamp</li>
+    </ul>
+    <p>We do not store: your username, your passphrase, your encryption key, your medications, your dosages, your weight, or anything else readable. The server cannot determine who you are or what is in your data.</p>
+
+    <h2>How the encryption works</h2>
+    <ul>
+      <li>Key derivation: PBKDF2-SHA-256, 600,000 iterations, salted with a hash of your username</li>
+      <li>Encryption: AES-256-GCM with a fresh random 96-bit IV per upload</li>
+      <li>Lookup ID: derived from the same PBKDF2 output, separate from the encryption key, hex-encoded SHA-256</li>
+      <li>All cryptography runs in your browser via the Web Crypto API. The plaintext, the passphrase, and the encryption key never leave your device.</li>
+    </ul>
+
+    <h2>Server logs</h2>
+    <p>Our reverse proxy logs basic request metadata (IP address, user agent, timestamp, request size, response status) for security and rate-limiting purposes. These logs are rotated and retained for no longer than 14 days. They are not joined to user data.</p>
+
+    <h2>Cookies, analytics, third parties</h2>
+    <p>None. ShotClock does not set tracking cookies, does not run analytics, does not include third-party scripts, and does not embed advertising or social-media trackers.</p>
+
+    <h2>Your rights</h2>
+    <ul>
+      <li><strong>Export</strong> your data anytime as JSON from Settings → Backup.</li>
+      <li><strong>Delete</strong> all local data at any time via Settings → Erase all data on this device.</li>
+      <li><strong>Delete the cloud copy</strong> at any time via Settings → Cloud Sync → Delete cloud data. This permanently removes the encrypted blob from our server.</li>
+      <li>If you are in the EU/UK, California, or another jurisdiction with privacy rights (GDPR, CCPA/CPRA, etc.), the above export and deletion controls satisfy your access and erasure rights. Because we cannot read your data, we have nothing else to disclose about you specifically.</li>
+    </ul>
+
+    <h2>HIPAA</h2>
+    <p>ShotClock is a personal tracking tool used directly by individuals. It is not a Covered Entity under HIPAA, is not integrated with healthcare providers or insurers, and does not handle Protected Health Information on behalf of any covered entity. Nothing in this app constitutes medical advice. Talk to your doctor about your medication.</p>
+
+    <h2>Breaches</h2>
+    <p>If our server is ever compromised, an attacker would obtain encrypted ciphertext only — not your data in any readable form. We will still notify users if any breach occurs that we believe could affect them, in accordance with applicable law including the FTC Health Breach Notification Rule.</p>
+
+    <h2>Children</h2>
+    <p>ShotClock is not directed to children under 13. We do not knowingly collect data from children.</p>
+
+    <h2>Changes to this policy</h2>
+    <p>If this policy changes materially, we will update the &quot;Last updated&quot; date and post a notice in the app.</p>
+
+    <h2>Contact</h2>
+    <p>Questions or concerns: <a href="mailto:hello@willhitestrategy.org">hello@willhitestrategy.org</a></p>
+
+    <p class="center"><a href="./">Back to ShotClock</a> &nbsp;·&nbsp; <a href="terms.html">Terms of Use</a></p>
+  </section>
+</main>
+</body>
+</html>
