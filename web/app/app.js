@@ -5,7 +5,7 @@
 
 const DB_NAME = 'shotclock';
 const DB_VERSION = 2;
-const APP_VERSION = '0.17.0';
+const APP_VERSION = '0.19.0';
 const STORES = { shots: 'shots', weights: 'weights', settings: 'settings', moods: 'moods' };
 const SETTINGS_KEY = 'app';
 const DEFAULT_SETTINGS = {
@@ -313,6 +313,29 @@ async function openShotDialog(shot) {
 
 // Critical UI listeners that must be attached even if IndexedDB / settings / SW init fail or hang.
 // Wire these synchronously at script load time so bottom-nav and modal closes always work.
+// Auth form state (used by both wireCriticalUI and the auth form handler).
+let _authMode = 'signup';
+function setAuthMode(m) {
+  _authMode = m;
+  document.querySelectorAll('#view-auth .auth-toggle-btn').forEach(b => {
+    b.classList.toggle('active', b.getAttribute('data-auth-mode') === m);
+  });
+  const submit = document.getElementById('auth-submit');
+  const help = document.getElementById('auth-help');
+  const pw = document.getElementById('auth-pw');
+  if (m === 'signup') {
+    if (submit) submit.textContent = 'Create account & start free trial';
+    if (help) help.textContent = 'Use a strong password. We encrypt your data with it before it ever leaves your device — if you forget it, your cloud copy is gone (data on each device is preserved).';
+    if (pw) { pw.setAttribute('autocomplete', 'new-password'); pw.setAttribute('minlength', '8'); }
+  } else {
+    if (submit) submit.textContent = 'Sign in';
+    if (help) help.textContent = 'Welcome back. Sign in to sync this device with your data.';
+    if (pw) { pw.setAttribute('autocomplete', 'current-password'); pw.removeAttribute('minlength'); }
+  }
+  const err = document.getElementById('auth-err');
+  if (err) err.textContent = '';
+}
+
 function wireCriticalUI() {
   // Bottom nav
   document.querySelectorAll('#bottom-nav .nav-btn').forEach(btn => {
@@ -350,6 +373,57 @@ function wireCriticalUI() {
       try { localStorage.setItem('installDismissedAt', String(Date.now())); } catch (_) {}
       const d = document.getElementById('install-dialog');
       if (d && d.open) d.close();
+    });
+  }
+
+  // Auth gate — Create account / Sign in toggle + form submit. CRITICAL: must
+  // wire synchronously so a hung IDB / settings load can't kill the gate.
+  document.querySelectorAll('#view-auth .auth-toggle-btn').forEach(btn => {
+    btn.addEventListener('click', () => setAuthMode(btn.getAttribute('data-auth-mode')));
+  });
+  setAuthMode('signup');
+  const authForgot = document.getElementById('auth-forgot');
+  if (authForgot) {
+    authForgot.addEventListener('click', (e) => {
+      e.preventDefault();
+      const dlg = document.getElementById('forgot-dialog');
+      if (dlg && dlg.showModal) dlg.showModal();
+    });
+  }
+  const authForm = document.getElementById('auth-form');
+  if (authForm) {
+    authForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const email = document.getElementById('auth-email').value.trim();
+      const pw = document.getElementById('auth-pw').value;
+      const errEl = document.getElementById('auth-err');
+      const submit = document.getElementById('auth-submit');
+      errEl.textContent = '';
+      submit.disabled = true;
+      const original = submit.textContent;
+      submit.textContent = _authMode === 'signup' ? 'Creating account…' : 'Signing in…';
+      try {
+        if (typeof accountSignup !== 'function' || typeof accountLogin !== 'function') {
+          throw new Error('App still initializing — try again in a moment.');
+        }
+        if (_authMode === 'signup') await accountSignup(email, pw);
+        else await accountLogin(email, pw);
+        await onAccountChanged();
+        if (_authMode === 'login') {
+          try { await accountSyncPull(); } catch (_) {}
+        } else {
+          try { await accountSyncPush(); } catch (_) {}
+        }
+        try { await renderShots(); } catch (_) {}
+        try { await renderWeights(); } catch (_) {}
+        setHomeTab('home');
+      } catch (ex) {
+        errEl.textContent = ex.message || 'Something went wrong.';
+      } finally {
+        submit.disabled = false;
+        // Re-set so labels stay in sync with mode
+        setAuthMode(_authMode);
+      }
     });
   }
 }
@@ -477,7 +551,36 @@ document.addEventListener('DOMContentLoaded', async () => {
   $('#export-btn').addEventListener('click', exportData);
   $('#import-btn').addEventListener('click', () => $('#import-file').click());
   $('#import-file').addEventListener('change', importData);
+  const smartBtn = $('#smart-import-btn');
+  if (smartBtn) {
+    smartBtn.addEventListener('click', () => $('#smart-import-file').click());
+    $('#smart-import-file').addEventListener('change', smartImport);
+  }
   $('#wipe-btn').addEventListener('click', wipeAll);
+  const delAcctBtn = $('#delete-account-btn');
+  if (delAcctBtn) {
+    delAcctBtn.addEventListener('click', async () => {
+      if (!account.user) {
+        alert('Not signed in.');
+        return;
+      }
+      const typed = prompt('This permanently deletes your account, cancels any active subscription, and erases your cloud copy. Type DELETE to confirm:');
+      if (typed !== 'DELETE') return;
+      try {
+        const r = await accountFetch('me', { method: 'DELETE' });
+        if (!r.ok) {
+          const j = await r.json().catch(() => ({}));
+          throw new Error(j.message || `Failed (${r.status})`);
+        }
+        clearRememberedSignIn();
+        alert('Account deleted. Local data on this device is still here — use "Erase all data on this device" to wipe it too.');
+        account = { user: null, encryptionKey: null };
+        await onAccountChanged();
+      } catch (e) {
+        alert('Could not delete account: ' + (e.message || e));
+      }
+    });
+  }
   // Surface app version (and SW cache name) in Settings + footer.
   (async function showVersion() {
     let swInfo = '';
@@ -641,6 +744,67 @@ async function exportData() {
   await saveSettings();
   updateBackupLabel();
 }
+async function smartImport(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const btn = $('#smart-import-btn');
+  const orig = btn.textContent;
+  try {
+    if (file.size > 200 * 1024) {
+      throw new Error('File is over 200 KB. Trim it down or split into chunks.');
+    }
+    const text = await file.text();
+    if (!account.user) {
+      throw new Error('Sign in first — Smart Import sends the file to our server for AI parsing.');
+    }
+    if (!confirm(`Use AI to parse "${file.name}" (${file.size} bytes)?\n\nThis sends the FILE TEXT to our server for parsing only. The parsed shots/weights are then merged into your local data.`)) {
+      return;
+    }
+    btn.disabled = true;
+    btn.textContent = '✨ Parsing with AI…';
+    const r = await accountFetch('import/parse', {
+      method: 'POST',
+      body: JSON.stringify({ text }),
+    });
+    if (!r.ok) {
+      const j = await r.json().catch(() => ({}));
+      throw new Error(j.message || `Failed (${r.status})`);
+    }
+    const j = await r.json();
+    const shots = (j.shots || []).filter(s => s && s.when && s.dose != null);
+    const weights = (j.weights || []).filter(w => w && w.date && w.value != null);
+    if (!shots.length && !weights.length) {
+      alert('AI did not find any shots or weights in this file.');
+      return;
+    }
+    if (!confirm(`Found ${shots.length} shots and ${weights.length} weight entries. Import them now?`)) return;
+    for (const s of shots) {
+      await dbAdd(STORES.shots, {
+        med: String(s.med || settings.medication || 'Tirzepatide'),
+        dose: parseFloat(s.dose),
+        when: new Date(s.when).toISOString(),
+        site: s.site || null,
+        notes: s.notes || null,
+      });
+    }
+    for (const w of weights) {
+      let val = parseFloat(w.value);
+      if (w.unit && String(w.unit).toLowerCase() === 'kg') val = val * 2.20462;
+      await dbAdd(STORES.weights, { value: val, date: w.date });
+    }
+    await renderShots();
+    await renderWeights();
+    markSyncDirty();
+    alert(`✓ Imported ${shots.length} shots and ${weights.length} weights.`);
+  } catch (ex) {
+    alert('Smart import failed: ' + (ex.message || ex));
+  } finally {
+    btn.disabled = false;
+    btn.textContent = orig;
+    e.target.value = '';
+  }
+}
+
 async function importData(e) {
   const file = e.target.files[0];
   if (!file) return;
@@ -1094,60 +1258,9 @@ function setupAccountUI() {
     localStorage.setItem('acct.banner.dismissed', '1');
     $('#account-banner').classList.add('hidden');
   });
-  $('#legacy-migrate-cta').addEventListener('click', () => openAccountDialog('signup'));
-  $('#legacy-migrate-dismiss').addEventListener('click', () => $('#legacy-migrate-banner').classList.add('hidden'));
   $('#account-form').addEventListener('submit', handleAccountSubmit);
 
-  // Fullscreen auth gate (shown when no account on device)
-  let authMode = 'signup';
-  const setAuthMode = (m) => {
-    authMode = m;
-    $$('#view-auth .auth-toggle-btn').forEach(b => b.classList.toggle('active', b.getAttribute('data-auth-mode') === m));
-    const pwInput = $('#auth-pw');
-    if (m === 'signup') {
-      $('#auth-submit').textContent = 'Create account & start free trial';
-      $('#auth-help').textContent = 'Use a strong password. We encrypt your data with it before it ever leaves your device — if you forget it, your cloud copy is gone (data on each device is preserved).';
-      pwInput.setAttribute('autocomplete', 'new-password');
-      pwInput.setAttribute('minlength', '8');
-    } else {
-      $('#auth-submit').textContent = 'Sign in';
-      $('#auth-help').textContent = 'Welcome back. Sign in to sync this device with your data.';
-      pwInput.setAttribute('autocomplete', 'current-password');
-      pwInput.removeAttribute('minlength');
-    }
-    $('#auth-err').textContent = '';
-  };
-  $$('#view-auth .auth-toggle-btn').forEach(btn => btn.addEventListener('click', () => setAuthMode(btn.getAttribute('data-auth-mode'))));
-  $('#auth-forgot').addEventListener('click', (e) => { e.preventDefault(); $('#forgot-dialog').showModal(); });
-  $('#auth-form').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const email = $('#auth-email').value.trim();
-    const pw = $('#auth-pw').value;
-    const err = $('#auth-err');
-    const submit = $('#auth-submit');
-    err.textContent = '';
-    submit.disabled = true;
-    submit.textContent = authMode === 'signup' ? 'Creating account…' : 'Signing in…';
-    try {
-      if (authMode === 'signup') await accountSignup(email, pw);
-      else await accountLogin(email, pw);
-      await onAccountChanged();
-      // Pull cloud data on login (signup uploads local, login fetches remote)
-      if (authMode === 'login') {
-        try { await accountSyncPull(); } catch(e) { /* fresh account / no remote yet */ }
-      } else {
-        try { await accountSyncPush(); } catch(e) { /* tolerate */ }
-      }
-      await renderShots();
-      await renderWeights();
-      setHomeTab('home');
-    } catch (ex) {
-      err.textContent = ex.message || 'Something went wrong.';
-    } finally {
-      submit.disabled = false;
-      setAuthMode(authMode);
-    }
-  });
+  // (Auth form + toggle wired in wireCriticalUI() so it works even if init hangs.)
   $('#account-cancel').addEventListener('click', () => $('#account-dialog').close());
   $('#show-forgot').addEventListener('click', (e) => { e.preventDefault(); $('#account-dialog').close(); $('#forgot-dialog').showModal(); });
   $('#forgot-cancel').addEventListener('click', () => $('#forgot-dialog').close());
@@ -1795,10 +1908,7 @@ function applyTimeOfDayGradient() {
   const card = document.querySelector('.countdown-card');
   if (!card) return;
   const h = new Date().getHours();
-  const isNight = h < 6 || h >= 20;
-  card.style.setProperty('--grad-hour-shift', isNight ? '-12%' : '0%');
-  // night-mode countdown card gets a deeper tint
-  if (isNight) card.classList.add('night'); else card.classList.remove('night');
+  card.style.setProperty('--grad-hour-shift', (h < 6 || h >= 20) ? '-12%' : '0%');
 }
 
 // ---------- Pull-to-refresh ----------
@@ -2087,9 +2197,8 @@ async function onAccountChanged() {
   const banner = $('#account-banner');
   const pill = $('#hdr-account-pill');
   // Auth gate: require signup/login on every fresh device. Once signed in, app unlocks.
-  // Legacy users (with old `sync.creds`) bypass the gate so we don't lock them out — they can use the migrate banner to upgrade.
-  const hasLegacyCreds = !!localStorage.getItem('sync.creds');
-  if (!u && !hasLegacyCreds) {
+  // (Old jdubb-style legacy sync bypass removed — everyone uses the email/password account flow.)
+  if (!u) {
     document.body.classList.add('auth-active');
     $$('.view').forEach(v => v.classList.remove('active'));
     $('#view-auth').classList.add('active');
@@ -2137,9 +2246,6 @@ async function onAccountChanged() {
       banner.classList.remove('hidden');
     }
   }
-  // Show legacy migration banner if user has legacy creds and isn't signed in to new account
-  const hasLegacy = !!localStorage.getItem('sync.creds');
-  $('#legacy-migrate-banner').classList.toggle('hidden', !hasLegacy || !!u);
   applyPremiumGates();
 }
 

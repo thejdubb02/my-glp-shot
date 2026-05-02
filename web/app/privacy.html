@@ -6,12 +6,29 @@
 <meta name="theme-color" content="#0f766e">
 <title>Privacy — My GLP Shot</title>
 <link rel="icon" href="/app/icons/favicon.ico">
-<link rel="stylesheet" href="/app/styles.css?v=9">
+<link rel="stylesheet" href="styles.css?v=18">
+<script>
+(function(){
+  try {
+    var t = localStorage.getItem('theme') || 'system';
+    if (t === 'dark' || t === 'light') document.documentElement.setAttribute('data-theme', t);
+  } catch(e){}
+})();
+</script>
 <style>
-  body{max-width:760px;margin:0 auto;padding:0 16px}
+  body{background:var(--bg);color:var(--ink)}
+  .legal-wrap{max-width:760px;margin:0 auto;padding:14px 16px 32px}
+  .legal{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:22px;box-shadow:var(--shadow)}
+  .legal h1{color:var(--ink);font-size:1.5rem;margin-bottom:6px}
+  .legal h2{color:var(--bronze-dk);font-size:1.05rem;text-transform:none;letter-spacing:0;margin-top:22px;margin-bottom:8px;font-weight:700}
+  .legal p,.legal ul,.legal ol,.legal dl{color:var(--ink);line-height:1.6}
+  .legal a{color:var(--bronze-dk)}
+  .legal code{background:var(--surface-alt);color:var(--ink);padding:1px 6px;border-radius:4px;font-size:.85em}
   .glossary{margin:8px 0 18px}
   .glossary dt{font-weight:700;color:var(--bronze-dk);margin-top:14px;font-size:.95rem}
   .glossary dd{margin:4px 0 0 0;color:var(--ink);font-size:.92rem;line-height:1.5}
+  .legal-back{display:inline-flex;align-items:center;gap:6px;color:var(--bronze-dk);text-decoration:none;font-weight:600;padding:6px 0;font-size:.9rem}
+  .legal-back:hover{text-decoration:underline}
 </style>
 </head>
 <body>
@@ -20,8 +37,9 @@
   <a href="./" class="icon-btn" aria-label="Back">×</a>
 </header>
 
-<main class="view active">
-  <section class="card legal">
+<div class="legal-wrap">
+  <a href="./" class="legal-back">‹ Back to app</a>
+  <section class="legal">
     <h1>Privacy Policy</h1>
     <p class="muted small">Last updated: 2026-05-02</p>
 
@@ -128,8 +146,8 @@
     <h2>Contact</h2>
     <p>Questions or concerns: <a href="mailto:hello@willhitestrategy.org">hello@willhitestrategy.org</a></p>
 
-    <p class="center"><a href="/">Back to My GLP Shot</a> &nbsp;·&nbsp; <a href="/terms.html">Terms of Use</a></p>
+    <p class="center"><a href="./">Back to My GLP Shot</a> &nbsp;·&nbsp; <a href="terms.html">Terms of Use</a></p>
   </section>
-</main>
+</div>
 </body>
 </html>

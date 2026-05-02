@@ -33,6 +33,7 @@ STRIPE_API_KEY = os.environ.get('STRIPE_API_KEY', '')
 STRIPE_WEBHOOK_SECRET = os.environ.get('STRIPE_WEBHOOK_SECRET', '')
 STRIPE_PRICE_MONTHLY = os.environ.get('STRIPE_PRICE_MONTHLY', '')
 STRIPE_PRICE_YEARLY = os.environ.get('STRIPE_PRICE_YEARLY', '')
+GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '')
 if STRIPE_API_KEY:
     stripe.api_key = STRIPE_API_KEY
 
@@ -323,6 +324,34 @@ def me():
     return jsonify(user=public_user(user))
 
 
+@app.route('/api/me', methods=['DELETE'])
+def delete_account():
+    """Hard-delete the user. GDPR/CCPA compliance + user privacy.
+    Cancels any active Stripe subscription, then removes all rows for the user.
+    Local IndexedDB is the user's responsibility (Settings -> Erase all data on this device).
+    """
+    user = require_user()
+    if not user:
+        return err('unauthorized', 'Not signed in.', 401)
+    db = get_db()
+    uid = user['id']
+    # Best-effort: cancel Stripe subscription so we don't keep billing.
+    if _stripe_ready() and user['stripe_subscription_id']:
+        try:
+            stripe.Subscription.delete(user['stripe_subscription_id'])
+        except stripe.StripeError as e:
+            app.logger.warning('Stripe sub cancel failed during account delete: %s', e)
+    db.execute('DELETE FROM share_links WHERE user_id = ?', (uid,))
+    db.execute('DELETE FROM sync_blobs WHERE user_id = ?', (uid,))
+    db.execute('DELETE FROM sessions WHERE user_id = ?', (uid,))
+    db.execute('DELETE FROM password_resets WHERE user_id = ?', (uid,))
+    db.execute('DELETE FROM users WHERE id = ?', (uid,))
+    db.commit()
+    resp = make_response(jsonify(deleted=True))
+    resp.set_cookie('mgs_session', '', expires=0, path='/', secure=True, samesite='Lax')
+    return resp
+
+
 @app.route('/api/forgot', methods=['POST'])
 def forgot_password():
     data = request.get_json(silent=True) or {}
@@ -610,6 +639,19 @@ def billing_checkout():
     price_id = STRIPE_PRICE_YEARLY if plan == 'yearly' else STRIPE_PRICE_MONTHLY
     customer_id = _ensure_customer(user)
     app_base = os.environ.get('APP_URL', 'https://app.myglpshot.com').rstrip('/')
+
+    # Defend against duplicate subscriptions: if the customer already has an active or trialing sub,
+    # send them to the customer portal instead. They can change plan there.
+    try:
+        subs = stripe.Subscription.list(customer=customer_id, status='all', limit=10)
+        for s in subs.data:
+            if s.status in ('active', 'trialing', 'past_due', 'unpaid'):
+                portal = stripe.billing_portal.Session.create(
+                    customer=customer_id, return_url=f'{app_base}/'
+                )
+                return jsonify(url=portal.url, alreadySubscribed=True)
+    except stripe.StripeError as e:
+        app.logger.warning('subscription list check failed (continuing): %s', e)
     try:
         sess = stripe.checkout.Session.create(
             mode='subscription',
@@ -755,6 +797,78 @@ def stripe_webhook():
         app.logger.exception('webhook handler error for %s: %s', et, e)
         # Still 200 so Stripe doesn't retry endlessly on internal bugs.
     return jsonify(received=True)
+
+
+# ---------- LLM-powered import ----------
+IMPORT_PROMPT = (
+    "You are a parser. The text below is an export from a GLP-1 / weight-loss / "
+    "shot-tracking app (e.g. Shotsy, MyFitnessPal, etc.). Extract all shots and weights.\n\n"
+    "Return ONLY valid JSON, no markdown fences, with this exact shape:\n"
+    "{\n"
+    '  "shots": [{"when":"ISO8601 datetime","dose":<mg as number>,"med":"<medication>",'
+    '"site":"<one of: Abdomen — Left, Abdomen — Right, Thigh — Left, Thigh — Right, '
+    'Upper arm — Left, Upper arm — Right, or empty string>","notes":"<string>"}],\n'
+    '  "weights": [{"date":"YYYY-MM-DD","value":<lb as number>,"unit":"lb|kg"}]\n'
+    "}\n\n"
+    "Rules:\n"
+    "- Convert dates to ISO8601 (assume midnight if time is missing).\n"
+    "- Convert kg weights to lb if the source uses kg, BUT keep unit:\"kg\" if you cannot convert reliably.\n"
+    "- Skip rows that lack a date or dose for shots / a date or value for weights.\n"
+    "- If site is unrecognized, return empty string.\n"
+    "- Default med to 'Tirzepatide' if not specified.\n"
+    "- Output the JSON only.\n\n"
+    "INPUT:\n"
+)
+
+
+@app.route('/api/import/parse', methods=['POST'])
+def import_parse():
+    user = require_user()
+    if not user:
+        return err('unauthorized', 'Not signed in.', 401)
+    if not GEMINI_API_KEY:
+        return err('llm_unavailable', 'LLM import is not configured on this server.', 503)
+    data = request.get_json(silent=True) or {}
+    text = (data.get('text') or '')
+    if not text or len(text) < 10:
+        return err('empty', 'No text to parse.', 400)
+    if len(text) > 200_000:
+        return err('too_large', 'Text exceeds 200 KB. Trim and retry.', 413)
+
+    import requests as _r
+    body = {
+        'contents': [{'parts': [{'text': IMPORT_PROMPT + text}]}],
+        'generationConfig': {
+            'temperature': 0.0,
+            'maxOutputTokens': 8192,
+            'responseMimeType': 'application/json',
+        },
+    }
+    try:
+        r = _r.post(
+            f'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}',
+            json=body, timeout=90,
+        )
+    except Exception as e:
+        app.logger.exception('Gemini call failed: %s', e)
+        return err('llm_error', 'AI parser is temporarily unavailable.', 502)
+    if r.status_code != 200:
+        app.logger.warning('Gemini %s: %s', r.status_code, r.text[:300])
+        return err('llm_error', f'AI parser returned {r.status_code}.', 502)
+    try:
+        out = r.json()
+        raw = out['candidates'][0]['content']['parts'][0]['text']
+        parsed = json.loads(raw)
+    except (KeyError, IndexError, ValueError, TypeError) as e:
+        app.logger.warning('Gemini malformed: %s — %s', e, r.text[:300])
+        return err('llm_parse', 'AI returned an unparseable response. Try a smaller file.', 502)
+
+    # Sanity-check the shape and clamp counts.
+    shots = parsed.get('shots') if isinstance(parsed, dict) else None
+    weights = parsed.get('weights') if isinstance(parsed, dict) else None
+    if not isinstance(shots, list): shots = []
+    if not isinstance(weights, list): weights = []
+    return jsonify(shots=shots[:5000], weights=weights[:5000])
 
 
 # ---------- Bootstrap ----------

@@ -17,7 +17,7 @@
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="icon" type="image/png" sizes="512x512" href="icons/icon-512.png">
 <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png">
-<link rel="stylesheet" href="styles.css?v=17">
+<link rel="stylesheet" href="styles.css?v=19">
 <script>
 (function(){
   // Apply saved theme synchronously to avoid flash. Settings live in IndexedDB; theme also mirrored to localStorage for fast read.
@@ -35,12 +35,6 @@
   <span>💾 <strong>Back up + sync your data</strong> across devices</span>
   <button id="acct-banner-cta" class="btn-primary tiny">Sign up free</button>
   <button id="acct-banner-dismiss" class="btn-ghost tiny">×</button>
-</div>
-
-<div id="legacy-migrate-banner" class="acct-banner alt hidden">
-  <span>You're on the legacy sync (jdubb-style). <strong>Upgrade to email account</strong> for password reset, billing, and easier sign-in.</span>
-  <button id="legacy-migrate-cta" class="btn-primary tiny">Migrate</button>
-  <button id="legacy-migrate-dismiss" class="btn-ghost tiny">×</button>
 </div>
 
 <dialog id="install-dialog" class="modal install-modal">
@@ -417,7 +411,9 @@
     <div class="row-buttons">
       <button id="export-btn" class="btn-primary">Export JSON</button>
       <button id="import-btn" class="btn-ghost">Import JSON or CSV</button>
+      <button id="smart-import-btn" class="btn-ghost">✨ Smart import (any tracker)</button>
       <input id="import-file" type="file" accept="application/json,.json,.csv,text/csv" hidden>
+      <input id="smart-import-file" type="file" accept=".csv,.txt,.json,application/json,text/csv,text/plain" hidden>
     </div>
     <p class="muted small">Your data is stored only on this device. Export regularly. Installing as a PWA dramatically reduces the chance of losing data on a browser clear.</p>
     <p class="muted small"><strong>Switching from another tracker?</strong> In your old app, look for an Export Data option (CSV). Then tap "Import" above and select the file. Shots, weight, sites, doses, and notes will transfer.</p>
@@ -439,6 +435,8 @@
   <section class="card">
     <h2>Danger zone</h2>
     <button id="wipe-btn" class="btn-danger">Erase all data on this device</button>
+    <p class="muted small" style="margin-top:12px">Deleting your account permanently removes your encrypted cloud copy, share links, and any active subscription. Local data on each device stays unless you also tap "Erase all data" above.</p>
+    <button id="delete-account-btn" class="btn-danger">Delete my account</button>
   </section>
 
   <p class="muted small center">My GLP Shot <span id="app-version-footer"></span> · <a href="privacy.html">Privacy</a> · <a href="terms.html">Terms</a> · <a href="https://github.com/thejdubb02/wsg-shotclock" target="_blank" rel="noopener">source</a></p>
@@ -680,6 +678,6 @@
 </nav>
 
 <script src="lib/chart.min.js"></script>
-<script src="app.js?v=17"></script>
+<script src="app.js?v=19"></script>
 </body>
 </html>
