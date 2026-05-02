@@ -1,0 +1,23 @@
+User-agent: *
+Allow: /
+Disallow: /app/
+
+# AI / generative engines explicitly welcome to crawl the marketing site
+User-agent: GPTBot
+Allow: /
+User-agent: ChatGPT-User
+Allow: /
+User-agent: OAI-SearchBot
+Allow: /
+User-agent: ClaudeBot
+Allow: /
+User-agent: Claude-Web
+Allow: /
+User-agent: PerplexityBot
+Allow: /
+User-agent: Google-Extended
+Allow: /
+User-agent: CCBot
+Allow: /
+
+Sitemap: https://myglpshot.com/sitemap.xml
