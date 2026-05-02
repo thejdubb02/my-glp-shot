@@ -17,7 +17,7 @@
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="icon" type="image/png" sizes="512x512" href="icons/icon-512.png">
 <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png">
-<link rel="stylesheet" href="styles.css?v=7">
+<link rel="stylesheet" href="styles.css?v=8">
 <script>
 (function(){
   // Apply saved theme synchronously to avoid flash. Settings live in IndexedDB; theme also mirrored to localStorage for fast read.
@@ -30,6 +30,18 @@
 <meta name="description" content="Offline-first GLP-1 / peptide injection tracker. Log doses, sites, weight, side effects. Your data stays on your device.">
 </head>
 <body>
+
+<div id="account-banner" class="acct-banner hidden">
+  <span>💾 <strong>Back up + sync your data</strong> across devices</span>
+  <button id="acct-banner-cta" class="btn-primary tiny">Sign up free</button>
+  <button id="acct-banner-dismiss" class="btn-ghost tiny">×</button>
+</div>
+
+<div id="legacy-migrate-banner" class="acct-banner alt hidden">
+  <span>You're on the legacy sync (jdubb-style). <strong>Upgrade to email account</strong> for password reset, billing, and easier sign-in.</span>
+  <button id="legacy-migrate-cta" class="btn-primary tiny">Migrate</button>
+  <button id="legacy-migrate-dismiss" class="btn-ghost tiny">×</button>
+</div>
 
 <div id="install-banner" class="banner hidden">
   <div class="banner-body">
@@ -44,7 +56,10 @@
 
 <header class="app-header">
   <div class="brand"><span class="brand-mark">●</span> My GLP Shot</div>
-  <button id="settings-btn" class="icon-btn" aria-label="Settings">⚙</button>
+  <div class="hdr-actions">
+    <span id="hdr-account-pill" class="acct-pill hidden"></span>
+    <button id="settings-btn" class="icon-btn" aria-label="Settings">⚙</button>
+  </div>
 </header>
 
 <main id="view-home" class="view active">
@@ -89,7 +104,56 @@
     <div id="badges-list" class="badges-list"></div>
   </section>
 
-  <section class="card mood-card">
+  <section class="card recon-card" data-tab="home">
+    <div class="card-head"><h2>🧪 Reconstitution calculator</h2><span class="muted small">Free</span></div>
+    <p class="muted small">For compound peptide users — figure out how many units to draw.</p>
+    <div class="recon-grid">
+      <label>Vial total (mg)<input id="recon-vial" type="number" step="0.1" min="0" value="10"></label>
+      <label>Bac water (mL)<input id="recon-water" type="number" step="0.1" min="0.1" value="2"></label>
+      <label>Desired dose (mg)<input id="recon-dose" type="number" step="0.1" min="0" value="5"></label>
+    </div>
+    <div id="recon-output" class="recon-output"></div>
+    <p class="muted small">Educational only. Verify with your prescribing clinician. Not medical advice.</p>
+  </section>
+
+  <section id="supply-card" class="card" data-tab="track">
+    <div class="card-head">
+      <h2>💊 Supply <span class="lock-pill" id="supply-lock">Premium</span></h2>
+      <button id="add-supply-btn" class="btn-ghost">+ Add</button>
+    </div>
+    <ul id="supply-list" class="supply-list"></ul>
+    <p id="supply-empty" class="empty"><span class="empty-illus">📦</span><br>No active supplies. Add a pen or vial to track expiration + doses remaining.</p>
+  </section>
+
+  <section id="measurements-card" class="card" data-tab="track">
+    <div class="card-head">
+      <h2>📏 Body measurements <span class="lock-pill" id="measurements-lock">Premium</span></h2>
+      <button id="add-measurement-btn" class="btn-ghost">+ Add</button>
+    </div>
+    <div id="measurement-summary" class="measurement-summary"></div>
+    <p id="measurements-empty" class="empty"><span class="empty-illus">📏</span><br>Track waist, hips, chest, thigh, arm. Trends with weight.</p>
+  </section>
+
+  <section id="labs-card" class="card" data-tab="track">
+    <div class="card-head">
+      <h2>🔬 Lab results <span class="lock-pill" id="labs-lock">Premium</span></h2>
+      <button id="add-lab-btn" class="btn-ghost">+ Add</button>
+    </div>
+    <div id="lab-summary" class="lab-summary"></div>
+    <p id="labs-empty" class="empty"><span class="empty-illus">🧪</span><br>A1c, glucose, BP, lipids. See how your numbers change with treatment.</p>
+  </section>
+
+  <section id="cost-card" class="card" data-tab="track">
+    <div class="card-head"><h2>💰 Cost tracker <span class="lock-pill" id="cost-lock">Premium</span></h2></div>
+    <div id="cost-summary" class="cost-summary"></div>
+  </section>
+
+  <section id="plateau-card" class="card hidden" data-tab="insights">
+    <div class="card-head"><h2>⚠️ Plateau detected</h2></div>
+    <div id="plateau-body"></div>
+  </section>
+
+  <section class="card mood-card" data-tab="home">
     <div class="card-head"><h2>How are you feeling?</h2><span id="mood-saved" class="mood-saved muted small"></span></div>
     <div id="mood-picker" class="mood-picker">
       <button data-mood="1" class="mood-btn" type="button" aria-label="Awful">😣</button>
@@ -155,6 +219,35 @@
 
 <main id="view-settings" class="view">
   <header class="sub-header"><button class="back" data-back>‹</button><h1>Settings</h1></header>
+
+  <section class="card account-card" id="account-card">
+    <div id="account-signed-out">
+      <h2>Account</h2>
+      <p class="muted small">Sign up to back up your data, sync across devices, and access premium features.</p>
+      <div class="btn-row">
+        <button id="show-signup" class="btn-primary" type="button">Sign up free</button>
+        <button id="show-login" class="btn-ghost" type="button">Sign in</button>
+      </div>
+    </div>
+    <div id="account-signed-in" class="hidden">
+      <h2>Account</h2>
+      <p>Signed in as <strong id="account-email"></strong></p>
+      <p id="account-sub-status" class="sub-status muted small"></p>
+      <div id="account-trial-bar" class="trial-bar hidden">
+        <div id="account-trial-fill" class="trial-fill"></div>
+      </div>
+      <div class="btn-row">
+        <button id="upgrade-cta" class="btn-primary hidden" type="button">⭐ Upgrade to Premium</button>
+        <button id="show-acct-sync" class="btn-ghost" type="button">Sync now</button>
+        <button id="show-share" class="btn-ghost" type="button">Doctor share link</button>
+      </div>
+      <div class="btn-row">
+        <button id="show-export-pdf" class="btn-ghost" type="button">📄 Export PDF report</button>
+        <button id="signout-btn" class="btn-ghost" type="button">Sign out</button>
+      </div>
+      <p id="acct-sync-status" class="sync-status"></p>
+    </div>
+  </section>
 
   <section class="card">
     <h2>Medication</h2>
@@ -286,6 +379,156 @@
   </form>
 </dialog>
 
+<dialog id="account-dialog" class="modal">
+  <form id="account-form" method="dialog" autocomplete="on">
+    <h2 id="account-form-title">Sign up</h2>
+    <p id="account-form-sub" class="muted small">Free, takes 5 seconds. 14-day premium trial included.</p>
+    <input type="hidden" id="account-mode" value="signup">
+    <label>Email <input id="account-email-input" type="email" required autocomplete="email" inputmode="email" autocapitalize="off"></label>
+    <label id="account-pw-label">Password <input id="account-pw-input" type="password" required minlength="8" autocomplete="new-password"></label>
+    <p class="muted small" id="account-pw-help">Use a strong password. <strong>Important:</strong> we encrypt your cloud data with this password and cannot decrypt it without you. Forgetting it = losing your cloud copy (local data on each device is preserved).</p>
+    <p id="account-error" class="acct-err"></p>
+    <div class="modal-actions">
+      <a href="#" id="show-forgot" class="link" style="margin-right:auto">Forgot password?</a>
+      <button type="button" id="account-cancel" class="btn-ghost">Cancel</button>
+      <button type="submit" id="account-submit" class="btn-primary">Sign up</button>
+    </div>
+    <p class="muted small center" id="account-switch">Already have an account? <a href="#" id="switch-mode-link">Sign in</a></p>
+  </form>
+</dialog>
+
+<dialog id="forgot-dialog" class="modal">
+  <form id="forgot-form" method="dialog">
+    <h2>Reset password</h2>
+    <p class="muted small">We'll email a reset link. Note: resetting will erase your cloud-stored data, since we cannot decrypt it. Local data on each device is preserved.</p>
+    <label>Email <input id="forgot-email" type="email" required autocomplete="email"></label>
+    <p id="forgot-status" class="muted small"></p>
+    <div class="modal-actions">
+      <button type="button" id="forgot-cancel" class="btn-ghost">Cancel</button>
+      <button type="submit" class="btn-primary">Send reset link</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="upgrade-dialog" class="modal">
+  <form method="dialog">
+    <h2>Upgrade to Premium</h2>
+    <p class="muted small">$1.99/mo or $19.99/yr. 14-day free trial.</p>
+    <ul class="premium-list">
+      <li>☁️ Multi-device end-to-end encrypted sync</li>
+      <li>💊 Supply / pen tracking + expiration alerts</li>
+      <li>📏 Body measurements (waist, hips, etc.)</li>
+      <li>🔬 Lab tracking (A1c, BP, lipids)</li>
+      <li>📈 Advanced insights &amp; plateau detection</li>
+      <li>📄 Doctor-ready PDF reports</li>
+      <li>🔗 24-hour doctor share links</li>
+      <li>💰 Cost / spend tracker</li>
+    </ul>
+    <p class="muted small">Stripe billing isn't live yet — early testers get free premium. Tap below to enable for now.</p>
+    <div class="modal-actions">
+      <button type="button" id="upgrade-cancel" class="btn-ghost">Maybe later</button>
+      <button type="button" id="upgrade-confirm" class="btn-primary">Continue</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="share-dialog" class="modal">
+  <form method="dialog">
+    <h2>🔗 Share with doctor</h2>
+    <p class="muted small">Generates a 24-hour read-only URL of your last 90 days. Encrypted in the URL fragment — only people with the link can view.</p>
+    <label>Label (optional) <input id="share-label" type="text" placeholder="e.g. Dr. Smith - April visit"></label>
+    <div id="share-result" class="hidden">
+      <p class="muted small">Share link (expires in 24h):</p>
+      <div id="share-url-display" class="passphrase-display"></div>
+      <button type="button" id="share-copy" class="btn-ghost">Copy link</button>
+    </div>
+    <div class="modal-actions">
+      <button type="button" id="share-cancel" class="btn-ghost">Close</button>
+      <button type="button" id="share-create" class="btn-primary">Create link</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="supply-dialog" class="modal">
+  <form id="supply-form" method="dialog">
+    <h2 id="supply-form-title">Add supply</h2>
+    <input type="hidden" id="supply-id">
+    <label>Type
+      <select id="supply-type">
+        <option value="vial">Vial</option>
+        <option value="pen">Pen</option>
+      </select>
+    </label>
+    <label>Total mg <input id="supply-total-mg" type="number" step="0.1" min="0" required></label>
+    <label>Volume (mL, vial only) <input id="supply-volume-ml" type="number" step="0.1" min="0"></label>
+    <label>Pharmacy / source <input id="supply-pharmacy" type="text" placeholder="e.g. Hims, EmpowerRx"></label>
+    <label>Batch / lot # <input id="supply-batch" type="text"></label>
+    <label>Cost ($) <input id="supply-cost" type="number" step="0.01" min="0"></label>
+    <label>Date opened <input id="supply-opened" type="date"></label>
+    <label>Expiration <input id="supply-expires" type="date"></label>
+    <p class="muted small">Open vials/pens typically expire 28-56 days after first use. We'll alert you 7 days before.</p>
+    <div class="modal-actions">
+      <button type="button" id="supply-delete" class="btn-danger hidden">Delete</button>
+      <span class="spacer"></span>
+      <button type="button" id="supply-cancel" class="btn-ghost">Cancel</button>
+      <button type="submit" class="btn-primary">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="measurement-dialog" class="modal">
+  <form id="measurement-form" method="dialog">
+    <h2>Body measurement</h2>
+    <label>Type
+      <select id="measurement-type">
+        <option value="waist">Waist</option>
+        <option value="hips">Hips</option>
+        <option value="chest">Chest</option>
+        <option value="thigh">Thigh</option>
+        <option value="arm">Arm</option>
+        <option value="neck">Neck</option>
+      </select>
+    </label>
+    <label>Value <input id="measurement-value" type="number" step="0.1" min="0" required></label>
+    <label>Unit
+      <select id="measurement-unit"><option value="in">inches</option><option value="cm">cm</option></select>
+    </label>
+    <label>Date <input id="measurement-date" type="date" required></label>
+    <div class="modal-actions">
+      <span class="spacer"></span>
+      <button type="button" id="measurement-cancel" class="btn-ghost">Cancel</button>
+      <button type="submit" class="btn-primary">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="lab-dialog" class="modal">
+  <form id="lab-form" method="dialog">
+    <h2>Lab result</h2>
+    <label>Test
+      <select id="lab-type">
+        <option value="a1c">A1c (%)</option>
+        <option value="glucose_fasting">Fasting glucose (mg/dL)</option>
+        <option value="bp_systolic">Blood pressure - systolic (mmHg)</option>
+        <option value="bp_diastolic">Blood pressure - diastolic (mmHg)</option>
+        <option value="cholesterol_total">Total cholesterol (mg/dL)</option>
+        <option value="cholesterol_hdl">HDL (mg/dL)</option>
+        <option value="cholesterol_ldl">LDL (mg/dL)</option>
+        <option value="triglycerides">Triglycerides (mg/dL)</option>
+        <option value="alt">ALT (U/L)</option>
+      </select>
+    </label>
+    <label>Value <input id="lab-value" type="number" step="0.01" min="0" required></label>
+    <label>Date <input id="lab-date" type="date" required></label>
+    <label>Notes <input id="lab-notes" type="text"></label>
+    <div class="modal-actions">
+      <span class="spacer"></span>
+      <button type="button" id="lab-cancel" class="btn-ghost">Cancel</button>
+      <button type="submit" class="btn-primary">Save</button>
+    </div>
+  </form>
+</dialog>
+
 <dialog id="weight-dialog" class="modal">
   <form id="weight-form" method="dialog">
     <h2>Log Weight</h2>
@@ -303,6 +546,6 @@
 </dialog>
 
 <script src="lib/chart.min.js"></script>
-<script src="app.js?v=7"></script>
+<script src="app.js?v=8"></script>
 </body>
 </html>

@@ -239,3 +239,73 @@ canvas{width:100% !important;height:auto !important;max-height:200px}
 /* Pull-to-refresh indicator */
 .ptr-indicator{position:fixed;top:8px;left:50%;transform:translateX(-50%) translateY(-50px);background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:8px 16px;box-shadow:var(--shadow);z-index:100;font-size:.85rem;color:var(--bronze-dk);transition:transform .2s ease;pointer-events:none}
 .ptr-indicator.show{transform:translateX(-50%) translateY(8px)}
+
+/* Account banner / pill */
+.acct-banner{display:flex;align-items:center;gap:8px;padding:10px 14px;background:linear-gradient(90deg,var(--bronze-lt),var(--surface-alt));border-bottom:1px solid var(--line);font-size:.85rem;flex-wrap:wrap}
+.acct-banner.alt{background:linear-gradient(90deg,#fed7aa,#ffedd5)}
+[data-theme="dark"] .acct-banner.alt{background:linear-gradient(90deg,#7c2d12,#9a3412);color:#fff}
+.acct-banner span{flex:1;color:var(--ink)}
+.btn-primary.tiny,.btn-ghost.tiny{padding:5px 12px;font-size:.78rem}
+
+.hdr-actions{display:flex;align-items:center;gap:8px}
+.acct-pill{background:var(--bronze-lt);color:var(--bronze-dk);padding:3px 10px;border-radius:999px;font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px}
+.acct-pill.premium{background:linear-gradient(135deg,var(--bronze) 0%,var(--bronze-dk) 100%);color:#fff}
+.acct-pill.trial{background:#fef3c7;color:#a16207}
+
+/* Account card */
+.account-card .sub-status{margin:6px 0}
+.trial-bar{height:6px;background:var(--surface-alt);border-radius:6px;overflow:hidden;margin:6px 0}
+.trial-fill{height:100%;background:linear-gradient(90deg,var(--bronze) 0%,var(--bronze-dk) 100%);transition:width .8s ease}
+.acct-err{color:var(--danger);font-size:.85rem;min-height:1.2em;margin:6px 0}
+
+/* Reconstitution calc */
+.recon-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin:8px 0}
+.recon-grid label{margin:0;font-size:.78rem}
+.recon-output{background:var(--surface-alt);border-radius:10px;padding:12px;margin:10px 0;font-variant-numeric:tabular-nums}
+.recon-output .recon-result{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--line)}
+.recon-output .recon-result:last-child{border-bottom:none}
+.recon-output .recon-result strong{color:var(--bronze-dk);font-size:1.05rem}
+.recon-output.error{color:var(--danger);text-align:center;padding:14px}
+@media (max-width:480px){
+  .recon-grid{grid-template-columns:1fr 1fr}
+  .recon-grid label:last-child{grid-column:span 2}
+}
+
+/* Premium lock pill */
+.lock-pill{display:inline-block;background:linear-gradient(135deg,var(--bronze) 0%,var(--bronze-dk) 100%);color:#fff;font-size:.62rem;padding:2px 8px;border-radius:999px;font-weight:700;letter-spacing:.5px;margin-left:6px;vertical-align:middle;text-transform:uppercase}
+.lock-pill.unlocked{background:#10b981}
+.lock-pill.unlocked::before{content:'✓ '}
+
+/* Supply list */
+.supply-list{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:8px}
+.supply-list li{background:var(--surface-alt);border:1px solid var(--line);border-radius:10px;padding:10px 12px;cursor:pointer}
+.supply-list .supply-name{font-weight:600}
+.supply-list .supply-meta{font-size:.78rem;color:var(--muted);margin-top:2px}
+.supply-list .supply-progress{height:5px;background:var(--surface);border-radius:5px;overflow:hidden;margin-top:6px}
+.supply-list .supply-fill{height:100%;background:var(--bronze);transition:width .5s}
+.supply-list li.expiring{border-color:var(--accent)}
+.supply-list li.expired{border-color:var(--danger);opacity:.65}
+
+/* Measurements/Labs/Cost summaries */
+.measurement-summary,.lab-summary,.cost-summary{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}
+.summary-pill{background:var(--surface-alt);border:1px solid var(--line);border-radius:10px;padding:6px 12px;font-size:.85rem}
+.summary-pill .summary-label{color:var(--muted);font-size:.7rem;text-transform:uppercase;letter-spacing:.4px;display:block}
+.summary-pill .summary-value{font-weight:700;color:var(--bronze-dk);font-variant-numeric:tabular-nums}
+.summary-pill .summary-trend{margin-left:6px;font-size:.78rem}
+.summary-pill .summary-trend.down{color:var(--ok)}
+.summary-pill .summary-trend.up{color:var(--accent)}
+
+/* Plateau */
+#plateau-card{background:linear-gradient(135deg,#fef3c7,#fffbeb);border-color:#fbbf24}
+[data-theme="dark"] #plateau-card{background:linear-gradient(135deg,#78350f,#92400e);color:#fff;border-color:#d97706}
+
+/* Premium upgrade list */
+.premium-list{list-style:none;padding:0;margin:8px 0}
+.premium-list li{padding:6px 0;font-size:.92rem}
+
+/* Lock overlay on premium-locked cards */
+.premium-locked{position:relative}
+.premium-locked .premium-locked-content{filter:blur(2px);opacity:.55;pointer-events:none}
+.premium-locked .premium-overlay{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:var(--surface);border:2px solid var(--bronze-dk);padding:12px 20px;border-radius:12px;text-align:center;box-shadow:var(--shadow);z-index:5;cursor:pointer}
+.premium-locked .premium-overlay strong{display:block;color:var(--bronze-dk);margin-bottom:4px}
+.premium-locked .premium-overlay span{font-size:.78rem;color:var(--muted)}

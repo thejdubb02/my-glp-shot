@@ -243,6 +243,9 @@ async function renderShots() {
   renderSideEffectsSummary(shots);
   await renderHero(shots, weights);
   await renderBadges(shots, weights);
+  try { await renderSupplies(shots); } catch (e) {}
+  try { await renderCost(weights); } catch (e) {}
+  try { await renderPlateau(weights, shots); } catch (e) {}
   return shots;
 }
 
@@ -409,6 +412,22 @@ document.addEventListener('DOMContentLoaded', async () => {
   applyTimeOfDayGradient();
   setInterval(applyTimeOfDayGradient, 5 * 60 * 1000);
   setupPullToRefresh();
+  setupAccountUI();
+  setupReconCalc();
+  setupSupplyUI();
+  setupMeasurementUI();
+  setupLabUI();
+  setupShareUI();
+
+  // Account restore on launch
+  tryRestoreAccount().then(() => onAccountChanged()).catch(() => onAccountChanged());
+
+  // Refresh premium-gated cards' rendering
+  await renderSupplies(await getShotsSorted());
+  await renderMeasurements();
+  await renderLabs();
+  await renderCost(await getWeightsSorted());
+  await renderPlateau(await getWeightsSorted(), await getShotsSorted());
 });
 
 function applySettingsToInputs() {
@@ -888,9 +907,171 @@ function setupInstallBanner() {
 }
 
 async function markSyncDirty() {
+  if (account.user && account.encryptionKey) {
+    // Account-based sync: auto-push debounced
+    clearTimeout(window._syncDebounce);
+    window._syncDebounce = setTimeout(() => { accountSyncPush().catch(() => {}); }, 30000);
+    return;
+  }
   if (!syncCreds || !settings.syncEnabled || !settings.syncAutoPush) return;
   settings.syncDirty = true;
   await saveSettings();
+}
+
+// ----- Setup helpers -----
+function setupAccountUI() {
+  $('#show-signup').addEventListener('click', () => openAccountDialog('signup'));
+  $('#show-login').addEventListener('click', () => openAccountDialog('login'));
+  $('#acct-banner-cta').addEventListener('click', () => openAccountDialog('signup'));
+  $('#acct-banner-dismiss').addEventListener('click', () => {
+    localStorage.setItem('acct.banner.dismissed', '1');
+    $('#account-banner').classList.add('hidden');
+  });
+  $('#legacy-migrate-cta').addEventListener('click', () => openAccountDialog('signup'));
+  $('#legacy-migrate-dismiss').addEventListener('click', () => $('#legacy-migrate-banner').classList.add('hidden'));
+  $('#account-form').addEventListener('submit', handleAccountSubmit);
+  $('#account-cancel').addEventListener('click', () => $('#account-dialog').close());
+  $('#show-forgot').addEventListener('click', (e) => { e.preventDefault(); $('#account-dialog').close(); $('#forgot-dialog').showModal(); });
+  $('#forgot-cancel').addEventListener('click', () => $('#forgot-dialog').close());
+  $('#forgot-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const email = $('#forgot-email').value.trim();
+    $('#forgot-status').textContent = 'Sending…';
+    try {
+      await accountForgot(email);
+      $('#forgot-status').textContent = 'If that email has an account, a reset link is on the way.';
+      setTimeout(() => $('#forgot-dialog').close(), 2500);
+    } catch (e) {
+      $('#forgot-status').textContent = 'Failed: ' + e.message;
+    }
+  });
+  $('#signout-btn').addEventListener('click', async () => {
+    if (!confirm('Sign out? Local data is preserved.')) return;
+    await accountLogout(true);
+    onAccountChanged();
+  });
+  $('#upgrade-cta').addEventListener('click', () => $('#upgrade-dialog').showModal());
+  $('#upgrade-cancel').addEventListener('click', () => $('#upgrade-dialog').close());
+  $('#upgrade-confirm').addEventListener('click', () => {
+    alert("Stripe billing isn't live yet. Tell Justin you want premium and he'll flip the switch on the server.");
+    $('#upgrade-dialog').close();
+  });
+  $('#show-acct-sync').addEventListener('click', async () => {
+    $('#acct-sync-status').textContent = 'Syncing…';
+    try { await accountSyncPush(); $('#acct-sync-status').textContent = '✓ Synced'; setTimeout(() => $('#acct-sync-status').textContent = '', 2500); }
+    catch (e) { $('#acct-sync-status').textContent = 'Failed: ' + e.message; }
+  });
+  $('#show-export-pdf').addEventListener('click', exportPDFReport);
+}
+
+function setupSupplyUI() {
+  $('#add-supply-btn').addEventListener('click', () => {
+    if (!isPremium() && account.user) { $('#upgrade-dialog').showModal(); return; }
+    openSupplyDialog(null);
+  });
+  $('#supply-cancel').addEventListener('click', () => $('#supply-dialog').close());
+  $('#supply-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const id = $('#supply-id').value;
+    const supply = {
+      type: $('#supply-type').value,
+      total_mg: parseFloat($('#supply-total-mg').value),
+      volume_ml: parseFloat($('#supply-volume-ml').value) || null,
+      pharmacy: $('#supply-pharmacy').value.trim() || null,
+      batch: $('#supply-batch').value.trim() || null,
+      cost: parseFloat($('#supply-cost').value) || null,
+      opened_at: $('#supply-opened').value || null,
+      expires_at: $('#supply-expires').value || null,
+      used_mg: 0,
+    };
+    if (id) supply.id = parseInt(id, 10);
+    await saveSupply(supply);
+    $('#supply-dialog').close();
+    await renderSupplies(await getShotsSorted());
+    await renderCost(await getWeightsSorted());
+    markSyncDirty();
+  });
+  $('#supply-delete').addEventListener('click', async () => {
+    const id = parseInt($('#supply-id').value, 10);
+    if (!id) return;
+    if (!confirm('Delete this supply?')) return;
+    await deleteSupply(id);
+    $('#supply-dialog').close();
+    await renderSupplies(await getShotsSorted());
+    await renderCost(await getWeightsSorted());
+    markSyncDirty();
+  });
+}
+
+function setupMeasurementUI() {
+  $('#add-measurement-btn').addEventListener('click', () => {
+    if (!isPremium() && account.user) { $('#upgrade-dialog').showModal(); return; }
+    $('#measurement-value').value = '';
+    $('#measurement-date').value = todayISODate();
+    $('#measurement-dialog').showModal();
+  });
+  $('#measurement-cancel').addEventListener('click', () => $('#measurement-dialog').close());
+  $('#measurement-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    await saveMeasurement({
+      type: $('#measurement-type').value,
+      value: parseFloat($('#measurement-value').value),
+      unit: $('#measurement-unit').value,
+      date: $('#measurement-date').value,
+    });
+    $('#measurement-dialog').close();
+    await renderMeasurements();
+    markSyncDirty();
+  });
+}
+
+function setupLabUI() {
+  $('#add-lab-btn').addEventListener('click', () => {
+    if (!isPremium() && account.user) { $('#upgrade-dialog').showModal(); return; }
+    $('#lab-value').value = '';
+    $('#lab-date').value = todayISODate();
+    $('#lab-notes').value = '';
+    $('#lab-dialog').showModal();
+  });
+  $('#lab-cancel').addEventListener('click', () => $('#lab-dialog').close());
+  $('#lab-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    await saveLab({
+      type: $('#lab-type').value,
+      value: parseFloat($('#lab-value').value),
+      date: $('#lab-date').value,
+      notes: $('#lab-notes').value.trim() || null,
+    });
+    $('#lab-dialog').close();
+    await renderLabs();
+    markSyncDirty();
+  });
+}
+
+function setupShareUI() {
+  $('#show-share').addEventListener('click', () => {
+    if (!isPremium()) { $('#upgrade-dialog').showModal(); return; }
+    $('#share-result').classList.add('hidden');
+    $('#share-label').value = '';
+    $('#share-dialog').showModal();
+  });
+  $('#share-cancel').addEventListener('click', () => $('#share-dialog').close());
+  $('#share-create').addEventListener('click', async () => {
+    try {
+      const result = await createShareLink($('#share-label').value.trim());
+      $('#share-url-display').textContent = result.url;
+      $('#share-result').classList.remove('hidden');
+    } catch (e) {
+      alert('Failed: ' + e.message);
+    }
+  });
+  $('#share-copy').addEventListener('click', () => {
+    const url = $('#share-url-display').textContent;
+    navigator.clipboard.writeText(url).then(() => {
+      $('#share-copy').textContent = 'Copied ✓';
+      setTimeout(() => { $('#share-copy').textContent = 'Copy link'; }, 1500);
+    });
+  });
 }
 
 async function ensurePersisted() {
@@ -1283,8 +1464,721 @@ function setupPullToRefresh() {
 // ============================================================================
 
 const SYNC_API = 'api/sync';
+const ACCOUNT_API = 'api';
 const SYNC_PBKDF2_ITERS = 600000;
 const SYNC_PROTOCOL = 'shotclock-v1';
+const ACCOUNT_PROTOCOL = 'myglpshot-v1';
+
+// ============================================================================
+// Email/password account system. Bitwarden-style dual-hash:
+//   PBKDF2(password, salt=hash(ACCOUNT_PROTOCOL+email), 600k) → 512 bits
+//   First 256 = AES-GCM key (NEVER sent)
+//   Last 256 = authToken (sent to server, server bcrypts before storing)
+// Server cannot derive password OR encryption key from authToken.
+// ============================================================================
+
+let account = { user: null, encryptionKey: null };
+const HEX = (buf) => Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+
+async function deriveAccountCreds(email, password) {
+  const e = (email || '').trim().toLowerCase();
+  const p = password || '';
+  if (!e || !p) throw new Error('Email and password required');
+  const enc = new TextEncoder();
+  const saltBuf = await crypto.subtle.digest('SHA-256', enc.encode(ACCOUNT_PROTOCOL + ':' + e));
+  const baseKey = await crypto.subtle.importKey('raw', enc.encode(p), 'PBKDF2', false, ['deriveBits']);
+  const bits = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', salt: saltBuf, iterations: SYNC_PBKDF2_ITERS, hash: 'SHA-256' },
+    baseKey, 512
+  );
+  const buf = new Uint8Array(bits);
+  const aesKey = await crypto.subtle.importKey('raw', buf.slice(0, 32), 'AES-GCM', false, ['encrypt', 'decrypt']);
+  const authToken = HEX(buf.slice(32, 64));
+  return { aesKey, authToken, email: e };
+}
+
+async function accountFetch(path, opts = {}) {
+  opts.headers = Object.assign({ 'Content-Type': 'application/json', 'Accept': 'application/json' }, opts.headers || {});
+  opts.credentials = 'same-origin';
+  return fetch(`${ACCOUNT_API}/${path}`, opts);
+}
+
+async function accountSignup(email, password) {
+  const creds = await deriveAccountCreds(email, password);
+  const r = await accountFetch('signup', { method: 'POST', body: JSON.stringify({ email: creds.email, authToken: creds.authToken }) });
+  if (!r.ok) {
+    const j = await r.json().catch(() => ({ message: 'Signup failed' }));
+    throw new Error(j.message || 'Signup failed');
+  }
+  const j = await r.json();
+  account = { user: j.user, encryptionKey: creds.aesKey };
+  rememberSignedIn(email, password);
+  return j.user;
+}
+
+async function accountLogin(email, password) {
+  const creds = await deriveAccountCreds(email, password);
+  const r = await accountFetch('login', { method: 'POST', body: JSON.stringify({ email: creds.email, authToken: creds.authToken }) });
+  if (!r.ok) {
+    const j = await r.json().catch(() => ({ message: 'Login failed' }));
+    throw new Error(j.message || 'Login failed');
+  }
+  const j = await r.json();
+  account = { user: j.user, encryptionKey: creds.aesKey };
+  rememberSignedIn(email, password);
+  return j.user;
+}
+
+async function accountLogout(forgetDevice) {
+  try { await accountFetch('logout', { method: 'POST' }); } catch (e) {}
+  account = { user: null, encryptionKey: null };
+  if (forgetDevice) clearRememberedSignIn();
+}
+
+async function accountForgot(email) {
+  const r = await accountFetch('forgot', { method: 'POST', body: JSON.stringify({ email }) });
+  return r.ok;
+}
+
+async function accountMe() {
+  const r = await accountFetch('me');
+  if (!r.ok) return null;
+  const j = await r.json();
+  return j.user;
+}
+
+function isPremium() {
+  return !!(account.user && account.user.isPremium);
+}
+
+function rememberSignedIn(email, password) {
+  try { localStorage.setItem('account.cred', JSON.stringify({ email, password })); } catch (e) {}
+}
+function getRememberedSignIn() {
+  try { return JSON.parse(localStorage.getItem('account.cred') || 'null'); } catch (e) { return null; }
+}
+function clearRememberedSignIn() {
+  try { localStorage.removeItem('account.cred'); } catch (e) {}
+}
+
+async function tryRestoreAccount() {
+  const user = await accountMe();
+  if (!user) return false;
+  account.user = user;
+  const remembered = getRememberedSignIn();
+  if (remembered && remembered.email && remembered.password) {
+    try {
+      const creds = await deriveAccountCreds(remembered.email, remembered.password);
+      account.encryptionKey = creds.aesKey;
+    } catch (e) {}
+  }
+  return true;
+}
+
+async function accountSyncPush() {
+  if (!account.user || !account.encryptionKey) throw new Error('Not unlocked');
+  const payload = await buildPayload();
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, account.encryptionKey, new TextEncoder().encode(JSON.stringify(payload)));
+  const body = { iv: btoa(String.fromCharCode(...iv)), ciphertext: btoa(String.fromCharCode(...new Uint8Array(ct))) };
+  const r = await accountFetch('me/sync', { method: 'PUT', body: JSON.stringify(body) });
+  if (!r.ok) throw new Error('Sync failed: ' + r.status);
+  const j = await r.json();
+  settings.syncLastPushAt = new Date().toISOString();
+  settings.syncLastUpdatedAt = j.updatedAt;
+  await saveSettings();
+  return j;
+}
+
+async function accountSyncPull() {
+  if (!account.user || !account.encryptionKey) throw new Error('Not unlocked');
+  const r = await accountFetch('me/sync');
+  if (!r.ok) throw new Error('Pull failed: ' + r.status);
+  const j = await r.json();
+  if (!j.exists) return null;
+  const iv = Uint8Array.from(atob(j.iv), c => c.charCodeAt(0));
+  const ct = Uint8Array.from(atob(j.ciphertext), c => c.charCodeAt(0));
+  let pt;
+  try {
+    pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, account.encryptionKey, ct);
+  } catch (e) {
+    throw new Error('Decryption failed — wrong password');
+  }
+  return { payload: JSON.parse(new TextDecoder().decode(pt)), updatedAt: j.updatedAt };
+}
+
+async function accountSyncDelete() {
+  if (account.user) await accountFetch('me/sync', { method: 'DELETE' });
+}
+
+// ----- Doctor share link (premium) -----
+// ----- Account UI -----
+function setAccountMode(mode) {
+  $('#account-mode').value = mode;
+  if (mode === 'signup') {
+    $('#account-form-title').textContent = 'Sign up free';
+    $('#account-form-sub').textContent = 'Free, takes 5 seconds. 14-day premium trial included.';
+    $('#account-submit').textContent = 'Sign up';
+    $('#account-pw-input').autocomplete = 'new-password';
+    $('#account-switch').innerHTML = 'Already have an account? <a href="#" id="switch-mode-link">Sign in</a>';
+  } else {
+    $('#account-form-title').textContent = 'Sign in';
+    $('#account-form-sub').textContent = 'Welcome back.';
+    $('#account-submit').textContent = 'Sign in';
+    $('#account-pw-input').autocomplete = 'current-password';
+    $('#account-switch').innerHTML = "Don't have an account? <a href=\"#\" id=\"switch-mode-link\">Sign up free</a>";
+  }
+  $('#switch-mode-link').addEventListener('click', (e) => { e.preventDefault(); setAccountMode(mode === 'signup' ? 'login' : 'signup'); });
+  $('#account-error').textContent = '';
+}
+
+function openAccountDialog(mode) {
+  setAccountMode(mode || 'signup');
+  $('#account-email-input').value = '';
+  $('#account-pw-input').value = '';
+  $('#account-error').textContent = '';
+  $('#account-dialog').showModal();
+}
+
+async function handleAccountSubmit(ev) {
+  ev.preventDefault();
+  const mode = $('#account-mode').value;
+  const email = $('#account-email-input').value.trim();
+  const password = $('#account-pw-input').value;
+  const errEl = $('#account-error');
+  errEl.textContent = '';
+  if (password.length < 8) { errEl.textContent = 'Password must be at least 8 characters.'; return; }
+  $('#account-submit').disabled = true;
+  $('#account-submit').textContent = 'Working…';
+  try {
+    if (mode === 'signup') {
+      await accountSignup(email, password);
+    } else {
+      await accountLogin(email, password);
+    }
+    $('#account-dialog').close();
+    await onAccountChanged();
+    // After signup or login, prompt to push local data if any exists
+    const shots = (await dbAll(STORES.shots)) || [];
+    if (shots.length && account.encryptionKey) {
+      try { await accountSyncPush(); } catch (e) {}
+    }
+    // After login, attempt pull
+    if (mode === 'login' && account.encryptionKey) {
+      try {
+        const result = await accountSyncPull();
+        if (result && shots.length === 0) {
+          await applyPulledPayload(result.payload);
+        } else if (result && shots.length > 0) {
+          if (confirm(`Cloud copy has ${(result.payload.shots || []).length} shots. Replace local data with cloud copy?`)) {
+            await applyPulledPayload(result.payload);
+          }
+        }
+      } catch (e) {}
+    }
+  } catch (e) {
+    errEl.textContent = e.message || 'Failed';
+  } finally {
+    $('#account-submit').disabled = false;
+    $('#account-submit').textContent = mode === 'signup' ? 'Sign up' : 'Sign in';
+  }
+}
+
+async function onAccountChanged() {
+  const u = account.user;
+  const banner = $('#account-banner');
+  const pill = $('#hdr-account-pill');
+  if (u) {
+    banner.classList.add('hidden');
+    $('#account-signed-out').classList.add('hidden');
+    $('#account-signed-in').classList.remove('hidden');
+    $('#account-email').textContent = u.email;
+    pill.classList.remove('hidden');
+    pill.classList.remove('premium', 'trial');
+    if (u.subscriptionStatus === 'lifetime' || (u.subscriptionStatus === 'premium' && u.isPremium)) {
+      pill.textContent = 'Premium';
+      pill.classList.add('premium');
+    } else if (u.subscriptionStatus === 'trial' && u.isPremium) {
+      const daysLeft = Math.max(0, Math.ceil((u.trialEndsAt - Date.now() / 1000) / 86400));
+      pill.textContent = `Trial · ${daysLeft}d`;
+      pill.classList.add('trial');
+    } else {
+      pill.textContent = 'Free';
+    }
+    $('#account-sub-status').textContent = subscriptionStatusText(u);
+    if (u.subscriptionStatus === 'trial' && u.trialEndsAt) {
+      const total = 14 * 86400;
+      const remaining = Math.max(0, u.trialEndsAt - Date.now() / 1000);
+      $('#account-trial-fill').style.width = (100 * (1 - remaining / total)) + '%';
+      $('#account-trial-bar').classList.remove('hidden');
+    } else {
+      $('#account-trial-bar').classList.add('hidden');
+    }
+    $('#upgrade-cta').classList.toggle('hidden', isPremium());
+  } else {
+    $('#account-signed-out').classList.remove('hidden');
+    $('#account-signed-in').classList.add('hidden');
+    pill.classList.add('hidden');
+    if (localStorage.getItem('acct.banner.dismissed') !== '1') {
+      banner.classList.remove('hidden');
+    }
+  }
+  // Show legacy migration banner if user has legacy creds and isn't signed in to new account
+  const hasLegacy = !!localStorage.getItem('sync.creds');
+  $('#legacy-migrate-banner').classList.toggle('hidden', !hasLegacy || !!u);
+  applyPremiumGates();
+}
+
+function subscriptionStatusText(u) {
+  if (!u) return '';
+  if (u.subscriptionStatus === 'lifetime') return '⭐ Lifetime Premium — thank you for being a founding supporter!';
+  if (u.subscriptionStatus === 'premium' && u.premiumUntil) {
+    const d = new Date(u.premiumUntil * 1000).toLocaleDateString();
+    return `Premium until ${d}`;
+  }
+  if (u.subscriptionStatus === 'trial' && u.trialEndsAt) {
+    const days = Math.max(0, Math.ceil((u.trialEndsAt - Date.now() / 1000) / 86400));
+    return days > 0 ? `Premium trial — ${days} day${days === 1 ? '' : 's'} remaining` : 'Trial ended';
+  }
+  return 'Free tier — upgrade for sync, supply tracking, and more';
+}
+
+function applyPremiumGates() {
+  const premium = isPremium();
+  // Toggle .lock-pill on premium feature cards
+  ['#supply-lock', '#measurements-lock', '#labs-lock', '#cost-lock'].forEach(sel => {
+    const el = document.querySelector(sel);
+    if (el) el.classList.toggle('unlocked', premium);
+  });
+  // Add/remove blur overlay on premium-only cards
+  ['#supply-card', '#measurements-card', '#labs-card', '#cost-card'].forEach(sel => {
+    const card = document.querySelector(sel);
+    if (!card) return;
+    card.classList.toggle('premium-locked', !premium && !!account.user);  // only blur if signed in & not premium
+    let overlay = card.querySelector('.premium-overlay');
+    if (!premium && account.user) {
+      if (!overlay) {
+        const o = document.createElement('div');
+        o.className = 'premium-overlay';
+        o.innerHTML = '<strong>⭐ Premium</strong><span>Tap to upgrade</span>';
+        o.addEventListener('click', () => $('#upgrade-dialog').showModal());
+        card.appendChild(o);
+      }
+      // Wrap inner content in premium-locked-content
+      let inner = card.querySelector(':scope > :not(.premium-overlay)');
+      while (inner) {
+        if (!inner.classList.contains('premium-locked-content')) inner.classList.add('premium-locked-content');
+        inner = inner.nextElementSibling;
+        if (inner && inner.classList.contains('premium-overlay')) break;
+      }
+    } else {
+      if (overlay) overlay.remove();
+      card.querySelectorAll('.premium-locked-content').forEach(el => el.classList.remove('premium-locked-content'));
+    }
+  });
+}
+
+// ----- Reconstitution calculator -----
+function renderReconCalc() {
+  const vial = parseFloat($('#recon-vial').value);
+  const water = parseFloat($('#recon-water').value);
+  const dose = parseFloat($('#recon-dose').value);
+  const out = $('#recon-output');
+  out.classList.remove('error');
+  if (!vial || !water || !dose || vial <= 0 || water <= 0 || dose <= 0) {
+    out.classList.add('error');
+    out.textContent = 'Enter vial total, water volume, and desired dose.';
+    return;
+  }
+  if (dose > vial) {
+    out.classList.add('error');
+    out.textContent = `Desired dose (${dose} mg) exceeds vial total (${vial} mg).`;
+    return;
+  }
+  const concentration = vial / water;        // mg/mL
+  const drawMl = dose / concentration;       // mL to draw
+  const drawUnits100 = drawMl * 100;         // units on 100u/1mL syringe
+  const drawUnits50 = drawMl * 100;          // 50u syringe = same units, just smaller scale
+  const dosesInVial = Math.floor(vial / dose);
+  out.innerHTML = `
+    <div class="recon-result"><span>Concentration</span><strong>${concentration.toFixed(2)} mg/mL</strong></div>
+    <div class="recon-result"><span>Draw volume</span><strong>${drawMl.toFixed(3)} mL</strong></div>
+    <div class="recon-result"><span>Units (100u syringe)</span><strong>${drawUnits100.toFixed(0)} u</strong></div>
+    <div class="recon-result"><span>Doses in this vial</span><strong>${dosesInVial}</strong></div>
+  `;
+  // Save preset
+  try { localStorage.setItem('recon.preset', JSON.stringify({ vial, water, dose })); } catch (e) {}
+}
+
+function setupReconCalc() {
+  // Restore preset
+  try {
+    const p = JSON.parse(localStorage.getItem('recon.preset') || 'null');
+    if (p) {
+      if (p.vial != null) $('#recon-vial').value = p.vial;
+      if (p.water != null) $('#recon-water').value = p.water;
+      if (p.dose != null) $('#recon-dose').value = p.dose;
+    }
+  } catch (e) {}
+  ['#recon-vial', '#recon-water', '#recon-dose'].forEach(sel => {
+    $(sel).addEventListener('input', renderReconCalc);
+  });
+  renderReconCalc();
+}
+
+// ----- Supply tracking (premium) -----
+async function ensureStore(name, opts) {
+  const db = await openDB();
+  if (!db.objectStoreNames.contains(name)) {
+    db.close();
+    _dbPromise = null;
+    await new Promise((resolve, reject) => {
+      const r = indexedDB.open(DB_NAME, db.version + 1);
+      r.onupgradeneeded = (e) => {
+        const d = e.target.result;
+        if (!d.objectStoreNames.contains(name)) d.createObjectStore(name, opts || { keyPath: 'id', autoIncrement: true });
+      };
+      r.onsuccess = () => { r.result.close(); resolve(); };
+      r.onerror = () => reject(r.error);
+    });
+  }
+}
+
+async function getSupplies() {
+  await ensureStore('supplies');
+  const all = await new Promise((res) => {
+    openDB().then(db => {
+      const t = db.transaction('supplies', 'readonly');
+      const r = t.objectStore('supplies').getAll();
+      r.onsuccess = () => res(r.result || []);
+      r.onerror = () => res([]);
+    });
+  });
+  return all.sort((a, b) => (a.expires_at || '').localeCompare(b.expires_at || ''));
+}
+
+async function saveSupply(s) {
+  await ensureStore('supplies');
+  const db = await openDB();
+  return new Promise((res, rej) => {
+    const t = db.transaction('supplies', 'readwrite');
+    t.objectStore('supplies').put(s);
+    t.oncomplete = res;
+    t.onerror = () => rej(t.error);
+  });
+}
+
+async function deleteSupply(id) {
+  const db = await openDB();
+  return new Promise((res) => {
+    const t = db.transaction('supplies', 'readwrite');
+    t.objectStore('supplies').delete(id);
+    t.oncomplete = res;
+  });
+}
+
+async function renderSupplies(shots) {
+  const list = $('#supply-list');
+  const empty = $('#supply-empty');
+  if (!list) return;
+  const supplies = await getSupplies();
+  if (!supplies.length) {
+    list.innerHTML = '';
+    empty.classList.remove('hidden');
+    return;
+  }
+  empty.classList.add('hidden');
+  // Compute usage from shots
+  const usedMg = shots.reduce((sum, s) => sum + (s.dose || 0), 0);
+  list.innerHTML = supplies.map(s => {
+    const today = new Date(); today.setHours(0,0,0,0);
+    const exp = s.expires_at ? new Date(s.expires_at) : null;
+    const daysToExpire = exp ? Math.floor((exp - today) / 86400000) : null;
+    const dosesLeft = s.last_dose_mg ? Math.floor((s.total_mg - s.used_mg) / s.last_dose_mg) : null;
+    const pctUsed = s.total_mg ? Math.min(100, (s.used_mg / s.total_mg) * 100) : 0;
+    let cls = '';
+    if (daysToExpire != null) {
+      if (daysToExpire < 0) cls = 'expired';
+      else if (daysToExpire < 7) cls = 'expiring';
+    }
+    const expireText = daysToExpire != null
+      ? (daysToExpire < 0 ? `⚠️ Expired ${Math.abs(daysToExpire)}d ago` : `Expires in ${daysToExpire}d`)
+      : 'No expiration set';
+    return `<li class="${cls}" data-id="${s.id}">
+      <div class="supply-name">${escapeHTML(s.type === 'pen' ? '💉 Pen' : '🧪 Vial')} · ${s.total_mg} mg ${s.volume_ml ? '· ' + s.volume_ml + ' mL' : ''}</div>
+      <div class="supply-meta">${escapeHTML(s.pharmacy || 'Unknown source')}${s.batch ? ' · Lot ' + escapeHTML(s.batch) : ''}${s.cost ? ' · $' + s.cost : ''}</div>
+      <div class="supply-meta">${expireText}${dosesLeft != null ? ' · ~' + dosesLeft + ' doses left' : ''}</div>
+      <div class="supply-progress"><div class="supply-fill" style="width:${pctUsed.toFixed(0)}%"></div></div>
+    </li>`;
+  }).join('');
+  list.querySelectorAll('li').forEach(li => {
+    li.addEventListener('click', () => openSupplyDialog(supplies.find(x => x.id == li.dataset.id)));
+  });
+}
+
+function openSupplyDialog(s) {
+  const isEdit = !!s;
+  $('#supply-form-title').textContent = isEdit ? 'Edit supply' : 'Add supply';
+  $('#supply-id').value = isEdit ? s.id : '';
+  $('#supply-type').value = s ? s.type : 'vial';
+  $('#supply-total-mg').value = s ? s.total_mg : '';
+  $('#supply-volume-ml').value = s ? (s.volume_ml || '') : '';
+  $('#supply-pharmacy').value = s ? (s.pharmacy || '') : '';
+  $('#supply-batch').value = s ? (s.batch || '') : '';
+  $('#supply-cost').value = s ? (s.cost || '') : '';
+  $('#supply-opened').value = s ? (s.opened_at || '') : todayISODate();
+  $('#supply-expires').value = s ? (s.expires_at || '') : '';
+  $('#supply-delete').classList.toggle('hidden', !isEdit);
+  $('#supply-dialog').showModal();
+}
+
+// ----- Body measurements (premium) -----
+async function getMeasurements() {
+  await ensureStore('measurements');
+  return new Promise((res) => {
+    openDB().then(db => {
+      const t = db.transaction('measurements', 'readonly');
+      const r = t.objectStore('measurements').getAll();
+      r.onsuccess = () => res((r.result || []).sort((a, b) => a.date.localeCompare(b.date)));
+      r.onerror = () => res([]);
+    });
+  });
+}
+
+async function saveMeasurement(m) {
+  await ensureStore('measurements');
+  const db = await openDB();
+  return new Promise((res, rej) => {
+    const t = db.transaction('measurements', 'readwrite');
+    t.objectStore('measurements').put(m);
+    t.oncomplete = res; t.onerror = () => rej(t.error);
+  });
+}
+
+async function renderMeasurements() {
+  const wrap = $('#measurement-summary');
+  const empty = $('#measurements-empty');
+  if (!wrap) return;
+  const ms = await getMeasurements();
+  if (!ms.length) { wrap.innerHTML = ''; empty.classList.remove('hidden'); return; }
+  empty.classList.add('hidden');
+  // Group by type → latest + delta from oldest
+  const byType = {};
+  for (const m of ms) {
+    if (!byType[m.type]) byType[m.type] = [];
+    byType[m.type].push(m);
+  }
+  const labels = { waist: 'Waist', hips: 'Hips', chest: 'Chest', thigh: 'Thigh', arm: 'Arm', neck: 'Neck' };
+  wrap.innerHTML = Object.entries(byType).map(([type, vals]) => {
+    const latest = vals[vals.length - 1];
+    const earliest = vals[0];
+    const delta = latest.value - earliest.value;
+    const trendCls = delta < 0 ? 'down' : delta > 0 ? 'up' : '';
+    const sign = delta < 0 ? '−' : '+';
+    return `<div class="summary-pill">
+      <span class="summary-label">${labels[type] || type}</span>
+      <span class="summary-value">${latest.value} ${latest.unit}</span>
+      ${vals.length > 1 ? `<span class="summary-trend ${trendCls}">${sign}${Math.abs(delta).toFixed(1)}</span>` : ''}
+    </div>`;
+  }).join('');
+}
+
+// ----- Lab tracking (premium) -----
+const LAB_LABELS = {
+  a1c: ['A1c', '%', { good_max: 5.7, watch_max: 6.5 }],
+  glucose_fasting: ['Fasting glucose', 'mg/dL', { good_max: 100, watch_max: 126 }],
+  bp_systolic: ['BP systolic', 'mmHg', { good_max: 120, watch_max: 140 }],
+  bp_diastolic: ['BP diastolic', 'mmHg', { good_max: 80, watch_max: 90 }],
+  cholesterol_total: ['Total chol.', 'mg/dL', { good_max: 200, watch_max: 240 }],
+  cholesterol_hdl: ['HDL', 'mg/dL', null],
+  cholesterol_ldl: ['LDL', 'mg/dL', { good_max: 100, watch_max: 160 }],
+  triglycerides: ['Triglycerides', 'mg/dL', { good_max: 150, watch_max: 200 }],
+  alt: ['ALT', 'U/L', { good_max: 40 }],
+};
+
+async function getLabs() {
+  await ensureStore('labs');
+  return new Promise((res) => {
+    openDB().then(db => {
+      const t = db.transaction('labs', 'readonly');
+      const r = t.objectStore('labs').getAll();
+      r.onsuccess = () => res((r.result || []).sort((a, b) => a.date.localeCompare(b.date)));
+      r.onerror = () => res([]);
+    });
+  });
+}
+
+async function saveLab(l) {
+  await ensureStore('labs');
+  const db = await openDB();
+  return new Promise((res, rej) => {
+    const t = db.transaction('labs', 'readwrite');
+    t.objectStore('labs').put(l);
+    t.oncomplete = res; t.onerror = () => rej(t.error);
+  });
+}
+
+async function renderLabs() {
+  const wrap = $('#lab-summary');
+  const empty = $('#labs-empty');
+  if (!wrap) return;
+  const ls = await getLabs();
+  if (!ls.length) { wrap.innerHTML = ''; empty.classList.remove('hidden'); return; }
+  empty.classList.add('hidden');
+  const byType = {};
+  for (const l of ls) {
+    if (!byType[l.type]) byType[l.type] = [];
+    byType[l.type].push(l);
+  }
+  wrap.innerHTML = Object.entries(byType).map(([type, vals]) => {
+    const latest = vals[vals.length - 1];
+    const earliest = vals[0];
+    const delta = latest.value - earliest.value;
+    const [label, unit] = LAB_LABELS[type] || [type, ''];
+    const trendCls = delta < 0 ? 'down' : delta > 0 ? 'up' : '';
+    const sign = delta < 0 ? '−' : '+';
+    return `<div class="summary-pill">
+      <span class="summary-label">${label}</span>
+      <span class="summary-value">${latest.value} ${unit}</span>
+      ${vals.length > 1 ? `<span class="summary-trend ${trendCls}">${sign}${Math.abs(delta).toFixed(1)}</span>` : ''}
+    </div>`;
+  }).join('');
+}
+
+// ----- Cost tracker (premium) -----
+async function renderCost(weights) {
+  const wrap = $('#cost-summary');
+  if (!wrap) return;
+  const supplies = await getSupplies();
+  const totalCost = supplies.reduce((sum, s) => sum + (parseFloat(s.cost) || 0), 0);
+  const monthsSinceFirst = supplies.length ? Math.max(1, Math.ceil((Date.now() - new Date(supplies[supplies.length - 1].opened_at || Date.now())) / (30 * 86400000))) : 0;
+  const wd = weightDelta(weights, settings.startWeight);
+  const lostLb = wd && wd.delta < 0 ? Math.abs(wd.delta) : 0;
+  const dollarsPerLb = lostLb > 0 ? (totalCost / lostLb).toFixed(2) : '—';
+  if (!supplies.length || !totalCost) {
+    wrap.innerHTML = '<p class="muted small">Add supplies with cost to track spending and $/lb lost.</p>';
+    return;
+  }
+  wrap.innerHTML = `
+    <div class="summary-pill"><span class="summary-label">Total spent</span><span class="summary-value">$${totalCost.toFixed(2)}</span></div>
+    ${monthsSinceFirst ? `<div class="summary-pill"><span class="summary-label">Per month</span><span class="summary-value">$${(totalCost / monthsSinceFirst).toFixed(2)}</span></div>` : ''}
+    ${lostLb > 0 ? `<div class="summary-pill"><span class="summary-label">$ per lb lost</span><span class="summary-value">$${dollarsPerLb}</span></div>` : ''}
+  `;
+}
+
+// ----- Plateau detection (premium) -----
+function detectPlateau(weights, shots) {
+  if (weights.length < 8) return null;
+  const recent = weights.slice(-30);
+  if (recent.length < 8) return null;
+  const fourWeeksAgo = Date.now() - 28 * 86400000;
+  const inWindow = recent.filter(w => new Date(w.date).getTime() >= fourWeeksAgo);
+  if (inWindow.length < 4) return null;
+  const first = inWindow[0].value;
+  const last = inWindow[inWindow.length - 1].value;
+  const delta = last - first;
+  if (Math.abs(delta) > 1) return null; // not a plateau
+  // Check no recent dose increase
+  const recentShotsInWindow = shots.filter(s => new Date(s.when).getTime() >= fourWeeksAgo);
+  const doses = recentShotsInWindow.map(s => s.dose);
+  const allSame = doses.length === 0 || doses.every(d => d === doses[0]);
+  if (!allSame) return null;
+  const dose = doses[0] || (shots.length ? shots[0].dose : null);
+  return { weeks: 4, dose, delta: delta.toFixed(1) };
+}
+
+async function renderPlateau(weights, shots) {
+  const card = $('#plateau-card');
+  const body = $('#plateau-body');
+  if (!card) return;
+  if (!isPremium()) { card.classList.add('hidden'); return; }
+  const p = detectPlateau(weights, shots);
+  if (!p) { card.classList.add('hidden'); return; }
+  body.innerHTML = `<p>Weight has stayed within 1 lb for ~${p.weeks} weeks at ${p.dose}mg.</p>
+    <p class="muted small">This is normal — most people experience plateaus during titration. Consider:
+    discussing a dose increase with your prescriber, reviewing protein intake (aim for 1g per lb of goal weight),
+    walking 8-10K steps/day, and ensuring you're eating in a sustainable deficit.</p>
+    <p class="muted small">Educational only. Not medical advice.</p>`;
+  card.classList.remove('hidden');
+}
+
+// ----- PDF report (client-side print) -----
+async function exportPDFReport() {
+  if (!isPremium()) { $('#upgrade-dialog').showModal(); return; }
+  const w = window.open('', '_blank');
+  if (!w) { alert('Please allow popups to generate the PDF.'); return; }
+  const shots = await getShotsSorted();
+  const weights = await getWeightsSorted();
+  const measurements = await getMeasurements();
+  const labs = await getLabs();
+  const wd = weightDelta(weights, settings.startWeight);
+  const since = new Date(); since.setDate(since.getDate() - 90);
+  const rShots = shots.filter(s => new Date(s.when) >= since);
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>My GLP Shot Report</title>
+    <style>
+      body{font-family:-apple-system,Arial,sans-serif;color:#0f172a;margin:30px;line-height:1.5}
+      h1,h2{color:#0f766e;margin-bottom:6px}
+      .meta{color:#64748b;font-size:.85rem;margin-bottom:18px}
+      table{border-collapse:collapse;width:100%;margin:10px 0;font-size:.9rem}
+      th,td{text-align:left;padding:6px 10px;border-bottom:1px solid #e2e8f0}
+      th{background:#f0fdfa}
+      .stat{display:inline-block;margin-right:18px}
+      .stat strong{color:#0f766e;font-size:1.4rem;display:block}
+      .stat span{color:#64748b;font-size:.78rem;text-transform:uppercase;letter-spacing:.5px}
+      @media print { body{margin:14mm} }
+    </style></head><body>
+    <h1>My GLP Shot — 90-Day Report</h1>
+    <p class="meta">Generated ${new Date().toLocaleString()} for ${escapeHTML(account.user?.email || '(local)')}</p>
+
+    <h2>Summary</h2>
+    <div>
+      <div class="stat"><strong>${rShots.length}</strong><span>shots (90d)</span></div>
+      ${wd ? `<div class="stat"><strong>${wd.delta < 0 ? '−' : '+'}${Math.abs(wd.delta).toFixed(1)} lb</strong><span>since start</span></div>` : ''}
+      ${wd ? `<div class="stat"><strong>${wd.current.toFixed(1)} lb</strong><span>current weight</span></div>` : ''}
+    </div>
+    <p class="meta">Medication: ${escapeHTML(settings.medication)} · Cadence: every ${settings.cadenceDays} day${settings.cadenceDays === 1 ? '' : 's'}</p>
+
+    <h2>Recent shots (${rShots.length})</h2>
+    <table><thead><tr><th>Date</th><th>Dose</th><th>Site</th><th>Notes</th></tr></thead><tbody>
+    ${rShots.slice(0, 60).map(s => `<tr><td>${new Date(s.when).toLocaleString()}</td><td>${s.dose} mg</td><td>${escapeHTML(s.site || '')}</td><td>${escapeHTML(s.notes || '')}</td></tr>`).join('')}
+    </tbody></table>
+
+    ${weights.length ? `<h2>Weight</h2><table><thead><tr><th>Date</th><th>Weight</th></tr></thead><tbody>
+    ${weights.slice(-30).map(w => `<tr><td>${w.date}</td><td>${w.value} ${w.unit}</td></tr>`).join('')}
+    </tbody></table>` : ''}
+
+    ${labs.length ? `<h2>Labs</h2><table><thead><tr><th>Date</th><th>Test</th><th>Value</th><th>Notes</th></tr></thead><tbody>
+    ${labs.map(l => { const [label, unit] = LAB_LABELS[l.type] || [l.type, '']; return `<tr><td>${l.date}</td><td>${label}</td><td>${l.value} ${unit}</td><td>${escapeHTML(l.notes || '')}</td></tr>`; }).join('')}
+    </tbody></table>` : ''}
+
+    ${measurements.length ? `<h2>Body measurements</h2><table><thead><tr><th>Date</th><th>Type</th><th>Value</th></tr></thead><tbody>
+    ${measurements.map(m => `<tr><td>${m.date}</td><td>${m.type}</td><td>${m.value} ${m.unit}</td></tr>`).join('')}
+    </tbody></table>` : ''}
+
+    <p class="meta">This report is for personal/clinical reference. Not medical advice.</p>
+    <script>window.print()</script>
+    </body></html>`;
+  w.document.write(html);
+  w.document.close();
+}
+
+async function createShareLink(label) {
+  if (!account.user || !account.encryptionKey) throw new Error('Not unlocked');
+  const payload = await buildPayload();
+  // Generate per-share random key, embed in URL fragment
+  const shareKey = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt']);
+  const rawKey = await crypto.subtle.exportKey('raw', shareKey);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, shareKey, new TextEncoder().encode(JSON.stringify(payload)));
+  const body = { iv: btoa(String.fromCharCode(...iv)), ciphertext: btoa(String.fromCharCode(...new Uint8Array(ct))), label: label || null };
+  const r = await accountFetch('share', { method: 'POST', body: JSON.stringify(body) });
+  if (r.status === 402) throw new Error('Doctor share is a Premium feature.');
+  if (!r.ok) throw new Error('Share creation failed.');
+  const j = await r.json();
+  const keyHex = HEX(rawKey);
+  const url = `${location.origin}/view.html#t=${j.token}&k=${keyHex}`;
+  return { url, expiresAt: j.expiresAt };
+}
 
 // Session-only credential cache. Cleared on tab close. Persisted creds (so the
 // user doesn't have to retype every session) live in localStorage as username
@@ -1343,7 +2237,18 @@ function suggestPassphrase() {
 async function buildPayload() {
   const shots = (await dbAll(STORES.shots)) || [];
   const weights = (await dbAll(STORES.weights)) || [];
-  return { version: 1, exportedAt: new Date().toISOString(), settings, shots, weights };
+  const moods = (await dbAll(STORES.moods)) || [];
+  let supplies = [], measurements = [], labs = [];
+  try { supplies = await getSupplies(); } catch (e) {}
+  try { measurements = await getMeasurements(); } catch (e) {}
+  try { labs = await getLabs(); } catch (e) {}
+  return {
+    version: 2,
+    exportedAt: new Date().toISOString(),
+    settings,
+    shots, weights, moods,
+    supplies, measurements, labs,
+  };
 }
 
 async function syncPushNow() {
@@ -1385,16 +2290,22 @@ async function syncCloudExists(creds) {
 }
 
 async function applyPulledPayload(payload) {
-  // Replace local shots/weights with cloud copy. Settings merge (preserve local sync creds).
+  // Ensure premium stores exist before clearing
+  await ensureStore('supplies'); await ensureStore('measurements'); await ensureStore('labs');
+  // Replace local data with cloud copy. Settings merge (preserve local sync creds).
   const db = await openDB();
   await new Promise((resolve, reject) => {
-    const t = db.transaction([STORES.shots, STORES.weights], 'readwrite');
-    t.objectStore(STORES.shots).clear();
-    t.objectStore(STORES.weights).clear();
+    const stores = [STORES.shots, STORES.weights, STORES.moods, 'supplies', 'measurements', 'labs'];
+    const t = db.transaction(stores, 'readwrite');
+    stores.forEach(s => t.objectStore(s).clear());
     t.oncomplete = resolve; t.onerror = () => reject(t.error);
   });
   for (const s of (payload.shots || [])) { delete s.id; await dbAdd(STORES.shots, s); }
   for (const w of (payload.weights || [])) { delete w.id; await dbAdd(STORES.weights, w); }
+  for (const m of (payload.moods || [])) await dbPut(STORES.moods, m);
+  for (const s of (payload.supplies || [])) { delete s.id; await saveSupply(s); }
+  for (const m of (payload.measurements || [])) { delete m.id; await saveMeasurement(m); }
+  for (const l of (payload.labs || [])) { delete l.id; await saveLab(l); }
   if (payload.settings) {
     const preserve = { syncEnabled: settings.syncEnabled, syncUsername: settings.syncUsername, syncLastPushAt: settings.syncLastPushAt, syncLastPullAt: settings.syncLastPullAt, syncLastUpdatedAt: settings.syncLastUpdatedAt };
     settings = { ...DEFAULT_SETTINGS, ...payload.settings, ...preserve };
