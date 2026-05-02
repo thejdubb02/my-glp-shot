@@ -5,7 +5,7 @@
 
 const DB_NAME = 'shotclock';
 const DB_VERSION = 2;
-const APP_VERSION = '0.19.0';
+const APP_VERSION = '0.20.0';
 const STORES = { shots: 'shots', weights: 'weights', settings: 'settings', moods: 'moods' };
 const SETTINGS_KEY = 'app';
 const DEFAULT_SETTINGS = {
@@ -390,40 +390,62 @@ function wireCriticalUI() {
       if (dlg && dlg.showModal) dlg.showModal();
     });
   }
+  async function handleAuthSubmit() {
+    const email = (document.getElementById('auth-email') || {}).value || '';
+    const pw = (document.getElementById('auth-pw') || {}).value || '';
+    const errEl = document.getElementById('auth-err');
+    const submit = document.getElementById('auth-submit');
+    if (errEl) errEl.textContent = '';
+    if (!email.trim() || !pw) {
+      if (errEl) errEl.textContent = 'Email and password are required.';
+      return;
+    }
+    if (_authMode === 'signup' && pw.length < 8) {
+      if (errEl) errEl.textContent = 'Password must be at least 8 characters.';
+      return;
+    }
+    if (submit) submit.disabled = true;
+    const original = submit ? submit.textContent : '';
+    if (submit) submit.textContent = _authMode === 'signup' ? 'Creating account…' : 'Signing in…';
+    try {
+      if (typeof accountSignup !== 'function' || typeof accountLogin !== 'function') {
+        throw new Error('App still loading — wait a moment and try again.');
+      }
+      if (_authMode === 'signup') await accountSignup(email.trim(), pw);
+      else await accountLogin(email.trim(), pw);
+      await onAccountChanged();
+      if (_authMode === 'login') {
+        try { await accountSyncPull(); } catch (_) {}
+      } else {
+        try { await accountSyncPush(); } catch (_) {}
+      }
+      try { await renderShots(); } catch (_) {}
+      try { await renderWeights(); } catch (_) {}
+      setHomeTab('home');
+    } catch (ex) {
+      if (errEl) errEl.textContent = (ex && ex.message) || 'Something went wrong.';
+      console.error('[mgs] auth submit failed:', ex);
+    } finally {
+      if (submit) {
+        submit.disabled = false;
+        submit.textContent = original || (_authMode === 'signup' ? 'Create account & start free trial' : 'Sign in');
+      }
+    }
+  }
+
   const authForm = document.getElementById('auth-form');
   if (authForm) {
-    authForm.addEventListener('submit', async (e) => {
+    authForm.addEventListener('submit', (e) => {
       e.preventDefault();
-      const email = document.getElementById('auth-email').value.trim();
-      const pw = document.getElementById('auth-pw').value;
-      const errEl = document.getElementById('auth-err');
-      const submit = document.getElementById('auth-submit');
-      errEl.textContent = '';
-      submit.disabled = true;
-      const original = submit.textContent;
-      submit.textContent = _authMode === 'signup' ? 'Creating account…' : 'Signing in…';
-      try {
-        if (typeof accountSignup !== 'function' || typeof accountLogin !== 'function') {
-          throw new Error('App still initializing — try again in a moment.');
-        }
-        if (_authMode === 'signup') await accountSignup(email, pw);
-        else await accountLogin(email, pw);
-        await onAccountChanged();
-        if (_authMode === 'login') {
-          try { await accountSyncPull(); } catch (_) {}
-        } else {
-          try { await accountSyncPush(); } catch (_) {}
-        }
-        try { await renderShots(); } catch (_) {}
-        try { await renderWeights(); } catch (_) {}
-        setHomeTab('home');
-      } catch (ex) {
-        errEl.textContent = ex.message || 'Something went wrong.';
-      } finally {
-        submit.disabled = false;
-        // Re-set so labels stay in sync with mode
-        setAuthMode(_authMode);
-      }
+      handleAuthSubmit();
+    });
+  }
+  const authSubmitBtn = document.getElementById('auth-submit');
+  if (authSubmitBtn) {
+    // Belt-and-suspenders: also bind click directly so iOS Safari quirks can't drop the submit.
+    authSubmitBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      handleAuthSubmit();
     });
   }
 }

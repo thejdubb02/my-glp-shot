@@ -17,7 +17,7 @@
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="icon" type="image/png" sizes="512x512" href="icons/icon-512.png">
 <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png">
-<link rel="stylesheet" href="styles.css?v=19">
+<link rel="stylesheet" href="styles.css?v=20">
 <script>
 (function(){
   // Apply saved theme synchronously to avoid flash. Settings live in IndexedDB; theme also mirrored to localStorage for fast read.
@@ -107,6 +107,7 @@
     <p class="muted small center auth-perks">14-day premium trial included · No credit card · Cancel anytime</p>
   </section>
   <p class="muted small center auth-legal">By continuing you agree to the <a href="terms.html">Terms</a> and <a href="privacy.html">Privacy Policy</a>.</p>
+  <p class="muted small center auth-legal">🔓 <a href="https://github.com/thejdubb02/my-glp-shot" target="_blank" rel="noopener">Open source on GitHub</a> · audit the code yourself</p>
 </main>
 
 <main id="view-home" class="view active" data-tab="home">
@@ -419,6 +420,14 @@
     <p class="muted small"><strong>Switching from another tracker?</strong> In your old app, look for an Export Data option (CSV). Then tap "Import" above and select the file. Shots, weight, sites, doses, and notes will transfer.</p>
   </section>
 
+  <section class="card">
+    <h2>🔓 Open source</h2>
+    <p class="muted small">The complete app — backend, frontend, encryption — is on GitHub. Audit the code yourself or fork it.</p>
+    <div class="btn-row">
+      <a class="btn-ghost" href="https://github.com/thejdubb02/my-glp-shot" target="_blank" rel="noopener">View source on GitHub →</a>
+    </div>
+  </section>
+
   <section class="card" id="install-card">
     <h2>📱 Install the app</h2>
     <p class="muted small" id="install-card-text">Add My GLP Shot to your home screen for one-tap access and reliable reminders.</p>
@@ -439,7 +448,7 @@
     <button id="delete-account-btn" class="btn-danger">Delete my account</button>
   </section>
 
-  <p class="muted small center">My GLP Shot <span id="app-version-footer"></span> · <a href="privacy.html">Privacy</a> · <a href="terms.html">Terms</a> · <a href="https://github.com/thejdubb02/wsg-shotclock" target="_blank" rel="noopener">source</a></p>
+  <p class="muted small center">My GLP Shot <span id="app-version-footer"></span> · <a href="privacy.html">Privacy</a> · <a href="terms.html">Terms</a> · <a href="https://github.com/thejdubb02/my-glp-shot" target="_blank" rel="noopener">source</a></p>
 </main>
 
 <dialog id="shot-dialog" class="modal">
@@ -678,6 +687,6 @@
 </nav>
 
 <script src="lib/chart.min.js"></script>
-<script src="app.js?v=19"></script>
+<script src="app.js?v=20"></script>
 </body>
 </html>
