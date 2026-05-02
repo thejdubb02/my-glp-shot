@@ -835,40 +835,78 @@ def import_parse():
     if len(text) > 1_500_000:
         return err('too_large', 'Text exceeds 1.5 MB. Trim and retry.', 413)
 
-    import requests as _r
-    body = {
-        'contents': [{'parts': [{'text': IMPORT_PROMPT + text}]}],
-        'generationConfig': {
-            'temperature': 0.0,
-            'maxOutputTokens': 8192,
-            'responseMimeType': 'application/json',
-        },
-    }
-    try:
-        r = _r.post(
-            f'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}',
-            json=body, timeout=90,
-        )
-    except Exception as e:
-        app.logger.exception('Gemini call failed: %s', e)
-        return err('llm_error', 'AI parser is temporarily unavailable.', 502)
-    if r.status_code != 200:
-        app.logger.warning('Gemini %s: %s', r.status_code, r.text[:300])
-        return err('llm_error', f'AI parser returned {r.status_code}.', 502)
-    try:
-        out = r.json()
-        raw = out['candidates'][0]['content']['parts'][0]['text']
-        parsed = json.loads(raw)
-    except (KeyError, IndexError, ValueError, TypeError) as e:
-        app.logger.warning('Gemini malformed: %s — %s', e, r.text[:300])
-        return err('llm_parse', 'AI returned an unparseable response. Try a smaller file.', 502)
+    # Chunk on line boundaries so each Gemini call stays under the model's effective response budget.
+    # 120K chars per chunk keeps response JSON well under the 32K-token cap even for densely-logged data.
+    CHUNK = 120_000
+    chunks = []
+    if len(text) <= CHUNK:
+        chunks = [text]
+    else:
+        start = 0
+        while start < len(text):
+            end = min(start + CHUNK, len(text))
+            if end < len(text):
+                # Backtrack to the last newline so we don't split a row mid-line.
+                nl = text.rfind('\n', start, end)
+                if nl > start + (CHUNK // 2):
+                    end = nl + 1
+            chunks.append(text[start:end])
+            start = end
 
-    # Sanity-check the shape and clamp counts.
-    shots = parsed.get('shots') if isinstance(parsed, dict) else None
-    weights = parsed.get('weights') if isinstance(parsed, dict) else None
-    if not isinstance(shots, list): shots = []
-    if not isinstance(weights, list): weights = []
-    return jsonify(shots=shots[:5000], weights=weights[:5000])
+    import requests as _r
+    all_shots, all_weights = [], []
+    for idx, chunk in enumerate(chunks):
+        body = {
+            'contents': [{'parts': [{'text': IMPORT_PROMPT + chunk}]}],
+            'generationConfig': {
+                'temperature': 0.0,
+                'maxOutputTokens': 32768,
+                'responseMimeType': 'application/json',
+            },
+        }
+        try:
+            r = _r.post(
+                f'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}',
+                json=body, timeout=150,
+            )
+        except Exception as e:
+            app.logger.exception('Gemini call failed (chunk %d/%d): %s', idx + 1, len(chunks), e)
+            return err('llm_error', f'AI parser timed out on chunk {idx + 1}/{len(chunks)}. Try a smaller file.', 502)
+        if r.status_code != 200:
+            app.logger.warning('Gemini %s (chunk %d/%d): %s', r.status_code, idx + 1, len(chunks), r.text[:300])
+            return err('llm_error', f'AI parser returned {r.status_code} on chunk {idx + 1}/{len(chunks)}.', 502)
+        try:
+            out = r.json()
+            raw = out['candidates'][0]['content']['parts'][0]['text']
+            parsed = json.loads(raw)
+        except (KeyError, IndexError, ValueError, TypeError) as e:
+            app.logger.warning('Gemini malformed (chunk %d/%d): %s — %s', idx + 1, len(chunks), e, r.text[:300])
+            # Don't fail the whole import on one bad chunk — log + skip.
+            continue
+        shots = parsed.get('shots') if isinstance(parsed, dict) else None
+        weights = parsed.get('weights') if isinstance(parsed, dict) else None
+        if isinstance(shots, list): all_shots.extend(shots)
+        if isinstance(weights, list): all_weights.extend(weights)
+
+    # De-dupe across chunks: chunk overlap or repeated headers can produce duplicate rows.
+    def _key_shot(s):
+        try: return (str(s.get('when',''))[:16], round(float(s.get('dose') or 0), 3))
+        except Exception: return (str(s.get('when','')), str(s.get('dose','')))
+    def _key_weight(w):
+        try: return (str(w.get('date',''))[:10], round(float(w.get('value') or 0), 2))
+        except Exception: return (str(w.get('date','')), str(w.get('value','')))
+    seen_s, dedup_s = set(), []
+    for s in all_shots:
+        k = _key_shot(s)
+        if k in seen_s: continue
+        seen_s.add(k); dedup_s.append(s)
+    seen_w, dedup_w = set(), []
+    for w in all_weights:
+        k = _key_weight(w)
+        if k in seen_w: continue
+        seen_w.add(k); dedup_w.append(w)
+
+    return jsonify(shots=dedup_s[:5000], weights=dedup_w[:5000], chunks=len(chunks))
 
 
 # ---------- Bootstrap ----------

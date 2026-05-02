@@ -17,4 +17,4 @@ RUN useradd --system --create-home --shell /bin/false app && \
 USER app
 
 EXPOSE 8080
-CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "2", "--threads", "4", "--timeout", "60", "--access-logfile", "-", "--error-logfile", "-", "app:app"]
+CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "2", "--threads", "4", "--timeout", "1800", "--graceful-timeout", "30", "--access-logfile", "-", "--error-logfile", "-", "app:app"]
