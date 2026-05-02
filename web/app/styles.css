@@ -398,6 +398,29 @@ body.auth-active .auth-view{display:flex !important;flex-direction:column;min-he
 .nav-btn.active{color:var(--bronze-dk)}
 .nav-btn.active .nav-icon{fill:var(--bronze-dk)}
 .nav-btn:hover{background:var(--bronze-lt)}
+/* Premium tab is intentionally distinct — gold/amber accent so users know there are paid features without burying them. */
+.nav-btn-premium{color:#b45309}
+.nav-btn-premium .nav-icon{fill:#b45309}
+.nav-btn-premium.active{color:#92400e}
+.nav-btn-premium.active .nav-icon{fill:#92400e}
+.nav-btn-premium:hover{background:linear-gradient(135deg,#fef3c7 0%,#fde68a 100%)}
+[data-theme="dark"] .nav-btn-premium,
+[data-theme="dark"] .nav-btn-premium .nav-icon{color:#fbbf24;fill:#fbbf24}
+[data-theme="dark"] .nav-btn-premium.active,
+[data-theme="dark"] .nav-btn-premium.active .nav-icon{color:#fcd34d;fill:#fcd34d}
+[data-theme="dark"] .nav-btn-premium:hover{background:rgba(251,191,36,.12)}
+
+/* Premium hero card at top of premium view */
+.premium-hero{background:linear-gradient(135deg,#fef3c7 0%,#fde68a 100%);border:1px solid #f59e0b}
+.premium-hero h2{color:#92400e}
+[data-theme="dark"] .premium-hero{background:linear-gradient(135deg,rgba(251,191,36,.12) 0%,rgba(245,158,11,.18) 100%);border-color:#92400e}
+[data-theme="dark"] .premium-hero h2{color:#fcd34d}
+.premium-hero-row{display:flex;gap:14px;align-items:center}
+.premium-hero-icon{font-size:2rem;line-height:1}
+.premium-hero-text{flex:1}
+.premium-hero-text h2{margin:0 0 4px}
+.premium-hero-text p{margin:0}
+
 body{padding-bottom:calc(env(safe-area-inset-bottom) + 76px)}
 
 /* Tab filtering inside #view-home — hide sections whose data-tab doesn't match the active tab.

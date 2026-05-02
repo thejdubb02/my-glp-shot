@@ -17,7 +17,7 @@
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="icon" type="image/png" sizes="512x512" href="icons/icon-512.png">
 <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png">
-<link rel="stylesheet" href="styles.css?v=25">
+<link rel="stylesheet" href="styles.css?v=26">
 <script>
 (function(){
   // Apply saved theme synchronously to avoid flash. Settings live in IndexedDB; theme also mirrored to localStorage for fast read.
@@ -245,7 +245,21 @@
     <div id="plateau-body"></div>
   </section>
 
-  <!-- MORE TAB (premium tracking) -->
+  <!-- PREMIUM TAB (everything gated to paid, with a clear hero so users know what they're looking at) -->
+
+  <section id="premium-hero" class="card premium-hero" data-tab="more">
+    <div class="premium-hero-row">
+      <div class="premium-hero-icon">⭐</div>
+      <div class="premium-hero-text">
+        <h2 id="premium-hero-title">Premium</h2>
+        <p id="premium-hero-sub" class="muted small">Track supplies, body measurements, labs, spend, and export reports for your doctor.</p>
+      </div>
+    </div>
+    <div class="btn-row" id="premium-hero-actions">
+      <button id="premium-hero-upgrade" class="btn-primary hidden" type="button">⭐ Upgrade</button>
+      <button id="premium-hero-manage" class="btn-ghost hidden" type="button">Manage subscription</button>
+    </div>
+  </section>
 
   <section id="supply-card" class="card" data-tab="more">
     <div class="card-head">
@@ -689,9 +703,9 @@
     <svg viewBox="0 0 24 24" class="nav-icon" aria-hidden="true"><path d="M4 19V5h2v14H4zm5 0v-9h2v9H9zm5 0v-6h2v6h-2zm5 0V8h2v11h-2z"/></svg>
     <span>Insights</span>
   </button>
-  <button class="nav-btn" data-nav-tab="more" type="button">
-    <svg viewBox="0 0 24 24" class="nav-icon" aria-hidden="true"><path d="M4 6h16v2H4V6zm0 5h16v2H4v-2zm0 5h16v2H4v-2z"/></svg>
-    <span>More</span>
+  <button class="nav-btn nav-btn-premium" data-nav-tab="more" type="button" aria-label="Premium features">
+    <svg viewBox="0 0 24 24" class="nav-icon" aria-hidden="true"><path d="M12 2l2.6 6.7 7.4.6-5.6 4.8 1.7 7.2L12 17.4 5.9 21.3l1.7-7.2L2 9.3l7.4-.6L12 2z"/></svg>
+    <span>Premium</span>
   </button>
   <button class="nav-btn" data-nav-tab="settings" type="button">
     <svg viewBox="0 0 24 24" class="nav-icon" aria-hidden="true"><path d="M19.4 13a7.5 7.5 0 0 0 0-2l2-1.6-2-3.4-2.4 1a7.5 7.5 0 0 0-1.7-1L15 3.5h-4l-.3 2.5a7.5 7.5 0 0 0-1.7 1l-2.4-1-2 3.4L6.6 11a7.5 7.5 0 0 0 0 2l-2 1.6 2 3.4 2.4-1a7.5 7.5 0 0 0 1.7 1l.3 2.5h4l.3-2.5a7.5 7.5 0 0 0 1.7-1l2.4 1 2-3.4-2-1.6zM12 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z"/></svg>
@@ -700,6 +714,6 @@
 </nav>
 
 <script src="lib/chart.min.js"></script>
-<script src="app.js?v=25"></script>
+<script src="app.js?v=26"></script>
 </body>
 </html>

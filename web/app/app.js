@@ -7,7 +7,7 @@ const DB_NAME = 'shotclock';
 // v3 bump: 'supplies' store is added in onupgradeneeded instead of being created lazily by ensureStore().
 // Lazy creation drifted IDB to v3 on premium devices while DB_VERSION stayed at 2, causing VersionError on every later open.
 const DB_VERSION = 3;
-const APP_VERSION = '0.25.0';
+const APP_VERSION = '0.26.0';
 
 // Umami event tracker. Aggregates only — no PII (no email, no IDs). Safe to call before umami loads.
 function track(event, props) {
@@ -1418,6 +1418,11 @@ function setupAccountUI() {
     onAccountChanged();
   });
   $('#upgrade-cta').addEventListener('click', () => { $('#upgrade-error').textContent = ''; $('#upgrade-dialog').showModal(); });
+  // Premium hero buttons reuse the same dialogs as the Settings card.
+  const heroUp = document.getElementById('premium-hero-upgrade');
+  if (heroUp) heroUp.addEventListener('click', () => { $('#upgrade-error').textContent = ''; $('#upgrade-dialog').showModal(); });
+  const heroMan = document.getElementById('premium-hero-manage');
+  if (heroMan) heroMan.addEventListener('click', () => $('#manage-billing-cta').click());
   $('#upgrade-cancel').addEventListener('click', () => $('#upgrade-dialog').close());
   $('#upgrade-confirm').addEventListener('click', async () => {
     const btn = $('#upgrade-confirm');
@@ -2387,6 +2392,29 @@ async function onAccountChanged() {
     $('#manage-billing-cta').classList.toggle('hidden', !u.hasStripeCustomer);
     const legacySync = $('#legacy-cloud-sync-card');
     if (legacySync) legacySync.classList.add('hidden');
+    // Premium hero card on the Premium tab — mirrors upgrade/manage state and shows clear status text.
+    const phUp = $('#premium-hero-upgrade');
+    const phMan = $('#premium-hero-manage');
+    const phTitle = $('#premium-hero-title');
+    const phSub = $('#premium-hero-sub');
+    if (phUp) phUp.classList.toggle('hidden', isPremium());
+    if (phMan) phMan.classList.toggle('hidden', !u.hasStripeCustomer);
+    if (phTitle && phSub) {
+      if (u.subscriptionStatus === 'lifetime') {
+        phTitle.textContent = '⭐ Lifetime Premium';
+        phSub.textContent = 'You have full access. Thanks for being a founding supporter.';
+      } else if (u.subscriptionStatus === 'premium' && u.isPremium) {
+        phTitle.textContent = '⭐ Premium';
+        phSub.textContent = 'You have full access to all premium features.';
+      } else if (u.subscriptionStatus === 'trial' && u.isPremium) {
+        const daysLeft = Math.max(0, Math.ceil((u.trialEndsAt - Date.now() / 1000) / 86400));
+        phTitle.textContent = `⭐ Trial · ${daysLeft} day${daysLeft === 1 ? '' : 's'} left`;
+        phSub.textContent = 'Try every premium feature free. Subscribe before the trial ends to keep access.';
+      } else {
+        phTitle.textContent = 'Premium';
+        phSub.textContent = 'Unlock supplies, measurements, labs, spend tracking, AI import, PDF reports, and doctor share links.';
+      }
+    }
   } else {
     $('#account-signed-out').classList.remove('hidden');
     $('#account-signed-in').classList.add('hidden');
