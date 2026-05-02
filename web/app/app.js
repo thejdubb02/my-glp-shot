@@ -5,7 +5,16 @@
 
 const DB_NAME = 'shotclock';
 const DB_VERSION = 2;
-const APP_VERSION = '0.23.0';
+const APP_VERSION = '0.24.0';
+
+// Umami event tracker. Aggregates only — no PII (no email, no IDs). Safe to call before umami loads.
+function track(event, props) {
+  try {
+    if (typeof window === 'undefined' || typeof window.umami === 'undefined') return;
+    if (props && typeof props === 'object') window.umami.track(event, props);
+    else window.umami.track(event);
+  } catch (_) { /* never let analytics break the app */ }
+}
 const STORES = { shots: 'shots', weights: 'weights', settings: 'settings', moods: 'moods' };
 const SETTINGS_KEY = 'app';
 const DEFAULT_SETTINGS = {
@@ -341,6 +350,7 @@ function wireCriticalUI() {
   document.querySelectorAll('#bottom-nav .nav-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const tab = btn.getAttribute('data-nav-tab');
+      track('nav_tab_click', { tab });
       if (tab === 'settings') {
         showView('settings');
         document.querySelectorAll('#bottom-nav .nav-btn').forEach(b => b.classList.toggle('active', b === btn));
@@ -445,11 +455,13 @@ function wireCriticalUI() {
         const b64 = btoa(String.fromCharCode(...new Uint8Array(raw)));
         localStorage.setItem('account.cred', JSON.stringify({ email: cleanEmail, k: b64, v: 2 }));
       } catch (_) {}
+      track(_authMode === 'signup' ? 'signup_success' : 'login_success');
       // Reload to fully bootstrap the signed-in state. This is the simplest, most reliable
       // way to pick up the new session everywhere without juggling state.
       window.location.reload();
     } catch (ex) {
       if (errEl) errEl.textContent = (ex && ex.message) || 'Something went wrong.';
+      track(_authMode === 'signup' ? 'signup_failed' : 'login_failed');
       console.error('[mgs] auth submit failed:', ex);
       if (submit) {
         submit.disabled = false;
@@ -531,6 +543,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     await renderShots();
     maybeScheduleNotification();
     markSyncDirty();
+    track(id ? 'shot_edited' : 'shot_logged', { has_site: !!data.site, has_notes: !!data.notes });
   });
   $('#shot-delete').addEventListener('click', async () => {
     const id = parseInt($('#shot-id').value, 10);
@@ -560,6 +573,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     $('#weight-dialog').close();
     await renderWeights();
     markSyncDirty();
+    track('weight_logged', { unit: $('#weight-unit').value });
   });
 
   $('#set-med').addEventListener('change', async (e) => { settings.medication = e.target.value.trim() || 'Tirzepatide'; await saveSettings(); markSyncDirty(); });
@@ -651,6 +665,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     await saveMood(todayISODate(), v);
     delete $('#mood-card').dataset.editing;
     await renderMood();
+    track('mood_logged', { value: v });
   }));
   $('#mood-change').addEventListener('click', (e) => {
     e.preventDefault();
@@ -854,6 +869,7 @@ async function exportData() {
   settings.lastBackup = new Date().toISOString();
   await saveSettings();
   updateBackupLabel();
+  track('export_json', { shots: shots.length, weights: weights.length });
 }
 async function smartImport(e) {
   const file = e.target.files[0];
@@ -873,12 +889,14 @@ async function smartImport(e) {
     }
     btn.disabled = true;
     btn.textContent = '✨ Parsing with AI…';
+    track('smart_import_started', { size_bytes: file.size });
     const r = await accountFetch('import/parse', {
       method: 'POST',
       body: JSON.stringify({ text }),
     });
     if (!r.ok) {
       const j = await r.json().catch(() => ({}));
+      track('smart_import_failed', { status: r.status });
       throw new Error(j.message || `Failed (${r.status})`);
     }
     const j = await r.json();
@@ -906,6 +924,7 @@ async function smartImport(e) {
     await renderShots();
     await renderWeights();
     markSyncDirty();
+    track('smart_import_success', { shots: shots.length, weights: weights.length });
     alert(`✓ Imported ${shots.length} shots and ${weights.length} weights.`);
   } catch (ex) {
     alert('Smart import failed: ' + (ex.message || ex));
@@ -1280,6 +1299,7 @@ function showInstallDialog() {
   else if (p.isAndroid) $('#install-android').classList.remove('hidden');
   else $('#install-desktop').classList.remove('hidden');
   dlg.showModal();
+  track('install_prompt_shown', { platform: p.isIOS ? 'ios' : p.isAndroid ? 'android' : 'desktop' });
 }
 
 function setupInstallBanner() {
@@ -1403,6 +1423,7 @@ function setupAccountUI() {
     const orig = btn.textContent;
     btn.textContent = 'Redirecting to Stripe…';
     try {
+      track('billing_checkout_clicked', { plan });
       const r = await accountFetch('billing/checkout', { method: 'POST', body: JSON.stringify({ plan }) });
       const j = await r.json();
       if (!r.ok || !j.url) throw new Error(j.message || 'Checkout failed.');
@@ -1551,7 +1572,9 @@ function setupShareUI() {
       const result = await createShareLink($('#share-label').value.trim());
       $('#share-url-display').textContent = result.url;
       $('#share-result').classList.remove('hidden');
+      track('doctor_share_created');
     } catch (e) {
+      track('doctor_share_failed');
       alert('Failed: ' + e.message);
     }
   });
