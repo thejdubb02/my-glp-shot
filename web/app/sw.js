@@ -1,12 +1,12 @@
 // My GLP Shot service worker — offline app shell + notification click handling.
-const CACHE = 'mglp-v9';
+const CACHE = 'mglp-v10';
 const ASSETS = [
   './',
   'index.html',
   'privacy.html',
   'terms.html',
-  'styles.css?v=8',
-  'app.js?v=8',
+  'styles.css?v=10',
+  'app.js?v=10',
   'view.html',
   'reset.html',
   'manifest.webmanifest',

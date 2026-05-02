@@ -414,8 +414,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   $$('.mood-btn').forEach(btn => btn.addEventListener('click', async () => {
     const v = parseInt(btn.dataset.mood, 10);
     await saveMood(todayISODate(), v);
+    delete $('#mood-card').dataset.editing;
     await renderMood();
   }));
+  $('#mood-change').addEventListener('click', (e) => {
+    e.preventDefault();
+    $('#mood-card').dataset.editing = '1';
+    renderMood();
+  });
 
   renderSideEffectsForm();
 
@@ -651,7 +657,7 @@ async function importShotsyCSV(text) {
   const cPain = colIdx('pain level');
   const cWeight = header.findIndex(h => h.startsWith('recorded weight'));
   const cDayNotes = colIdx('day notes');
-  if (cDate < 0) throw new Error('CSV missing required "Date" column — is this a Shotsy export?');
+  if (cDate < 0) throw new Error('CSV missing required "Date" column — is this a tracker export?');
 
   const shotsToAdd = [];
   const weightsToAdd = [];
@@ -717,7 +723,7 @@ async function importShotsyCSV(text) {
   if (!dedupedShots.length && !dedupedWeights.length) {
     throw new Error('No shots or weight entries found in CSV');
   }
-  if (!confirm(`Import ${dedupedShots.length} shots and ${dedupedWeights.length} weight entries from Shotsy? This will MERGE with existing data.`)) return;
+  if (!confirm(`Import ${dedupedShots.length} shots and ${dedupedWeights.length} weight entries? This will MERGE with existing data.`)) return;
 
   for (const s of dedupedShots) await dbAdd(STORES.shots, s);
   for (const w of dedupedWeights) await dbAdd(STORES.weights, w);
@@ -1431,12 +1437,75 @@ function renderSideEffectsSummary(shots) {
 }
 
 // ---------- Mood widget ----------
+const MOOD_LABELS = { 1: 'Awful', 2: 'Low', 3: 'Okay', 4: 'Good', 5: 'Great' };
+const MOOD_SVG = {
+  1: '<circle cx="16" cy="16" r="14" class="mood-bg"/><circle cx="11" cy="13" r="1.5" class="mood-eye"/><circle cx="21" cy="13" r="1.5" class="mood-eye"/><path d="M10 22 Q16 17 22 22" fill="none" class="mood-mouth"/>',
+  2: '<circle cx="16" cy="16" r="14" class="mood-bg"/><circle cx="11" cy="13" r="1.5" class="mood-eye"/><circle cx="21" cy="13" r="1.5" class="mood-eye"/><path d="M11 21 Q16 18 21 21" fill="none" class="mood-mouth"/>',
+  3: '<circle cx="16" cy="16" r="14" class="mood-bg"/><circle cx="11" cy="13" r="1.5" class="mood-eye"/><circle cx="21" cy="13" r="1.5" class="mood-eye"/><line x1="11" y1="20" x2="21" y2="20" class="mood-mouth"/>',
+  4: '<circle cx="16" cy="16" r="14" class="mood-bg"/><circle cx="11" cy="13" r="1.5" class="mood-eye"/><circle cx="21" cy="13" r="1.5" class="mood-eye"/><path d="M10 19 Q16 24 22 19" fill="none" class="mood-mouth"/>',
+  5: '<circle cx="16" cy="16" r="14" class="mood-bg"/><path d="M9 12 Q11 11 13 12" fill="none" class="mood-eye-arc"/><path d="M19 12 Q21 11 23 12" fill="none" class="mood-eye-arc"/><path d="M9 18 Q16 26 23 18 Z" class="mood-mouth-fill"/>',
+};
+
 async function renderMood() {
   const today = todayISODate();
   const moods = await getMoodsSorted();
   const todayMood = moods.find(m => m.date === today);
   $$('.mood-btn').forEach(b => b.classList.toggle('selected', todayMood && +b.dataset.mood === todayMood.value));
-  $('#mood-saved').textContent = todayMood ? '✓ saved' : '';
+  // Collapse the picker once today is logged. User can tap "change" to bring it back.
+  const card = $('#mood-card');
+  const picker = $('#mood-picker');
+  const logged = $('#mood-logged');
+  const saved = $('#mood-saved');
+  const heading = $('#mood-heading');
+  if (todayMood && !card.dataset.editing) {
+    picker.classList.add('hidden');
+    logged.classList.remove('hidden');
+    $('#mood-logged-svg').innerHTML = MOOD_SVG[todayMood.value] || '';
+    $('#mood-logged-svg').classList.toggle('mood-positive', todayMood.value >= 4);
+    $('#mood-logged-svg').classList.toggle('mood-negative', todayMood.value <= 2);
+    $('#mood-logged-label').textContent = MOOD_LABELS[todayMood.value] || 'Logged';
+    heading.textContent = "Today's mood";
+    saved.textContent = '';
+  } else {
+    picker.classList.remove('hidden');
+    logged.classList.add('hidden');
+    heading.textContent = 'How are you feeling today?';
+    saved.textContent = todayMood ? '✓ saved' : '';
+  }
+  await renderMoodTrend(moods);
+}
+
+async function renderMoodTrend(moods) {
+  const card = $('#mood-trend-card');
+  if (!card) return;
+  if (!moods || moods.length === 0) { card.classList.add('hidden'); return; }
+  card.classList.remove('hidden');
+  const days = 30;
+  const today = new Date();
+  const byDate = new Map(moods.map(m => [m.date, m.value]));
+  const bars = [];
+  let sum = 0, count = 0;
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    const tz = d.getTimezoneOffset() * 60000;
+    const iso = new Date(d - tz).toISOString().slice(0, 10);
+    const v = byDate.get(iso);
+    if (v != null) { sum += v; count++; }
+    bars.push({ iso, v });
+  }
+  const html = bars.map(b => {
+    if (b.v == null) return `<div class="mood-bar empty" title="${b.iso}: not logged"></div>`;
+    return `<div class="mood-bar v${b.v}" style="height:${20 + b.v * 16}%" title="${b.iso}: ${MOOD_LABELS[b.v]}"></div>`;
+  }).join('');
+  $('#mood-trend-bars').innerHTML = html;
+  const avg = count ? (sum / count) : null;
+  if (avg != null) {
+    const lab = avg >= 4.2 ? 'mostly great' : avg >= 3.5 ? 'mostly good' : avg >= 2.5 ? 'mixed' : avg >= 1.6 ? 'mostly low' : 'tough stretch';
+    $('#mood-trend-summary').textContent = `${count} of last ${days} days · ${lab}`;
+  } else {
+    $('#mood-trend-summary').textContent = '';
+  }
 }
 
 // ---------- Achievements ----------

@@ -17,7 +17,7 @@
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="icon" type="image/png" sizes="512x512" href="icons/icon-512.png">
 <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png">
-<link rel="stylesheet" href="styles.css?v=9">
+<link rel="stylesheet" href="styles.css?v=10">
 <script>
 (function(){
   // Apply saved theme synchronously to avoid flash. Settings live in IndexedDB; theme also mirrored to localStorage for fast read.
@@ -122,8 +122,17 @@
     </div>
   </section>
 
-  <section class="card mood-card" data-tab="home">
-    <div class="card-head"><h2>How are you feeling today?</h2><span id="mood-saved" class="mood-saved muted small"></span></div>
+  <section class="card mood-card" data-tab="home" id="mood-card">
+    <div class="card-head"><h2 id="mood-heading">How are you feeling today?</h2><span id="mood-saved" class="mood-saved muted small"></span></div>
+    <div id="mood-logged" class="mood-logged hidden">
+      <div class="mood-logged-row">
+        <svg viewBox="0 0 32 32" id="mood-logged-svg" class="mood-svg"></svg>
+        <div class="mood-logged-text">
+          <strong id="mood-logged-label">Feeling good</strong>
+          <span class="muted small">Logged today · <a href="#" id="mood-change" class="link">change</a></span>
+        </div>
+      </div>
+    </div>
     <div id="mood-picker" class="mood-picker">
       <button data-mood="1" class="mood-btn" type="button" aria-label="Awful"><svg viewBox="0 0 32 32" class="mood-svg"><circle cx="16" cy="16" r="14" class="mood-bg"/><circle cx="11" cy="13" r="1.5" class="mood-eye"/><circle cx="21" cy="13" r="1.5" class="mood-eye"/><path d="M10 22 Q16 17 22 22" fill="none" class="mood-mouth"/></svg></button>
       <button data-mood="2" class="mood-btn" type="button" aria-label="Low"><svg viewBox="0 0 32 32" class="mood-svg"><circle cx="16" cy="16" r="14" class="mood-bg"/><circle cx="11" cy="13" r="1.5" class="mood-eye"/><circle cx="21" cy="13" r="1.5" class="mood-eye"/><path d="M11 21 Q16 18 21 21" fill="none" class="mood-mouth"/></svg></button>
@@ -191,6 +200,12 @@
     <div class="card-head"><h2>How you've been feeling</h2><span class="muted small">Last 30 days</span></div>
     <div id="side-effects-summary" class="side-effects-summary"></div>
     <p id="empty-side-effects" class="empty"><span class="empty-illus">✓</span><br>No symptoms logged. Add them when you log a shot.</p>
+  </section>
+
+  <section id="mood-trend-card" class="card hidden" data-tab="insights">
+    <div class="card-head"><h2>Mood trend</h2><span id="mood-trend-summary" class="muted small"></span></div>
+    <div id="mood-trend-bars" class="mood-trend-bars"></div>
+    <p class="muted small" id="mood-trend-hint">Each bar is one day. Taller = better. Tap the home tab to log today.</p>
   </section>
 
   <section class="card" data-tab="insights">
@@ -370,11 +385,11 @@
     <p id="last-backup" class="muted small"></p>
     <div class="row-buttons">
       <button id="export-btn" class="btn-primary">Export JSON</button>
-      <button id="import-btn" class="btn-ghost">Import JSON / Shotsy CSV</button>
+      <button id="import-btn" class="btn-ghost">Import JSON or CSV</button>
       <input id="import-file" type="file" accept="application/json,.json,.csv,text/csv" hidden>
     </div>
     <p class="muted small">Your data is stored only on this device. Export regularly. Installing as a PWA dramatically reduces the chance of losing data on a browser clear.</p>
-    <p class="muted small"><strong>Switching from Shotsy?</strong> In the Shotsy app: Settings → Export Data → CSV. Then tap "Import" above and select the file. Shots, weight, sites, doses, and notes will all transfer.</p>
+    <p class="muted small"><strong>Switching from another tracker?</strong> In your old app, look for an Export Data option (CSV). Then tap "Import" above and select the file. Shots, weight, sites, doses, and notes will transfer.</p>
   </section>
 
   <section class="card">
@@ -604,6 +619,6 @@
 </nav>
 
 <script src="lib/chart.min.js"></script>
-<script src="app.js?v=9"></script>
+<script src="app.js?v=10"></script>
 </body>
 </html>
