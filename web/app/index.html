@@ -17,7 +17,7 @@
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="icon" type="image/png" sizes="512x512" href="icons/icon-512.png">
 <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png">
-<link rel="stylesheet" href="styles.css?v=11">
+<link rel="stylesheet" href="styles.css?v=13">
 <script>
 (function(){
   // Apply saved theme synchronously to avoid flash. Settings live in IndexedDB; theme also mirrored to localStorage for fast read.
@@ -292,6 +292,7 @@
       </div>
       <div class="btn-row">
         <button id="upgrade-cta" class="btn-primary hidden" type="button">⭐ Upgrade to Premium</button>
+        <button id="manage-billing-cta" class="btn-ghost hidden" type="button">Manage subscription</button>
         <button id="show-acct-sync" class="btn-ghost" type="button">Sync now</button>
         <button id="show-share" class="btn-ghost" type="button">Doctor share link</button>
       </div>
@@ -393,6 +394,13 @@
   </section>
 
   <section class="card">
+    <h2>Troubleshooting</h2>
+    <p class="muted small" id="app-version-line">App version: app.js?v=13 · sw mglp-v11</p>
+    <button id="force-update-btn" class="btn-ghost" type="button">Force latest version</button>
+    <p class="muted small">Clears the offline cache and reloads the app fresh. Use if something looks stale.</p>
+  </section>
+
+  <section class="card">
     <h2>Danger zone</h2>
     <button id="wipe-btn" class="btn-danger">Erase all data on this device</button>
   </section>
@@ -467,22 +475,39 @@
 <dialog id="upgrade-dialog" class="modal">
   <form method="dialog">
     <h2>Upgrade to Premium</h2>
-    <p class="muted small">$1.99/mo or $19.99/yr. 14-day free trial.</p>
+    <p class="muted small">14-day free trial · cancel anytime · no Apple/Google fee</p>
     <ul class="premium-list">
       <li>☁️ Multi-device end-to-end encrypted sync</li>
       <li>💊 Supply / pen tracking + expiration alerts</li>
       <li>📏 Body measurements (waist, hips, etc.)</li>
       <li>🔬 Lab tracking (A1c, BP, lipids)</li>
-      <li>📈 Advanced insights &amp; plateau detection</li>
+      <li>📈 Deeper insights &amp; plateau alerts</li>
       <li>📄 Doctor-ready PDF reports</li>
       <li>🔗 24-hour doctor share links</li>
-      <li>💰 Cost / spend tracker</li>
+      <li>💰 Spending tracker</li>
     </ul>
-    <p class="muted small">Stripe billing isn't live yet — early testers get free premium. Tap below to enable for now.</p>
+    <div class="plan-picker">
+      <label class="plan-option">
+        <input type="radio" name="plan" value="yearly" checked>
+        <div class="plan-option-body">
+          <strong>Yearly · $19.99 <span class="plan-save">Save 16%</span></strong>
+          <span class="muted small">$1.67/mo, billed once a year</span>
+        </div>
+      </label>
+      <label class="plan-option">
+        <input type="radio" name="plan" value="monthly">
+        <div class="plan-option-body">
+          <strong>Monthly · $1.99</strong>
+          <span class="muted small">Billed every month</span>
+        </div>
+      </label>
+    </div>
+    <p id="upgrade-error" class="acct-err"></p>
     <div class="modal-actions">
       <button type="button" id="upgrade-cancel" class="btn-ghost">Maybe later</button>
-      <button type="button" id="upgrade-confirm" class="btn-primary">Continue</button>
+      <button type="button" id="upgrade-confirm" class="btn-primary">Start free trial →</button>
     </div>
+    <p class="muted small center" style="margin-top:6px">Secure checkout by Stripe. We never see your card.</p>
   </form>
 </dialog>
 
@@ -619,6 +644,6 @@
 </nav>
 
 <script src="lib/chart.min.js"></script>
-<script src="app.js?v=11"></script>
+<script src="app.js?v=13"></script>
 </body>
 </html>

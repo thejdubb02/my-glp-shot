@@ -17,6 +17,7 @@ from contextlib import closing
 from datetime import datetime, timezone
 
 import bcrypt
+import stripe
 from flask import Flask, g, jsonify, make_response, request
 
 # ---------- Config ----------
@@ -28,6 +29,13 @@ TRIAL_DAYS = 14
 SESSION_DAYS = 90
 SHARE_TTL_HOURS = 24
 MAX_BLOB_BYTES = 2 * 1024 * 1024  # 2 MB ciphertext cap
+STRIPE_API_KEY = os.environ.get('STRIPE_API_KEY', '')
+STRIPE_WEBHOOK_SECRET = os.environ.get('STRIPE_WEBHOOK_SECRET', '')
+STRIPE_PRICE_MONTHLY = os.environ.get('STRIPE_PRICE_MONTHLY', '')
+STRIPE_PRICE_YEARLY = os.environ.get('STRIPE_PRICE_YEARLY', '')
+if STRIPE_API_KEY:
+    stripe.api_key = STRIPE_API_KEY
+
 EMAIL_RE = re.compile(r'^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$')
 TOKEN_RE = re.compile(r'^[a-f0-9]{32,}$')
 LOOKUP_RE = re.compile(r'^[a-f0-9]{64}$')
@@ -47,6 +55,7 @@ CREATE TABLE IF NOT EXISTS users (
     trial_ends_at       INTEGER,
     premium_until       INTEGER,
     stripe_customer_id  TEXT,
+    stripe_subscription_id TEXT,
     notes               TEXT
 );
 CREATE TABLE IF NOT EXISTS sessions (
@@ -150,6 +159,7 @@ def public_user(user_row):
         'premiumUntil': user_row['premium_until'],
         'isPremium': is_premium_now(user_row),
         'createdAt': user_row['created_at'],
+        'hasStripeCustomer': bool(user_row['stripe_customer_id']),
     }
 
 
@@ -528,11 +538,196 @@ def legacy_exists(lookup_id):
     return jsonify(exists=True, updated_at=row['updated_at'])
 
 
+# ---------- Billing (Stripe) ----------
+def _stripe_ready():
+    return bool(STRIPE_API_KEY and STRIPE_PRICE_MONTHLY and STRIPE_PRICE_YEARLY)
+
+
+def _ensure_customer(user):
+    """Return stripe_customer_id, creating one if needed."""
+    if user['stripe_customer_id']:
+        return user['stripe_customer_id']
+    cust = stripe.Customer.create(
+        email=user['email'],
+        metadata={'user_id': str(user['id'])},
+    )
+    get_db().execute(
+        'UPDATE users SET stripe_customer_id = ? WHERE id = ?',
+        (cust.id, user['id']),
+    )
+    get_db().commit()
+    return cust.id
+
+
+@app.route('/api/billing/prices')
+def billing_prices():
+    if not _stripe_ready():
+        return err('billing_unavailable', 'Billing is not configured.', 503)
+    return jsonify(
+        monthly={'priceId': STRIPE_PRICE_MONTHLY, 'amount': 199, 'interval': 'month'},
+        yearly={'priceId': STRIPE_PRICE_YEARLY, 'amount': 1999, 'interval': 'year'},
+        trialDays=TRIAL_DAYS,
+    )
+
+
+@app.route('/api/billing/checkout', methods=['POST'])
+def billing_checkout():
+    user = require_user()
+    if not user:
+        return err('unauthorized', 'Not signed in.', 401)
+    if not _stripe_ready():
+        return err('billing_unavailable', 'Billing is not configured.', 503)
+    data = request.get_json(silent=True) or {}
+    plan = (data.get('plan') or 'yearly').lower()
+    price_id = STRIPE_PRICE_YEARLY if plan == 'yearly' else STRIPE_PRICE_MONTHLY
+    customer_id = _ensure_customer(user)
+    base = APP_BASE_URL.rstrip('/')
+    app_base = 'https://app.myglpshot.com'
+    try:
+        sess = stripe.checkout.Session.create(
+            mode='subscription',
+            customer=customer_id,
+            line_items=[{'price': price_id, 'quantity': 1}],
+            allow_promotion_codes=True,
+            subscription_data={
+                'trial_period_days': TRIAL_DAYS,
+                'metadata': {'user_id': str(user['id'])},
+            },
+            metadata={'user_id': str(user['id'])},
+            success_url=f'{app_base}/?billing=success&session_id={{CHECKOUT_SESSION_ID}}',
+            cancel_url=f'{app_base}/?billing=canceled',
+        )
+    except stripe.StripeError as e:
+        app.logger.exception('checkout failed: %s', e)
+        return err('stripe_error', str(getattr(e, 'user_message', None) or 'Stripe error'), 502)
+    return jsonify(url=sess.url, sessionId=sess.id)
+
+
+@app.route('/api/billing/portal', methods=['POST'])
+def billing_portal():
+    user = require_user()
+    if not user:
+        return err('unauthorized', 'Not signed in.', 401)
+    if not user['stripe_customer_id']:
+        return err('no_customer', 'No billing record yet — start a subscription first.', 400)
+    app_base = 'https://app.myglpshot.com'
+    try:
+        sess = stripe.billing_portal.Session.create(
+            customer=user['stripe_customer_id'],
+            return_url=f'{app_base}/',
+        )
+    except stripe.StripeError as e:
+        app.logger.exception('portal failed: %s', e)
+        return err('stripe_error', str(getattr(e, 'user_message', None) or 'Stripe error'), 502)
+    return jsonify(url=sess.url)
+
+
+def _apply_subscription(sub):
+    """Update a user's subscription columns from a Stripe Subscription object/dict."""
+    cust_id = sub.get('customer')
+    if not cust_id:
+        return
+    db = get_db()
+    user = db.execute('SELECT * FROM users WHERE stripe_customer_id = ?', (cust_id,)).fetchone()
+    if not user:
+        # Fall back to subscription metadata user_id
+        meta = sub.get('metadata') or {}
+        uid = meta.get('user_id')
+        if not uid:
+            return
+        user = db.execute('SELECT * FROM users WHERE id = ?', (uid,)).fetchone()
+        if not user:
+            return
+        db.execute('UPDATE users SET stripe_customer_id = ? WHERE id = ?', (cust_id, user['id']))
+
+    status = sub.get('status')  # trialing | active | past_due | canceled | unpaid | incomplete | incomplete_expired
+    sub_id = sub.get('id')
+    current_period_end = sub.get('current_period_end')
+    trial_end = sub.get('trial_end')
+    cancel_at_period_end = sub.get('cancel_at_period_end')
+
+    if status in ('active', 'trialing'):
+        new_status = 'premium' if status == 'active' else 'trial'
+        # premium_until is "paid through" — for trialing, use trial_end; for active, current_period_end.
+        until = trial_end if status == 'trialing' else current_period_end
+        db.execute(
+            """UPDATE users
+               SET subscription_status = ?,
+                   premium_until = ?,
+                   trial_ends_at = COALESCE(?, trial_ends_at),
+                   stripe_subscription_id = ?
+               WHERE id = ?""",
+            (new_status, until, trial_end, sub_id, user['id']),
+        )
+    elif status in ('canceled', 'unpaid', 'incomplete_expired'):
+        # Don't yank premium mid-period — keep premium_until, just flip status when it lapses.
+        db.execute(
+            """UPDATE users
+               SET subscription_status = CASE
+                       WHEN premium_until IS NOT NULL AND premium_until > ? THEN 'premium'
+                       ELSE 'free'
+                   END,
+                   stripe_subscription_id = ?
+               WHERE id = ?""",
+            (now_ts(), sub_id, user['id']),
+        )
+    elif status == 'past_due':
+        # Keep current state; Stripe is dunning.
+        db.execute('UPDATE users SET stripe_subscription_id = ? WHERE id = ?', (sub_id, user['id']))
+    db.commit()
+
+
+@app.route('/api/stripe/webhook', methods=['POST'])
+def stripe_webhook():
+    if not STRIPE_WEBHOOK_SECRET:
+        return err('webhook_unconfigured', 'Webhook secret missing.', 503)
+    payload = request.get_data()
+    sig_header = request.headers.get('Stripe-Signature', '')
+    try:
+        event = stripe.Webhook.construct_event(payload, sig_header, STRIPE_WEBHOOK_SECRET)
+    except (ValueError, stripe.error.SignatureVerificationError) as e:
+        app.logger.warning('Stripe webhook signature failed: %s', e)
+        return err('bad_signature', 'Invalid signature.', 400)
+
+    et = event['type']
+    obj = event['data']['object']
+    try:
+        if et == 'checkout.session.completed':
+            # Link customer to user via metadata, then refresh the subscription.
+            meta = obj.get('metadata') or {}
+            uid = meta.get('user_id')
+            cust_id = obj.get('customer')
+            sub_id = obj.get('subscription')
+            if uid and cust_id:
+                get_db().execute(
+                    'UPDATE users SET stripe_customer_id = COALESCE(stripe_customer_id, ?) WHERE id = ?',
+                    (cust_id, uid),
+                )
+                get_db().commit()
+            if sub_id:
+                sub = stripe.Subscription.retrieve(sub_id)
+                _apply_subscription(sub)
+        elif et in ('customer.subscription.created', 'customer.subscription.updated', 'customer.subscription.deleted'):
+            _apply_subscription(obj)
+        elif et == 'invoice.payment_failed':
+            app.logger.warning('Payment failed for customer %s', obj.get('customer'))
+        # Any other event type is ignored.
+    except Exception as e:
+        app.logger.exception('webhook handler error for %s: %s', et, e)
+        # Still 200 so Stripe doesn't retry endlessly on internal bugs.
+    return jsonify(received=True)
+
+
 # ---------- Bootstrap ----------
 def init_db():
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     with closing(sqlite3.connect(DB_PATH)) as c:
         c.executescript(SCHEMA)
+        # Idempotent column add for older DBs (tolerates concurrent worker init).
+        try:
+            c.execute('ALTER TABLE users ADD COLUMN stripe_subscription_id TEXT')
+        except sqlite3.OperationalError:
+            pass
         c.commit()
 
 

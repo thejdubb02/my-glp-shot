@@ -429,6 +429,19 @@ document.addEventListener('DOMContentLoaded', async () => {
   $('#import-btn').addEventListener('click', () => $('#import-file').click());
   $('#import-file').addEventListener('change', importData);
   $('#wipe-btn').addEventListener('click', wipeAll);
+  $('#force-update-btn').addEventListener('click', async () => {
+    try {
+      if ('caches' in window) {
+        const keys = await caches.keys();
+        await Promise.all(keys.map(k => caches.delete(k)));
+      }
+      if ('serviceWorker' in navigator) {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(regs.map(r => r.unregister()));
+      }
+    } catch (e) { /* ignore */ }
+    window.location.reload();
+  });
   $('#download-ics').addEventListener('click', downloadICS);
 
   setupInstallBanner();
@@ -1030,12 +1043,60 @@ function setupAccountUI() {
     await accountLogout(true);
     onAccountChanged();
   });
-  $('#upgrade-cta').addEventListener('click', () => $('#upgrade-dialog').showModal());
+  $('#upgrade-cta').addEventListener('click', () => { $('#upgrade-error').textContent = ''; $('#upgrade-dialog').showModal(); });
   $('#upgrade-cancel').addEventListener('click', () => $('#upgrade-dialog').close());
-  $('#upgrade-confirm').addEventListener('click', () => {
-    alert("Stripe billing isn't live yet. Tell Justin you want premium and he'll flip the switch on the server.");
-    $('#upgrade-dialog').close();
+  $('#upgrade-confirm').addEventListener('click', async () => {
+    const btn = $('#upgrade-confirm');
+    const err = $('#upgrade-error');
+    err.textContent = '';
+    const plan = (document.querySelector('input[name="plan"]:checked') || {}).value || 'yearly';
+    btn.disabled = true;
+    const orig = btn.textContent;
+    btn.textContent = 'Redirecting to Stripe…';
+    try {
+      const r = await accountFetch('billing/checkout', { method: 'POST', body: JSON.stringify({ plan }) });
+      const j = await r.json();
+      if (!r.ok || !j.url) throw new Error(j.message || 'Checkout failed.');
+      window.location.assign(j.url);
+    } catch (ex) {
+      err.textContent = ex.message || 'Could not start checkout.';
+      btn.disabled = false;
+      btn.textContent = orig;
+    }
   });
+  $('#manage-billing-cta').addEventListener('click', async () => {
+    const btn = $('#manage-billing-cta');
+    btn.disabled = true;
+    const orig = btn.textContent;
+    btn.textContent = 'Opening…';
+    try {
+      const r = await accountFetch('billing/portal', { method: 'POST' });
+      const j = await r.json();
+      if (!r.ok || !j.url) throw new Error(j.message || 'Could not open billing portal.');
+      window.location.assign(j.url);
+    } catch (ex) {
+      alert(ex.message || 'Could not open billing portal.');
+      btn.disabled = false;
+      btn.textContent = orig;
+    }
+  });
+
+  // Handle Stripe Checkout return.
+  (function handleBillingReturn() {
+    const sp = new URLSearchParams(window.location.search);
+    const billing = sp.get('billing');
+    if (!billing) return;
+    sp.delete('billing'); sp.delete('session_id');
+    const cleanUrl = window.location.pathname + (sp.toString() ? '?' + sp.toString() : '') + window.location.hash;
+    window.history.replaceState({}, '', cleanUrl);
+    if (billing === 'success') {
+      // Webhook is async — give it a moment then refresh /me.
+      setTimeout(() => accountMe().then(onAccountChanged).catch(() => {}), 1500);
+      setTimeout(() => alert('🎉 Welcome to Premium! Your 14-day trial just started.'), 100);
+    } else if (billing === 'canceled') {
+      // No-op; user backed out.
+    }
+  })();
   $('#show-acct-sync').addEventListener('click', async () => {
     $('#acct-sync-status').textContent = 'Syncing…';
     try { await accountSyncPush(); $('#acct-sync-status').textContent = '✓ Synced'; setTimeout(() => $('#acct-sync-status').textContent = '', 2500); }
@@ -1885,6 +1946,7 @@ async function onAccountChanged() {
       $('#account-trial-bar').classList.add('hidden');
     }
     $('#upgrade-cta').classList.toggle('hidden', isPremium());
+    $('#manage-billing-cta').classList.toggle('hidden', !u.hasStripeCustomer);
   } else {
     $('#account-signed-out').classList.remove('hidden');
     $('#account-signed-in').classList.add('hidden');

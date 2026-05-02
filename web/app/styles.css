@@ -303,6 +303,15 @@ canvas{width:100% !important;height:auto !important;max-height:200px}
 .premium-list{list-style:none;padding:0;margin:8px 0}
 .premium-list li{padding:6px 0;font-size:.92rem}
 
+/* Plan picker (radio cards) */
+.plan-picker{display:flex;flex-direction:column;gap:8px;margin:12px 0}
+.plan-option{display:flex;align-items:center;gap:12px;padding:12px;border:1px solid var(--line);border-radius:10px;cursor:pointer;background:var(--surface);margin:0}
+.plan-option:has(input:checked){border-color:var(--bronze-dk);background:var(--bronze-lt)}
+.plan-option input{margin:0;flex:0 0 auto;width:auto}
+.plan-option-body{display:flex;flex-direction:column;gap:2px}
+.plan-option-body strong{font-size:.95rem;color:var(--ink)}
+.plan-save{display:inline-block;background:var(--ok);color:#fff;font-size:.65rem;padding:2px 6px;border-radius:6px;margin-left:6px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;vertical-align:middle}
+
 /* Premium feature cards — soft, non-paywall presentation. The .lock-pill marks them; tapping the upgrade CTA in the empty state or lock pill opens the upgrade modal. */
 .lock-pill{cursor:pointer}
 .lock-pill.unlocked{cursor:default}
