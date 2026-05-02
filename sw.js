@@ -1,5 +1,5 @@
 // ShotClock service worker — offline app shell + notification click handling.
-const CACHE = 'shotclock-v5';
+const CACHE = 'shotclock-v6';
 const ASSETS = [
   './',
   'index.html',
@@ -11,6 +11,11 @@ const ASSETS = [
   'icons/icon-512.png',
   'icons/icon-maskable-512.png',
   'icons/apple-touch-icon.png',
+  'icons/favicon-16.png',
+  'icons/favicon-32.png',
+  'icons/favicon-96.png',
+  'icons/favicon.ico',
+  'icons/logo.svg',
 ];
 
 self.addEventListener('install', (e) => {
