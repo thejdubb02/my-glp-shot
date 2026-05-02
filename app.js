@@ -1,9 +1,11 @@
-// ShotClock — local-first PWA. All data lives in IndexedDB on this device.
+// My GLP Shot — local-first PWA. All data lives in IndexedDB on this device.
+// (DB name, sync protocol, and lookup_id derivation keep the original 'shotclock'
+//  identifier so existing accounts and cached data continue working.)
 'use strict';
 
 const DB_NAME = 'shotclock';
-const DB_VERSION = 1;
-const STORES = { shots: 'shots', weights: 'weights', settings: 'settings' };
+const DB_VERSION = 2;
+const STORES = { shots: 'shots', weights: 'weights', settings: 'settings', moods: 'moods' };
 const SETTINGS_KEY = 'app';
 const DEFAULT_SETTINGS = {
   medication: 'Tirzepatide',
@@ -14,6 +16,9 @@ const DEFAULT_SETTINGS = {
   notifyLeadMinutes: 60,
   theme: 'system',
   lastBackup: null,
+  startWeight: null,
+  goalWeight: null,
+  achievements: [],
   syncEnabled: false,
   syncUsername: null,
   syncLastPushAt: null,
@@ -22,6 +27,48 @@ const DEFAULT_SETTINGS = {
   syncAutoPush: true,
   syncDirty: false,
 };
+
+const SIDE_EFFECTS = [
+  ['nausea', 'Nausea'],
+  ['heartburn', 'Heartburn'],
+  ['fatigue', 'Fatigue'],
+  ['headache', 'Headache'],
+  ['constipation', 'Constipation'],
+  ['diarrhea', 'Diarrhea'],
+  ['injSiteReaction', 'Injection site reaction'],
+  ['stomachPain', 'Stomach pain'],
+  ['indigestion', 'Indigestion'],
+  ['metallicTaste', 'Metallic taste'],
+  ['moodSwings', 'Mood swings'],
+  ['hairLoss', 'Hair loss'],
+];
+const SE_LEVELS = [['', 'None'], ['mild', 'Mild'], ['moderate', 'Moderate'], ['severe', 'Severe']];
+
+const SITE_POSITIONS = {
+  // x, y in viewBox 200x320; label
+  'Upper arm — Left':  { x: 60,  y: 90,  short: 'L Arm' },
+  'Upper arm — Right': { x: 140, y: 90,  short: 'R Arm' },
+  'Abdomen — Left':    { x: 84,  y: 145, short: 'L Abd' },
+  'Abdomen — Right':   { x: 116, y: 145, short: 'R Abd' },
+  'Thigh — Left':      { x: 84,  y: 220, short: 'L Thigh' },
+  'Thigh — Right':     { x: 116, y: 220, short: 'R Thigh' },
+};
+
+const ACHIEVEMENTS = [
+  { id: 'first',     icon: '💉', label: 'First shot logged',          test: ({shots}) => shots.length >= 1 },
+  { id: 'ten',       icon: '🔟', label: '10 shots',                    test: ({shots}) => shots.length >= 10 },
+  { id: 'fifty',     icon: '✋', label: '50 shots',                    test: ({shots}) => shots.length >= 50 },
+  { id: 'hundred',   icon: '💯', label: '100 shots',                   test: ({shots}) => shots.length >= 100 },
+  { id: 'streak4',   icon: '🔥', label: '4-week streak',               test: ({streak}) => streak >= 4 },
+  { id: 'streak12',  icon: '🚀', label: '12-week streak',              test: ({streak}) => streak >= 12 },
+  { id: 'streak26',  icon: '🏆', label: '6-month streak',              test: ({streak}) => streak >= 26 },
+  { id: 'streak52',  icon: '👑', label: '1-year streak',               test: ({streak}) => streak >= 52 },
+  { id: 'lost5',     icon: '⭐', label: '5 lb lost',                   test: ({delta}) => delta <= -5 },
+  { id: 'lost10',    icon: '🌟', label: '10 lb lost',                  test: ({delta}) => delta <= -10 },
+  { id: 'lost25',    icon: '💫', label: '25 lb lost',                  test: ({delta}) => delta <= -25 },
+  { id: 'lost50',    icon: '✨', label: '50 lb lost',                  test: ({delta}) => delta <= -50 },
+  { id: 'titrate',   icon: '📈', label: 'Dose graduation',             test: ({maxDose, minDose}) => maxDose > minDose },
+];
 
 // ---------- IndexedDB helpers ----------
 let _dbPromise = null;
@@ -41,6 +88,9 @@ function openDB() {
       }
       if (!db.objectStoreNames.contains(STORES.settings)) {
         db.createObjectStore(STORES.settings, { keyPath: 'key' });
+      }
+      if (!db.objectStoreNames.contains(STORES.moods)) {
+        db.createObjectStore(STORES.moods, { keyPath: 'date' });
       }
     };
     req.onsuccess = () => resolve(req.result);
@@ -151,6 +201,12 @@ function renderCountdown(shots) {
 function shotItem(shot) {
   const li = document.createElement('li');
   li.dataset.id = shot.id;
+  // Color intensity by dose: 1=<5, 2=5–7.4, 3=7.5–9.9, 4=10+
+  let intensity = 1;
+  if (shot.dose >= 10) intensity = 4;
+  else if (shot.dose >= 7.5) intensity = 3;
+  else if (shot.dose >= 5) intensity = 2;
+  li.dataset.intensity = intensity;
   li.innerHTML = `
     <div>
       <div class="dose">${shot.dose} mg <span class="muted small">· ${escapeHTML(shot.med)}</span></div>
@@ -166,6 +222,7 @@ function escapeHTML(s) {
 }
 async function renderShots() {
   const shots = await getShotsSorted();
+  const weights = await getWeightsSorted();
   const recent = $('#recent-shots');
   const full = $('#full-history');
   recent.innerHTML = '';
@@ -178,7 +235,14 @@ async function renderShots() {
     shots.forEach(s => full.appendChild(shotItem(s)));
   }
   renderCountdown(shots);
+  renderCountdownRing(shots);
   renderLevelChart(shots);
+  renderBodyDiagram(shots);
+  renderHeatmap(shots);
+  renderDoseTimeline(shots);
+  renderSideEffectsSummary(shots);
+  await renderHero(shots, weights);
+  await renderBadges(shots, weights);
   return shots;
 }
 
@@ -205,9 +269,11 @@ async function openShotDialog(shot) {
   $('#shot-med').value = shot ? shot.med : settings.medication;
   $('#shot-dose-amt').value = shot ? shot.dose : settings.defaultDose;
   $('#shot-when').value = shot ? localISOForInput(new Date(shot.when)) : localISOForInput();
-  $('#shot-site').value = shot ? (shot.site || '') : '';
+  $('#shot-site').value = shot ? (shot.site || '') : (window._preferredNextSite || '');
   $('#shot-notes').value = shot ? (shot.notes || '') : '';
   $('#shot-delete').classList.toggle('hidden', !isEdit);
+  writeSideEffects(shot ? shot.sideEffects : null);
+  if (!isEdit) window._preferredNextSite = null;
 
   const shots = await getShotsSorted();
   if (!isEdit) {
@@ -243,6 +309,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       when: new Date($('#shot-when').value).toISOString(),
       site: $('#shot-site').value || null,
       notes: $('#shot-notes').value.trim() || null,
+      sideEffects: readSideEffects(),
     };
     if (id) data.id = parseInt(id, 10);
     await dbPut(STORES.shots, data);
@@ -314,6 +381,18 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
   window.addEventListener('pageshow', () => maybeScheduleNotification());
 
+  $('#set-start-weight').addEventListener('change', async (e) => { settings.startWeight = e.target.value ? parseFloat(e.target.value) : null; await saveSettings(); await renderShots(); });
+  $('#set-goal-weight').addEventListener('change', async (e) => { settings.goalWeight = e.target.value ? parseFloat(e.target.value) : null; await saveSettings(); await renderShots(); });
+
+  // Mood picker
+  $$('.mood-btn').forEach(btn => btn.addEventListener('click', async () => {
+    const v = parseInt(btn.dataset.mood, 10);
+    await saveMood(todayISODate(), v);
+    await renderMood();
+  }));
+
+  renderSideEffectsForm();
+
   $('#export-btn').addEventListener('click', exportData);
   $('#import-btn').addEventListener('click', () => $('#import-file').click());
   $('#import-file').addEventListener('change', importData);
@@ -326,6 +405,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   updateBackupLabel();
   maybeScheduleNotification();
   initSyncUI();
+  await renderMood();
+  applyTimeOfDayGradient();
+  setInterval(applyTimeOfDayGradient, 5 * 60 * 1000);
+  setupPullToRefresh();
 });
 
 function applySettingsToInputs() {
@@ -333,6 +416,8 @@ function applySettingsToInputs() {
   $('#set-dose').value = settings.defaultDose;
   $('#set-cadence').value = settings.cadenceDays;
   $('#set-halflife').value = settings.halfLifeDays;
+  if ($('#set-start-weight')) $('#set-start-weight').value = settings.startWeight ?? '';
+  if ($('#set-goal-weight'))  $('#set-goal-weight').value = settings.goalWeight ?? '';
   $('#set-notify').checked = !!settings.notify && (typeof Notification !== 'undefined' && Notification.permission === 'granted');
   $('#set-lead').value = String(settings.notifyLeadMinutes ?? 60);
   $('#set-theme').value = settings.theme || 'system';
@@ -361,6 +446,8 @@ async function getLastWeightUnit() {
 let weightChart, levelChart;
 async function renderWeights() {
   const ws = await getWeightsSorted();
+  const shots = await getShotsSorted();
+  await renderHero(shots, ws);
   const empty = $('#empty-weight');
   const ctx = $('#weight-chart');
   if (!ws.length) {
@@ -480,7 +567,7 @@ function parseCSV(text) {
   return rows;
 }
 
-// Maps Shotsy site labels to ShotClock site labels.
+// Maps Shotsy site labels to My GLP Shot site labels.
 function mapShotsySite(s) {
   if (!s) return null;
   const t = s.trim().toLowerCase();
@@ -628,7 +715,7 @@ async function downloadICS() {
   const ics = [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
-    'PRODID:-//ShotClock//EN',
+    'PRODID:-//MyGLPShot//EN',
     'BEGIN:VEVENT',
     `UID:shotclock-${Date.now()}@willhitestrategy.org`,
     `DTSTAMP:${dt(new Date())}`,
@@ -675,7 +762,7 @@ async function maybeScheduleNotification() {
   const ms = fireAt - new Date();
   if (ms > 86400000 * 30) return; // don't schedule more than 30d out
 
-  const title = 'ShotClock';
+  const title = 'My GLP Shot';
   const body = lead > 0
     ? `Your ${settings.medication} shot is due in ${humanLead(lead)}.`
     : `${settings.medication} shot is due now.`;
@@ -735,7 +822,7 @@ function updateNotifyStatus() {
     el.textContent = 'Notifications blocked. Enable them in browser settings to receive shot reminders.'; return;
   }
   if (isIOS && !standalone) {
-    el.textContent = 'On iOS, install ShotClock to your Home Screen first — notifications only work for installed PWAs.'; return;
+    el.textContent = 'On iOS, install My GLP Shot to your Home Screen first — notifications only work for installed PWAs.'; return;
   }
   if (TRIGGERS_SUPPORTED) {
     el.textContent = settings.notify ? '✓ Reminders scheduled (work when app is closed).' : 'Toggle on for scheduled push reminders.';
@@ -750,7 +837,7 @@ async function sendTestNotification() {
     const p = await Notification.requestPermission();
     if (p !== 'granted') { alert('Permission not granted'); return; }
   }
-  const title = 'ShotClock test';
+  const title = 'My GLP Shot test';
   const body = 'Notifications are working. Real reminders fire before each shot.';
   if ('serviceWorker' in navigator) {
     try {
@@ -816,6 +903,376 @@ function registerSW() {
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('sw.js').catch(() => {});
   }
+}
+
+// ============================================================================
+// Visuals — hero, ring, body diagram, heatmap, dose timeline, side effects,
+// mood, achievements, confetti, polish.
+// ============================================================================
+
+// ---------- Mood store (daily) ----------
+async function getMoodsSorted() {
+  const all = (await dbAll(STORES.moods)) || [];
+  return all.sort((a, b) => a.date.localeCompare(b.date));
+}
+async function saveMood(date, value) {
+  await dbPut(STORES.moods, { date, value });
+}
+
+// ---------- Stats helpers ----------
+function computeStreak(shots, cadenceDays) {
+  // Count consecutive cadence cycles from latest backwards. A "cycle" = a shot
+  // logged within cadenceDays + 2 grace days of the previous one.
+  if (!shots || !shots.length) return 0;
+  const sorted = [...shots].sort((a,b) => new Date(b.when) - new Date(a.when));
+  const grace = (cadenceDays + 2) * 86400000;
+  // First, ensure most recent shot is within grace of now
+  if (new Date() - new Date(sorted[0].when) > grace) return 0;
+  let streak = 1;
+  for (let i = 1; i < sorted.length; i++) {
+    const gap = new Date(sorted[i-1].when) - new Date(sorted[i].when);
+    if (gap <= grace) streak++;
+    else break;
+  }
+  return streak;
+}
+
+function weightDelta(weights, startOverride) {
+  if (!weights || weights.length < 1) return null;
+  const start = startOverride != null ? parseFloat(startOverride) : weights[0].value;
+  const current = weights[weights.length - 1].value;
+  return { start, current, delta: current - start };
+}
+
+// ---------- Hero card ----------
+async function renderHero(shots, weights) {
+  const card = $('#hero-card');
+  if (!shots.length && !weights.length) { card.classList.add('hidden'); return; }
+  card.classList.remove('hidden');
+  const wd = weightDelta(weights, settings.startWeight);
+  const deltaEl = $('#hero-weight-delta');
+  if (wd) {
+    const sign = wd.delta < 0 ? '−' : '+';
+    deltaEl.textContent = `${sign}${Math.abs(wd.delta).toFixed(1)} lb`;
+    deltaEl.classList.toggle('gain', wd.delta > 0);
+  } else {
+    deltaEl.textContent = '—';
+  }
+  const streak = computeStreak(shots, settings.cadenceDays || 7);
+  $('#hero-streak').textContent = streak || '0';
+  $('#hero-shots').textContent = shots.length;
+
+  // Goal progress
+  const goal = parseFloat(settings.goalWeight);
+  if (wd && goal && goal < wd.start) {
+    const total = wd.start - goal;
+    const done = wd.start - wd.current;
+    const pct = Math.max(0, Math.min(100, (done / total) * 100));
+    $('#hero-goal-fill').style.width = pct + '%';
+    $('#hero-goal-text').textContent = `Goal: ${goal} lb · ${pct.toFixed(0)}% there (${(wd.current - goal).toFixed(1)} lb to go)`;
+    $('#hero-goal-wrap').classList.remove('hidden');
+  } else {
+    $('#hero-goal-wrap').classList.add('hidden');
+  }
+}
+
+// ---------- Countdown ring ----------
+function renderCountdownRing(shots) {
+  const ring = $('.countdown-ring-progress');
+  if (!ring) return;
+  const C = 2 * Math.PI * 28; // ~175.93
+  if (!shots.length) { ring.style.strokeDashoffset = C; return; }
+  const last = new Date(shots[0].when);
+  const next = nextShotDate(shots[0].when);
+  const now = new Date();
+  const total = next - last;
+  const elapsed = Math.max(0, Math.min(total, now - last));
+  const frac = total > 0 ? elapsed / total : 0;
+  ring.style.strokeDashoffset = C * (1 - frac);
+}
+
+// ---------- Body diagram ----------
+function renderBodyDiagram(shots) {
+  const wrap = $('#body-diagram-wrap');
+  if (!wrap) return;
+  const recencyMs = {};
+  for (const s of shots) {
+    if (!s.site) continue;
+    const t = new Date(s.when).getTime();
+    if (!(s.site in recencyMs) || recencyMs[s.site] < t) recencyMs[s.site] = t;
+  }
+  const now = Date.now();
+  function colorFor(site) {
+    if (!(site in recencyMs)) return { fill: 'transparent', stroke: '#0f766e', label: 'unused' };
+    const days = (now - recencyMs[site]) / 86400000;
+    if (days < 7)  return { fill: '#fb923c', stroke: '#c2410c', label: 'recent' }; // avoid
+    if (days < 14) return { fill: '#0d9488', stroke: '#0f766e', label: 'medium' };
+    return { fill: '#5eead4', stroke: '#14b8a6', label: 'fresh' };
+  }
+  // Build SVG: simplified front silhouette, viewBox 200x320
+  const sites = Object.entries(SITE_POSITIONS).map(([name, pos]) => {
+    const c = colorFor(name);
+    const days = recencyMs[name] ? Math.floor((now - recencyMs[name]) / 86400000) : null;
+    const tip = days == null ? `${name} · unused` : `${name} · ${days}d ago`;
+    return `<g class="body-site" data-site="${name}"><title>${tip}</title>
+      <circle cx="${pos.x}" cy="${pos.y}" r="9" fill="${c.fill}" stroke="${c.stroke}" stroke-width="2"></circle>
+      <text x="${pos.x}" y="${pos.y + 22}">${pos.short}</text>
+    </g>`;
+  }).join('');
+
+  wrap.innerHTML = `
+    <svg class="body-svg" viewBox="0 0 200 320" xmlns="http://www.w3.org/2000/svg">
+      <!-- head -->
+      <ellipse class="body-shape" cx="100" cy="32" rx="22" ry="26" />
+      <!-- neck -->
+      <rect class="body-shape" x="92" y="55" width="16" height="10" rx="3" />
+      <!-- torso -->
+      <path class="body-shape" d="M 70 65 Q 70 60 78 60 L 122 60 Q 130 60 130 65 L 138 130 Q 140 175 130 200 L 70 200 Q 60 175 62 130 Z" />
+      <!-- left arm -->
+      <path class="body-shape" d="M 70 70 L 50 75 Q 42 78 40 90 L 38 145 Q 38 160 46 162 L 56 160 Q 62 155 64 145 L 70 95 Z" />
+      <!-- right arm -->
+      <path class="body-shape" d="M 130 70 L 150 75 Q 158 78 160 90 L 162 145 Q 162 160 154 162 L 144 160 Q 138 155 136 145 L 130 95 Z" />
+      <!-- left leg -->
+      <path class="body-shape" d="M 78 200 L 70 290 Q 70 300 78 302 L 92 302 Q 98 300 98 290 L 95 200 Z" />
+      <!-- right leg -->
+      <path class="body-shape" d="M 122 200 L 130 290 Q 130 300 122 302 L 108 302 Q 102 300 102 290 L 105 200 Z" />
+      ${sites}
+    </svg>
+  `;
+  // Site click → suggest as next shot site if user opens dialog
+  wrap.querySelectorAll('.body-site').forEach(g => {
+    g.addEventListener('click', () => {
+      const name = g.getAttribute('data-site');
+      $('#site-suggest-label').textContent = `Tap "+ Log" to start a shot at ${name}`;
+      window._preferredNextSite = name;
+    });
+  });
+  // Legend
+  $('#site-legend').innerHTML = `
+    <span><span class="swatch unused"></span>Unused</span>
+    <span><span class="swatch fresh"></span>2+ weeks</span>
+    <span><span class="swatch medium"></span>1–2 weeks</span>
+    <span><span class="swatch recent"></span>This week</span>
+  `;
+}
+
+// ---------- Calendar heatmap ----------
+function renderHeatmap(shots) {
+  const wrap = $('#heatmap-wrap');
+  if (!wrap) return;
+  // Build day → max dose map for last 365 days
+  const byDay = {};
+  for (const s of shots) {
+    const d = new Date(s.when);
+    const tz = d.getTimezoneOffset() * 60000;
+    const key = new Date(d - tz).toISOString().slice(0, 10);
+    byDay[key] = Math.max(byDay[key] || 0, s.dose || 0);
+  }
+  const today = new Date();
+  const todayKey = todayISODate();
+  // Start 53 weeks back, anchor to Sunday
+  const startDay = new Date(today);
+  startDay.setDate(startDay.getDate() - 365);
+  // Adjust to nearest prior Sunday
+  startDay.setDate(startDay.getDate() - startDay.getDay());
+  const cells = [];
+  const cur = new Date(startDay);
+  let totalShots = 0;
+  while (cur <= today) {
+    const tz = cur.getTimezoneOffset() * 60000;
+    const key = new Date(cur - tz).toISOString().slice(0, 10);
+    const dose = byDay[key] || 0;
+    let lvl = '';
+    if (dose > 0) totalShots++;
+    if (dose >= 12.5) lvl = 'l4';
+    else if (dose >= 7.5) lvl = 'l3';
+    else if (dose >= 5)   lvl = 'l2';
+    else if (dose > 0)    lvl = 'l1';
+    const today_attr = key === todayKey ? ' today' : '';
+    cells.push(`<div class="heatmap-cell ${lvl}${today_attr}" title="${key}${dose ? ' · ' + dose + ' mg' : ''}"></div>`);
+    cur.setDate(cur.getDate() + 1);
+  }
+  wrap.innerHTML = `<div class="heatmap-grid">${cells.join('')}</div>`;
+  $('#heatmap-summary').textContent = `${totalShots} shots in 12 months`;
+}
+
+// ---------- Dose timeline strip ----------
+function renderDoseTimeline(shots) {
+  const wrap = $('#dose-timeline-wrap');
+  if (!wrap) { return; }
+  if (!shots.length) { wrap.innerHTML = ''; return; }
+  const sorted = [...shots].sort((a,b) => new Date(a.when) - new Date(b.when));
+  const minT = new Date(sorted[0].when).getTime();
+  const maxT = Date.now();
+  const span = Math.max(maxT - minT, 86400000);
+  // Build segments per dose run
+  const segments = [];
+  for (let i = 0; i < sorted.length; i++) {
+    const s = sorted[i];
+    const end = i + 1 < sorted.length ? new Date(sorted[i+1].when).getTime() : maxT;
+    const start = new Date(s.when).getTime();
+    const last = segments[segments.length - 1];
+    if (last && last.dose === s.dose) { last.end = end; }
+    else { segments.push({ dose: s.dose, start, end }); }
+  }
+  const maxDose = Math.max(...segments.map(s => s.dose), 1);
+  wrap.innerHTML = segments.map(seg => {
+    const left = ((seg.start - minT) / span) * 100;
+    const width = Math.max(2, ((seg.end - seg.start) / span) * 100);
+    const intensity = 0.4 + 0.6 * (seg.dose / maxDose);
+    return `<div class="dose-segment" style="left:${left}%;width:${width}%;opacity:${intensity}" title="${seg.dose} mg">${seg.dose}</div>`;
+  }).join('') + `<div class="muted small" style="position:absolute;left:0;bottom:-2px;font-size:.7rem">Dose timeline</div>`;
+}
+
+// ---------- Side effects ----------
+function renderSideEffectsForm() {
+  const wrap = $('#shot-side-effects');
+  if (!wrap) return;
+  wrap.innerHTML = SIDE_EFFECTS.map(([key, label]) =>
+    `<div class="se-row"><label for="se-${key}">${label}</label>
+       <select id="se-${key}" data-se="${key}">${SE_LEVELS.map(([v, t]) => `<option value="${v}">${t}</option>`).join('')}</select></div>`
+  ).join('');
+}
+function readSideEffects() {
+  const obj = {};
+  for (const [key] of SIDE_EFFECTS) {
+    const v = $('#se-' + key)?.value;
+    if (v) obj[key] = v;
+  }
+  return Object.keys(obj).length ? obj : null;
+}
+function writeSideEffects(se) {
+  for (const [key] of SIDE_EFFECTS) {
+    const el = $('#se-' + key);
+    if (el) el.value = (se && se[key]) || '';
+  }
+}
+function renderSideEffectsSummary(shots) {
+  const cutoff = Date.now() - 30 * 86400000;
+  const counts = {};
+  for (const s of shots) {
+    if (new Date(s.when).getTime() < cutoff) continue;
+    if (!s.sideEffects) continue;
+    for (const [k, lvl] of Object.entries(s.sideEffects)) {
+      counts[k] = counts[k] || { mild: 0, moderate: 0, severe: 0 };
+      if (counts[k][lvl] != null) counts[k][lvl]++;
+    }
+  }
+  const entries = Object.entries(counts).sort((a, b) => {
+    const ts = (c) => c.severe * 4 + c.moderate * 2 + c.mild;
+    return ts(b[1]) - ts(a[1]);
+  });
+  const labelOf = (k) => (SIDE_EFFECTS.find(s => s[0] === k) || [k, k])[1];
+  const wrap = $('#side-effects-summary');
+  const empty = $('#empty-side-effects');
+  if (!entries.length) { wrap.innerHTML = ''; empty.classList.remove('hidden'); return; }
+  empty.classList.add('hidden');
+  wrap.innerHTML = entries.map(([k, c]) => {
+    const total = c.mild + c.moderate + c.severe;
+    const cls = c.severe > 0 ? 'severe' : '';
+    const dots = '●'.repeat(Math.min(3, c.severe)) + '◐'.repeat(Math.min(3, c.moderate)) + '○'.repeat(Math.min(3, c.mild));
+    return `<span class="se-pill ${cls}"><span class="se-count">${total}</span>${labelOf(k)} <span class="muted small">${dots}</span></span>`;
+  }).join('');
+}
+
+// ---------- Mood widget ----------
+async function renderMood() {
+  const today = todayISODate();
+  const moods = await getMoodsSorted();
+  const todayMood = moods.find(m => m.date === today);
+  $$('.mood-btn').forEach(b => b.classList.toggle('selected', todayMood && +b.dataset.mood === todayMood.value));
+  $('#mood-saved').textContent = todayMood ? '✓ saved' : '';
+}
+
+// ---------- Achievements ----------
+function computeStats(shots, weights) {
+  const wd = weightDelta(weights, settings.startWeight);
+  const delta = wd ? wd.delta : 0;
+  const streak = computeStreak(shots, settings.cadenceDays || 7);
+  const doses = shots.map(s => s.dose).filter(d => d > 0);
+  return {
+    shots,
+    streak,
+    delta,
+    maxDose: doses.length ? Math.max(...doses) : 0,
+    minDose: doses.length ? Math.min(...doses) : 0,
+  };
+}
+async function renderBadges(shots, weights) {
+  const stats = computeStats(shots, weights);
+  const card = $('#badges-card');
+  const list = $('#badges-list');
+  const unlocked = ACHIEVEMENTS.filter(a => a.test(stats));
+  if (!unlocked.length && !shots.length) { card.classList.add('hidden'); return; }
+  card.classList.remove('hidden');
+  list.innerHTML = unlocked.map(a => `<div class="badge unlocked"><span class="badge-icon">${a.icon}</span><span class="badge-label">${a.label}</span></div>`).join('');
+
+  // Detect newly unlocked → confetti
+  const prev = new Set(settings.achievements || []);
+  const newly = unlocked.filter(a => !prev.has(a.id));
+  if (newly.length) {
+    settings.achievements = unlocked.map(a => a.id);
+    await saveSettings();
+    fireConfetti();
+  }
+}
+
+// ---------- Confetti ----------
+function fireConfetti() {
+  const colors = ['#14b8a6', '#0f766e', '#5eead4', '#fb923c', '#fde68a'];
+  const root = document.body;
+  for (let i = 0; i < 36; i++) {
+    const piece = document.createElement('div');
+    piece.className = 'confetti-piece';
+    piece.style.background = colors[i % colors.length];
+    piece.style.left = (50 + (Math.random() - 0.5) * 30) + 'vw';
+    piece.style.top = '40vh';
+    piece.style.setProperty('--x', ((Math.random() - 0.5) * 320) + 'px');
+    piece.style.animationDelay = (Math.random() * 0.2) + 's';
+    root.appendChild(piece);
+    setTimeout(() => piece.remove(), 2200);
+  }
+}
+
+// ---------- Day/night gradient swap ----------
+function applyTimeOfDayGradient() {
+  const card = document.querySelector('.countdown-card');
+  if (!card) return;
+  const h = new Date().getHours();
+  const isNight = h < 6 || h >= 20;
+  card.style.setProperty('--grad-hour-shift', isNight ? '-12%' : '0%');
+  // night-mode countdown card gets a deeper tint
+  if (isNight) card.classList.add('night'); else card.classList.remove('night');
+}
+
+// ---------- Pull-to-refresh ----------
+function setupPullToRefresh() {
+  let startY = 0, pulling = false, indicator = null;
+  document.addEventListener('touchstart', (e) => {
+    if (window.scrollY > 0) return;
+    startY = e.touches[0].clientY;
+    pulling = true;
+  }, { passive: true });
+  document.addEventListener('touchmove', (e) => {
+    if (!pulling) return;
+    const dy = e.touches[0].clientY - startY;
+    if (dy > 60) {
+      if (!indicator) {
+        indicator = document.createElement('div');
+        indicator.className = 'ptr-indicator show';
+        indicator.textContent = '↻ Release to sync';
+        document.body.appendChild(indicator);
+      }
+    }
+  }, { passive: true });
+  document.addEventListener('touchend', async () => {
+    if (indicator) {
+      indicator.textContent = 'Syncing…';
+      try { if (syncCreds && settings.syncEnabled) await syncPushNow(); } catch (e) {}
+      setTimeout(() => { indicator?.remove(); indicator = null; }, 600);
+    }
+    pulling = false;
+  });
 }
 
 // ============================================================================

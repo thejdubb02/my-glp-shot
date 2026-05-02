@@ -1,7 +1,7 @@
 {
-  "name": "ShotClock",
-  "short_name": "ShotClock",
-  "description": "Offline-first GLP-1 / peptide injection tracker. Your data stays on your device.",
+  "name": "My GLP Shot",
+  "short_name": "My GLP Shot",
+  "description": "Track your GLP-1 / peptide shots, weight, side effects. Local-first, end-to-end encrypted sync.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

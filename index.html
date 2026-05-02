@@ -7,8 +7,8 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="ShotClock">
-<title>ShotClock — GLP-1 shot tracker</title>
+<meta name="apple-mobile-web-app-title" content="My GLP Shot">
+<title>My GLP Shot — GLP-1 shot tracker</title>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/favicon.ico" sizes="any">
 <link rel="icon" type="image/png" sizes="16x16" href="icons/favicon-16.png">
@@ -17,7 +17,7 @@
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="icon" type="image/png" sizes="512x512" href="icons/icon-512.png">
 <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png">
-<link rel="stylesheet" href="styles.css?v=6">
+<link rel="stylesheet" href="styles.css?v=7">
 <script>
 (function(){
   // Apply saved theme synchronously to avoid flash. Settings live in IndexedDB; theme also mirrored to localStorage for fast read.
@@ -33,7 +33,7 @@
 
 <div id="install-banner" class="banner hidden">
   <div class="banner-body">
-    <strong>📱 Install ShotClock</strong>
+    <strong>📱 Install My GLP Shot</strong>
     <p id="install-text">For reliable reminders and data that survives a browser clear.</p>
     <div class="banner-actions">
       <button id="install-btn" class="btn-primary">Install</button>
@@ -43,18 +43,81 @@
 </div>
 
 <header class="app-header">
-  <div class="brand"><span class="brand-mark">●</span> ShotClock</div>
+  <div class="brand"><span class="brand-mark">●</span> My GLP Shot</div>
   <button id="settings-btn" class="icon-btn" aria-label="Settings">⚙</button>
 </header>
 
 <main id="view-home" class="view active">
   <section class="countdown-card">
+    <div class="countdown-ring-wrap" aria-hidden="true">
+      <svg class="countdown-ring" viewBox="0 0 64 64">
+        <circle class="countdown-ring-track" cx="32" cy="32" r="28" />
+        <circle class="countdown-ring-progress" cx="32" cy="32" r="28" />
+      </svg>
+    </div>
     <div class="countdown-info">
       <div class="countdown-label">Next shot</div>
       <div id="countdown-value" class="countdown-value">—</div>
       <div id="countdown-sub" class="countdown-sub"></div>
     </div>
     <button id="log-shot-btn" class="btn-primary big">+ Log</button>
+  </section>
+
+  <section id="hero-card" class="hero-card hidden">
+    <div class="hero-row">
+      <div class="hero-stat">
+        <div class="hero-num" id="hero-weight-delta">—</div>
+        <div class="hero-label">since start</div>
+      </div>
+      <div class="hero-stat">
+        <div class="hero-num" id="hero-streak">—</div>
+        <div class="hero-label">week streak</div>
+      </div>
+      <div class="hero-stat">
+        <div class="hero-num" id="hero-shots">—</div>
+        <div class="hero-label">shots logged</div>
+      </div>
+    </div>
+    <div id="hero-goal-wrap" class="hero-goal hidden">
+      <div class="hero-goal-bar"><div id="hero-goal-fill" class="hero-goal-fill"></div></div>
+      <div id="hero-goal-text" class="hero-goal-text"></div>
+    </div>
+  </section>
+
+  <section id="badges-card" class="card hidden">
+    <div class="card-head"><h2>Milestones</h2></div>
+    <div id="badges-list" class="badges-list"></div>
+  </section>
+
+  <section class="card mood-card">
+    <div class="card-head"><h2>How are you feeling?</h2><span id="mood-saved" class="mood-saved muted small"></span></div>
+    <div id="mood-picker" class="mood-picker">
+      <button data-mood="1" class="mood-btn" type="button" aria-label="Awful">😣</button>
+      <button data-mood="2" class="mood-btn" type="button" aria-label="Low">🙁</button>
+      <button data-mood="3" class="mood-btn" type="button" aria-label="Okay">😐</button>
+      <button data-mood="4" class="mood-btn" type="button" aria-label="Good">🙂</button>
+      <button data-mood="5" class="mood-btn" type="button" aria-label="Great">😄</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="card-head"><h2>Injection sites</h2><span id="site-suggest-label" class="muted small"></span></div>
+    <div id="body-diagram-wrap" class="body-diagram-wrap"></div>
+    <div id="site-legend" class="site-legend"></div>
+  </section>
+
+  <section class="card">
+    <div class="card-head"><h2>Adherence</h2><span id="heatmap-summary" class="muted small"></span></div>
+    <div id="heatmap-wrap" class="heatmap-wrap"></div>
+    <div class="heatmap-legend">
+      <span class="muted small">Less</span>
+      <span class="heatmap-cell legend"></span>
+      <span class="heatmap-cell legend l1"></span>
+      <span class="heatmap-cell legend l2"></span>
+      <span class="heatmap-cell legend l3"></span>
+      <span class="heatmap-cell legend l4"></span>
+      <span class="muted small">More</span>
+    </div>
   </section>
 
   <section class="card">
@@ -64,9 +127,18 @@
   </section>
 
   <section class="card">
-    <div class="card-head"><h2>Weight</h2><button id="add-weight-btn" class="btn-ghost">+ Add</button></div>
+    <div class="card-head"><h2>Weight &amp; dose</h2><button id="add-weight-btn" class="btn-ghost">+ Add</button></div>
     <canvas id="weight-chart" height="160"></canvas>
-    <p id="empty-weight" class="empty">No weight entries yet.</p>
+    <p id="empty-weight" class="empty">
+      <span class="empty-illus">⚖</span><br>No weight entries yet.
+    </p>
+    <div id="dose-timeline-wrap" class="dose-timeline-wrap"></div>
+  </section>
+
+  <section class="card">
+    <div class="card-head"><h2>Side effects (last 30 days)</h2></div>
+    <div id="side-effects-summary" class="side-effects-summary"></div>
+    <p id="empty-side-effects" class="empty"><span class="empty-illus">✓</span><br>No side effects logged.</p>
   </section>
 
   <section class="card">
@@ -90,6 +162,12 @@
     <label>Default dose (mg) <input id="set-dose" type="number" step="0.1" min="0"></label>
     <label>Cadence (days between shots) <input id="set-cadence" type="number" min="1" max="30"></label>
     <label>Half-life (days, for level chart) <input id="set-halflife" type="number" step="0.1" min="0.1"></label>
+  </section>
+
+  <section class="card">
+    <h2>Weight goals</h2>
+    <label>Starting weight (lb) <input id="set-start-weight" type="number" step="0.1" min="0" placeholder="auto-detected from first entry"></label>
+    <label>Goal weight (lb) <input id="set-goal-weight" type="number" step="0.1" min="0"></label>
   </section>
 
   <section class="card">
@@ -119,7 +197,7 @@
     <p id="notify-status" class="muted small"></p>
     <button id="test-notify" class="btn-ghost">Send test notification</button>
     <button id="download-ics" class="btn-ghost">Download calendar reminder (.ics)</button>
-    <p class="muted small">Best results: install ShotClock to your home screen first. On Android Chrome, scheduled reminders fire even when the app is closed. On iOS 16.4+, install to Home Screen and enable notifications when prompted.</p>
+    <p class="muted small">Best results: install My GLP Shot to your home screen first. On Android Chrome, scheduled reminders fire even when the app is closed. On iOS 16.4+, install to Home Screen and enable notifications when prompted.</p>
   </section>
 
   <section class="card">
@@ -172,7 +250,7 @@
     <button id="wipe-btn" class="btn-danger">Erase all data on this device</button>
   </section>
 
-  <p class="muted small center">ShotClock — local-first PWA · <a href="privacy.html">Privacy</a> · <a href="terms.html">Terms</a> · <a href="https://github.com/thejdubb02/wsg-shotclock" target="_blank" rel="noopener">source</a></p>
+  <p class="muted small center">My GLP Shot — local-first PWA · <a href="privacy.html">Privacy</a> · <a href="terms.html">Terms</a> · <a href="https://github.com/thejdubb02/wsg-shotclock" target="_blank" rel="noopener">source</a></p>
 </main>
 
 <dialog id="shot-dialog" class="modal">
@@ -195,6 +273,10 @@
     </label>
     <p id="site-suggestion" class="muted small"></p>
     <label>Notes <textarea id="shot-notes" rows="2"></textarea></label>
+    <details class="se-details">
+      <summary>Side effects (optional)</summary>
+      <div id="shot-side-effects" class="se-grid"></div>
+    </details>
     <div class="modal-actions">
       <button type="button" id="shot-delete" class="btn-danger hidden">Delete</button>
       <span class="spacer"></span>
@@ -221,6 +303,6 @@
 </dialog>
 
 <script src="lib/chart.min.js"></script>
-<script src="app.js?v=6"></script>
+<script src="app.js?v=7"></script>
 </body>
 </html>
