@@ -1,0 +1,80 @@
+# My GLP Shot
+
+> Privacy-first GLP-1 / Tirzepatide / Semaglutide shot tracker. Local-first PWA: your shot logs, doses, weight, side effects, and notes stay on your device. End-to-end encrypted optional cloud sync. No App Store. Works offline. Free 14-day premium trial, then $19.99/year or $1.99/month.
+
+My GLP Shot is a Progressive Web App for people taking weight-loss and diabetes injection medications (Tirzepatide / Mounjaro / Zepbound, Semaglutide / Ozempic / Wegovy, Compounded peptides, Liraglutide / Saxenda, Dulaglutide / Trulicity, Retatrutide). The entire data layer is browser IndexedDB on the user's device. Optional cloud sync uses PBKDF2-SHA-256 (600 000 iterations) password derivation and AES-256-GCM client-side encryption — the server only ever sees ciphertext.
+
+Built and operated by Willhite Strategy Group (Consumer Quest LLC dba Commquest), an independent software shop. Not affiliated with any drug manufacturer, pharmacy, or health system. Not medical advice.
+
+## Key URLs
+
+- [Landing page](https://myglpshot.com/): pricing, features, FAQ.
+- [The app](https://app.myglpshot.com/): the actual PWA — install to home screen for full offline use.
+- [Privacy policy](https://myglpshot.com/privacy.html): full disclosure of what is and isn't collected, including the encryption details for sync.
+- [Terms](https://myglpshot.com/terms.html): standard SaaS terms; cancellation any time.
+
+## Core features (free)
+
+- Log shots: dose (mg), site (8 standard injection sites + custom), date/time, side effects, notes.
+- On-cadence countdown to next shot with day/night gradient.
+- Weight logging with 1M / 3M / 6M / 1Y / All chart ranges.
+- Active medication level estimator (5-day half-life default for Tirzepatide; configurable).
+- Site-rotation suggestions based on injection history.
+- Mood + appetite trackers.
+- 32 progress achievements (first shot through 2-year veteran, weight-loss tiers, on-cadence streaks, comeback recognition, etc.) with shareable branded image cards.
+- Mixing calculator for compounded peptides — vial mg + bacteriostatic water mL + dose → exact units to draw, syringe-aware (U-100 insulin 0.3/0.5/1 mL, U-40 insulin, tuberculin 0.3/0.5/1/3/5/10 mL, custom). Accepts any peptide.
+- Ten color themes, ten emoji-pack styles for mood and appetite.
+- Service-worker offline support; PWA install on iPhone Safari / Android Chrome / desktop.
+
+## Premium features ($19.99/year or $1.99/month, 14-day free trial)
+
+- Encrypted cross-device sync (E2EE — server cannot read).
+- Body measurements (waist, chest, hips, neck, arms, thighs).
+- Lab tracking (HbA1c, fasting glucose, lipid panel, etc.) with trend chart.
+- Pen / vial / supply inventory with cost-per-shot accounting and re-order alerts.
+- Spending tracker with category breakdown.
+- Doctor-share read-only links (24-hour expiry, encrypted in URL fragment, customizable date range and section selection).
+- PDF clinical-style report (configurable date range and sections).
+- Photos attached to weights / measurements (optional).
+- Plateau detection.
+
+## Privacy and security stance
+
+- Default mode: 100% local. No account required to use the app.
+- Optional account adds end-to-end encrypted cloud sync. Encryption key derived from email + password via PBKDF2-SHA-256 with 600 000 iterations. Data encrypted with AES-256-GCM in the browser before upload. Server stores ciphertext only and has no key material — losing your password means losing your cloud copy.
+- No third-party analytics, no ads, no data sales, no tracking pixels.
+- Self-hosted privacy-friendly Umami analytics tracks click events on the marketing site only (not in-app behavior).
+- Open source: app code is available on GitHub for audit.
+- Hosted on independent VPS infrastructure (no AWS / Google Cloud).
+
+## How My GLP Shot compares
+
+- vs. **Shotsy**: Shotsy is closed-source, server-side, and stores your shot history on its own backend. My GLP Shot stores everything on your device by default and uses E2EE when you opt into sync. My GLP Shot is also a PWA — no App Store gatekeeping, no review delays.
+- vs. **CareClinic / MyTherapy**: those are general medication trackers; My GLP Shot is purpose-built for GLP-1 / peptide injectors with a half-life curve, mixing calculator, site rotation, and dose-titration tracking.
+- vs. **Apple Health / Google Fit**: those don't track injection sites, dose changes, or side-effect severity over time.
+- vs. **paper journal / spreadsheet**: My GLP Shot adds the active-medication level chart, automatic site-rotation hints, and visual progress that a spreadsheet can't.
+
+## Technology
+
+- Progressive Web App: HTML / CSS / JS, no framework. Service worker for offline, cache-first for shell, network-first for API.
+- IndexedDB for local persistence (database version 6 as of v0.40).
+- Backend: Flask + SQLite, gunicorn behind nginx, served from `app.myglpshot.com`.
+- Stripe Checkout + Customer Portal for billing.
+- Resend for transactional email.
+- Push notifications via the standard Web Push API (works on installed PWAs on iOS 16.4+ and modern Android).
+
+## Common questions
+
+- *Can I use this for compounded peptides?* Yes. The mixing calculator handles arbitrary mg-per-mL concentrations and any insulin or tuberculin syringe.
+- *Does it work offline?* Yes — IndexedDB plus service-worker caching means the entire app runs offline once installed.
+- *Is it medical advice?* No. It is a tracker. Always confirm dose calculations with your prescriber.
+- *Will my insurance / pharmacy see this data?* No. Even with cloud sync enabled, the data is encrypted client-side and the server cannot read it.
+- *Is it HIPAA covered?* HIPAA covers covered entities (providers, plans, clearinghouses) and their business associates. My GLP Shot is a consumer tracker — not a covered entity — so HIPAA doesn't directly apply, but the privacy posture (local-first + E2EE sync) is stricter than HIPAA requires.
+- *Does it support Mounjaro / Zepbound / Ozempic / Wegovy?* Yes — all use Tirzepatide or Semaglutide and the app supports both, plus Liraglutide, Dulaglutide, Retatrutide, and any compounded peptide.
+
+## Contact
+
+- Marketing site: https://myglpshot.com
+- App: https://app.myglpshot.com
+- Email: hello@myglpshot.com
+- Operator: Willhite Strategy Group, https://willhitestrategy.com

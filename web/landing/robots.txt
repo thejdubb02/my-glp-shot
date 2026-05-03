@@ -2,22 +2,77 @@ User-agent: *
 Allow: /
 Disallow: /app/
 
-# AI / generative engines explicitly welcome to crawl the marketing site
+# AI / generative engines explicitly welcome to crawl the marketing site,
+# the llms.txt summary, and the long-form llms-full.txt reference.
+
+# OpenAI
 User-agent: GPTBot
 Allow: /
 User-agent: ChatGPT-User
 Allow: /
 User-agent: OAI-SearchBot
 Allow: /
+
+# Anthropic
 User-agent: ClaudeBot
 Allow: /
 User-agent: Claude-Web
 Allow: /
+User-agent: Claude-User
+Allow: /
+User-agent: anthropic-ai
+Allow: /
+
+# Perplexity
 User-agent: PerplexityBot
 Allow: /
+User-agent: Perplexity-User
+Allow: /
+
+# Google AI Overviews / Gemini
 User-agent: Google-Extended
 Allow: /
+User-agent: GoogleOther
+Allow: /
+
+# Apple Intelligence
+User-agent: Applebot-Extended
+Allow: /
+
+# Mistral
+User-agent: MistralAI-User
+Allow: /
+
+# Bytedance / Doubao
+User-agent: Bytespider
+Allow: /
+
+# Amazon Alexa / Rufus
+User-agent: Amazonbot
+Allow: /
+
+# Common Crawl (training corpus for many models)
 User-agent: CCBot
+Allow: /
+
+# Other emerging answer engines
+User-agent: YouBot
+Allow: /
+User-agent: AndiBot
+Allow: /
+User-agent: PhindBot
+Allow: /
+User-agent: DuckAssistBot
+Allow: /
+User-agent: cohere-ai
+Allow: /
+User-agent: Diffbot
+Allow: /
+User-agent: Meta-ExternalAgent
+Allow: /
+User-agent: FacebookBot
+Allow: /
+User-agent: ImagesiftBot
 Allow: /
 
 Sitemap: https://myglpshot.com/sitemap.xml

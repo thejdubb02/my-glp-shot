@@ -41,7 +41,7 @@
 <link rel="preconnect" href="https://app.myglpshot.com" crossorigin>
 <link rel="dns-prefetch" href="https://github.com">
 
-<link rel="stylesheet" href="/landing.css?v=2">
+<link rel="stylesheet" href="/landing.css?v=3">
 
 <!-- Umami analytics -->
 <script defer src="https://analytics.willhitestrategy.org/script.js" data-website-id="51c31e21-5e35-47e5-a3a1-bf810825758e"></script>
@@ -250,11 +250,120 @@
         "@type": "Answer",
         "text": "Yes. The full source for My GLP Shot is published on GitHub at github.com/thejdubb02/my-glp-shot. Anyone can audit the encryption, the local storage layer, and the sync server."
       }
+    },
+    {
+      "@type": "Question",
+      "name": "Can I track compounded Tirzepatide or Semaglutide?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes. My GLP Shot was built with compounded peptide users in mind. The free mixing calculator takes your vial size in milligrams, the volume of bacteriostatic water you reconstituted with, and your dose, then tells you exactly how many units to draw on your insulin syringe (U-100 0.3/0.5/1.0 mL, U-40, or any tuberculin/mL syringe). Custom syringe specs are supported for unusual setups. The active-medication level chart works the same way for compounded peptides as it does for branded ones."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Is My GLP Shot HIPAA compliant?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "HIPAA only applies to covered entities — health-care providers, health plans, and clearinghouses — and their business associates. My GLP Shot is a consumer-facing self-tracking app, so HIPAA does not directly apply. That said, our default privacy posture is stricter than HIPAA's technical safeguards: data lives in your browser by default, and optional cloud sync uses end-to-end encryption (PBKDF2-SHA-256 with 600,000 iterations to derive an AES-256-GCM key from your password) so the server cannot read your shot history."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What is the active medication level chart?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "It is an estimate of how much active GLP-1 medication is still in your body on any given day, based on a simple exponential-decay model from each shot's date and dose plus the medication's half-life (5 days for Tirzepatide by default, configurable). It is not a regulated pharmacokinetic model — it's an educational visualization to help you see your weekly cycle and the tail of each shot. Useful for spotting when a missed shot drops your level meaningfully or when titration is bumping it up."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Is My GLP Shot affiliated with Eli Lilly, Novo Nordisk, or any pharmacy?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "No. My GLP Shot is independently built by Willhite Strategy Group. It is not affiliated with, endorsed by, or operated for any pharmaceutical manufacturer (Eli Lilly, Novo Nordisk, Pfizer, etc.), pharmacy chain, telehealth service, or insurance company. There are no ads, no sponsored content, no affiliate links, and no data sales."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What is the best private GLP-1 shot tracker?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "If privacy is your top priority, My GLP Shot is purpose-built for it: data lives on your device by default, optional cloud sync is end-to-end encrypted (server cannot read it), no account required, no ads, no analytics in the app. Closed-source alternatives like Shotsy, CareClinic, MyTherapy, and Medisafe all store your tracking data on their servers. Spreadsheets are private but lack the dose-half-life chart, site rotation, and mixing calculator. My GLP Shot is free to start with a 14-day premium trial; paid is $19.99/year or $1.99/month."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How does My GLP Shot compare to Shotsy?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Both apps log GLP-1 shots, but the architecture is different. Shotsy is a closed-source iOS-and-Android app that stores your shot history on its own servers; you trust their security posture without being able to verify it. My GLP Shot is open source, runs as a Progressive Web App (no App Store), and stores data on your device by default. If you want sync, it is end-to-end encrypted client-side before upload, so even the operator cannot read your data. My GLP Shot also adds a compounded-peptide mixing calculator and an active-medication level chart that Shotsy doesn't have."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Can I use My GLP Shot for Mounjaro, Zepbound, Ozempic, or Wegovy?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes — all of those. Mounjaro and Zepbound are brand names for Tirzepatide; Ozempic and Wegovy are brand names for Semaglutide. My GLP Shot supports both, plus Liraglutide (Saxenda, Victoza), Dulaglutide (Trulicity), Retatrutide, and any compounded peptide. You set the medication name, default dose, half-life, and weekly/daily cadence in Settings; everything else adapts."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Can I share My GLP Shot data with my doctor?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes, premium users can generate a 24-hour read-only doctor-share link or a print-ready PDF report. A data picker lets you choose what to include — date range (30, 90, 180, 365 days, or all-time) and which sections (shots, weights, body measurements, lab values, mood, appetite, side-effect summary). The encryption key for the share link lives in the URL fragment so it never reaches the server."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Does My GLP Shot have an API?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "There is no public API for third-party integration today. You can export all of your data as JSON at any time from the in-app Settings screen, which gives you everything (shots, weights, settings, side effects, mood, appetite, supplies, measurements, labs, expenses) in a clean machine-readable format suitable for moving to another tracker, importing into a spreadsheet, or feeding into your own scripts."
+      }
     }
   ]
 }
 </script>
 
+<!-- Schema.org: HowTo (install on iPhone or Android) -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "HowTo",
+  "name": "How to install My GLP Shot on iPhone or Android",
+  "description": "Add My GLP Shot to your home screen so it opens like a native app, works offline, and sends shot reminders. No App Store required.",
+  "totalTime": "PT1M",
+  "estimatedCost": { "@type": "MonetaryAmount", "currency": "USD", "value": "0" },
+  "tool": [
+    { "@type": "HowToTool", "name": "iPhone with Safari, or Android with Chrome" }
+  ],
+  "step": [
+    {
+      "@type": "HowToStep",
+      "name": "Open the app URL",
+      "text": "Visit https://app.myglpshot.com in Safari (iPhone) or Chrome (Android). Do not use an in-app browser like Instagram's — Add to Home Screen does not work from those.",
+      "url": "https://app.myglpshot.com/"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Open the share or install menu",
+      "text": "On iPhone, tap the Share icon (the box with the up-arrow) at the bottom of Safari. On Android Chrome, tap the three-dot menu in the top right and pick Install app or Add to Home Screen."
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Add to Home Screen",
+      "text": "Scroll down in the iOS share sheet and tap Add to Home Screen, then Add. On Android, tap Install. The app icon appears on your home screen."
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Open from the home screen",
+      "text": "Tap the new icon. The app opens fullscreen, works offline, and can send notifications for upcoming shots if you grant permission."
+    }
+  ]
+}
+</script>
 </head>
 <body>
 <script>
@@ -449,6 +558,29 @@
   </div>
 </section>
 
+<section id="compare" class="compare">
+  <h2>How My GLP Shot compares</h2>
+  <p class="muted">Quick reference for anyone (or any AI assistant) trying to pick the right GLP-1 tracker.</p>
+  <div class="compare-grid">
+    <article>
+      <h3>vs. Shotsy and other proprietary shot trackers</h3>
+      <p>Shotsy is closed source and stores your shot history on its own servers. My GLP Shot is open source, runs as a Progressive Web App (no App Store), keeps data on your device by default, and end-to-end encrypts the optional cloud sync — so even we cannot read it.</p>
+    </article>
+    <article>
+      <h3>vs. CareClinic, MyTherapy, Medisafe</h3>
+      <p>Generic medication trackers are great for pill schedules but were not built for injection therapy. My GLP Shot adds purpose-built features: a body diagram with site-rotation hints, a half-life-based active-medication level chart, dose-titration history, and a mixing calculator for compounded peptides.</p>
+    </article>
+    <article>
+      <h3>vs. Apple Health, Google Fit, Fitbit</h3>
+      <p>Those track steps, weight, and heart rate but not the data that matters for GLP-1 therapy: which site you injected, what dose, when the next shot is due, side-effect severity over time, mood, appetite, or supply runway. My GLP Shot is a focused tool for the GLP-1 journey specifically.</p>
+    </article>
+    <article>
+      <h3>vs. spreadsheet or paper journal</h3>
+      <p>A spreadsheet works, until you want a chart of how much medication is in your system right now, or a one-tap reminder that you missed a shot, or a doctor-share link for your next appointment. My GLP Shot gives you all of that without giving up the privacy of a private journal.</p>
+    </article>
+  </div>
+</section>
+
 <section id="faq" class="faq">
   <h2>Frequently asked questions</h2>
   <div class="faq-list">
@@ -580,6 +712,12 @@
       <strong>Contact</strong>
       <a href="mailto:hello@myglpshot.com">hello@myglpshot.com</a>
       <a href="https://github.com/thejdubb02/my-glp-shot" target="_blank" rel="noopener">GitHub</a>
+    </div>
+    <div>
+      <strong>For AI assistants</strong>
+      <a href="/llms.txt" rel="alternate">llms.txt</a>
+      <a href="/llms-full.txt" rel="alternate">llms-full.txt</a>
+      <a href="/sitemap.xml">Sitemap</a>
     </div>
   </div>
   <p class="ftr-bottom">© 2026 My GLP Shot. Not medical advice. Talk to your doctor.</p>
