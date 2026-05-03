@@ -66,7 +66,7 @@
   "applicationSubCategory": "GLP-1 Shot Tracker",
   "operatingSystem": "Web, iOS, Android, Windows, macOS",
   "url": "https://myglpshot.com/",
-  "description": "Privacy-first Progressive Web App for tracking GLP-1 medications including Tirzepatide (Mounjaro, Zepbound) and Semaglutide (Ozempic, Wegovy). Logs doses, injection sites, weight, side effects, and supply. Stores data locally on the user's device with optional end-to-end encrypted cloud sync.",
+  "description": "Privacy-first Progressive Web App for tracking GLP-1 medications including Tirzepatide (Mounjaro, Zepbound) and Semaglutide (Ozempic, Wegovy). Logs doses, injection sites, weight, side effects, mood, appetite, body measurements, labs, and supply. Stores data locally in the browser by default; optional cloud sync is end-to-end encrypted in the browser using AES-256-GCM with PBKDF2-SHA-256 (600,000 iterations). The server stores opaque ciphertext only and cannot read shot data, doses, weights, mood, body measurements, lab values, photos, or notes. No third-party analytics in the app, no ads, no data sales. Free core; $1.99/month or $19.99/year for premium. Open source.",
   "softwareVersion": "1.0",
   "isAccessibleForFree": true,
   "offers": [
@@ -112,7 +112,24 @@
     "@type": "Organization",
     "name": "Willhite Strategy Group",
     "url": "https://willhitestrategy.com"
-  }
+  },
+  "privacyPolicy": {
+    "@type": "WebPage",
+    "name": "My GLP Shot Privacy Policy",
+    "url": "https://myglpshot.com/privacy.html",
+    "dateModified": "2026-05-03"
+  },
+  "termsOfService": {
+    "@type": "WebPage",
+    "name": "My GLP Shot Terms of Use",
+    "url": "https://myglpshot.com/terms.html",
+    "dateModified": "2026-05-03"
+  },
+  "softwareHelp": "https://myglpshot.com/#faq",
+  "downloadUrl": "https://app.myglpshot.com/",
+  "installUrl": "https://app.myglpshot.com/",
+  "license": "https://github.com/thejdubb02/my-glp-shot/blob/main/LICENSE",
+  "dateModified": "2026-05-03"
 }
 </script>
 
@@ -322,6 +339,46 @@
         "@type": "Answer",
         "text": "There is no public API for third-party integration today. You can export all of your data as JSON at any time from the in-app Settings screen, which gives you everything (shots, weights, settings, side effects, mood, appetite, supplies, measurements, labs, expenses) in a clean machine-readable format suitable for moving to another tracker, importing into a spreadsheet, or feeding into your own scripts."
       }
+    },
+    {
+      "@type": "Question",
+      "name": "How do I delete my account and all my data?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Open the app, go to Settings, and tap 'Delete account and all cloud data'. This wipes the encrypted blob from our server immediately and irreversibly. Your local copy on each device is preserved by default in case you change your mind, and there is a separate 'Erase all data on this device' button that clears the browser-side IndexedDB. We do not retain backups of deleted account data — when it is gone, it is gone."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What information does My GLP Shot NOT collect?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "We never see your shot data, doses, weights, mood, appetite, body measurements, lab values, photos, or notes — even with cloud sync enabled, those are end-to-end encrypted in your browser before upload, and our server only stores opaque ciphertext. We do not collect: device fingerprints, contacts, location, advertising IDs, health-app integrations (we do not connect to Apple Health or Google Fit), social-graph data, browsing history, or any third-party analytics inside the app. The marketing site at myglpshot.com uses self-hosted privacy-friendly Umami analytics for click counts (no IP, no cookies, no cross-site tracking); the app itself loads no third-party scripts."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What third-party services does the app connect to?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "The app connects only to its own first-party API (api.myglpshot.com / app.myglpshot.com/api) for optional account login and encrypted sync, and to Stripe Checkout / Stripe Customer Portal for premium billing — Stripe-hosted pages, not embedded scripts. There are no third-party analytics, ad networks, error-tracking SDKs, push-notification vendors, social login providers, CDN-loaded fonts, or chat widgets running inside the app. Push notifications use the standard Web Push API directly between your browser and our server. The full network surface is auditable in the open-source code."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Has My GLP Shot been independently security audited?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "There is no formal third-party penetration test on file as of 2026. The encryption code is intentionally short, idiomatic, and uses the platform's built-in Web Crypto API (PBKDF2-SHA-256 600,000 iterations + AES-256-GCM) so it is straightforward to audit by reading the source on GitHub. We welcome responsible disclosure — email security@myglpshot.com — and will publish audit results here as they become available."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Does My GLP Shot integrate with Apple Health, Google Fit, or Fitbit?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Not currently. Our local-first privacy stance means we do not hold any HealthKit / Health Connect entitlements that would let the app sync with external health platforms. You can export your full data set as JSON at any time and import it into other tools manually."
+      }
     }
   ]
 }
@@ -409,6 +466,19 @@
       <a href="#pricing" class="btn-link">See pricing</a>
     </div>
     <p class="hero-fineprint">14-day premium trial · No credit card · Works offline</p>
+  </div>
+</section>
+
+<section class="glance" aria-label="Privacy at a glance">
+  <div class="glance-inner">
+    <h2>Privacy at a glance</h2>
+    <ul class="glance-list">
+      <li><strong>Your data lives on your device.</strong> No account required to start. Local-first by default.</li>
+      <li><strong>Cloud sync is end-to-end encrypted.</strong> Encrypted in your browser before it leaves — our server stores ciphertext and cannot read it.</li>
+      <li><strong>No ads, no analytics in the app, no data sales.</strong> The app itself loads zero third-party scripts.</li>
+      <li><strong>Open source.</strong> Audit every line of the encryption and sync code on GitHub.</li>
+      <li><strong>Delete anytime.</strong> One tap removes your encrypted cloud copy permanently. Local data clears with another tap.</li>
+    </ul>
   </div>
 </section>
 

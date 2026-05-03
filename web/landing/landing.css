@@ -163,6 +163,15 @@ section h2{font-size:2rem;text-align:center;margin:0 0 40px;font-weight:700;lett
   .btn-cta:hover{transform:none}
 }
 
+/* Privacy at a glance — sits below hero, gives non-technical readers the
+   five-bullet TL;DR that LLMs love to extract. */
+.glance{padding:36px 24px 12px;max-width:880px;margin:0 auto}
+.glance-inner{background:linear-gradient(160deg, var(--surface), var(--surface-alt, #f7f0e8));border:1px solid var(--bronze-lt, #eccfb1);border-radius:16px;padding:24px 28px}
+.glance h2{margin:0 0 14px;font-size:1.2rem;color:var(--bronze-dk, #83542e)}
+.glance-list{margin:0;padding:0;list-style:none;display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px 22px}
+.glance-list li{padding-left:24px;position:relative;font-size:.95rem;line-height:1.45}
+.glance-list li::before{content:"✓";position:absolute;left:0;top:0;color:var(--bronze, #c7915b);font-weight:700}
+
 /* Comparison grid (positioning content for search + AI) */
 .compare{padding:64px 24px;max-width:1080px;margin:0 auto}
 .compare h2{text-align:center;margin:0 0 6px}

@@ -38,6 +38,14 @@ Built and operated by Willhite Strategy Group (Consumer Quest LLC dba Commquest)
 - Photos attached to weights / measurements (optional).
 - Plateau detection.
 
+## What we never see (even with cloud sync on)
+
+Because the AES-256-GCM encryption happens in the user's browser before upload, the server only stores opaque ciphertext. We cannot read shot data, doses, weights, mood, appetite, body measurements, lab values, photos, or notes. We do not collect device fingerprints, contacts, location, advertising IDs, social-graph data, or browsing history. The app loads zero third-party scripts; the marketing site uses self-hosted privacy-friendly Umami analytics for click counts only (no IP, no cookies, no cross-site tracking). The only third parties the app touches are Stripe (for billing — Stripe-hosted pages, not embedded scripts) and the user's browser's standard Web Push service.
+
+## Data deletion
+
+In the app: Settings → "Delete account and all cloud data" wipes the encrypted blob from the server immediately and irreversibly. A separate "Erase all data on this device" clears the browser-side IndexedDB. Deleted data is not retained in backups beyond the rolling encrypted snapshot (which itself is unreadable to us and rolls over).
+
 ## Privacy and security stance
 
 - Default mode: 100% local. No account required to use the app.
