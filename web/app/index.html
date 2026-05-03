@@ -17,7 +17,7 @@
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="icon" type="image/png" sizes="512x512" href="icons/icon-512.png">
 <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png">
-<link rel="stylesheet" href="styles.css?v=331">
+<link rel="stylesheet" href="styles.css?v=340">
 <script>
 (function(){
   // Apply saved theme synchronously to avoid flash. Settings live in IndexedDB; theme also mirrored to localStorage for fast read.
@@ -37,6 +37,17 @@
   <button id="acct-banner-cta" class="btn-primary tiny">Sign up free</button>
   <button id="acct-banner-dismiss" class="btn-ghost tiny">×</button>
 </div>
+
+<dialog id="info-dialog" class="modal info-modal">
+  <form method="dialog">
+    <h2 id="info-dialog-title">About this</h2>
+    <div id="info-dialog-body" class="info-body"></div>
+    <div class="modal-actions">
+      <span class="spacer"></span>
+      <button type="button" id="info-dialog-close" class="btn-primary">Got it</button>
+    </div>
+  </form>
+</dialog>
 
 <dialog id="install-dialog" class="modal install-modal">
   <form method="dialog">
@@ -152,7 +163,7 @@
     <div class="card-head"><h2 id="mood-heading">How are you feeling today?</h2><span id="mood-saved" class="mood-saved muted small"></span></div>
     <div id="mood-logged" class="mood-logged hidden">
       <div class="mood-logged-row">
-        <svg viewBox="0 0 32 32" id="mood-logged-svg" class="mood-svg"></svg>
+        <div id="mood-logged-svg" class="mood-logged-graphic"></div>
         <div class="mood-logged-text">
           <strong id="mood-logged-label">Feeling good</strong>
           <span class="muted small">Logged today · <a href="#" id="mood-change" class="link">change</a></span>
@@ -169,7 +180,7 @@
   </section>
 
   <section class="card recon-card" data-tab="home">
-    <div class="card-head"><h2>Mixing calculator</h2><span class="muted small">Free · for compounded peptide users</span></div>
+    <div class="card-head"><h2>Mixing calculator <button class="info-btn" type="button" data-info="mixing-calc" aria-label="About this">i</button></h2><span class="muted small">Free · for compounded peptide users</span></div>
     <p class="muted small">Mixing your own peptide? Enter the vial size, how much bacteriostatic water you added, and your dose. We'll tell you exactly how many units to draw into your insulin syringe.</p>
     <div class="recon-grid">
       <label>Vial (mg)<input id="recon-vial" type="number" step="0.1" min="0" value="10"></label>
@@ -187,24 +198,20 @@
   </section>
 
   <section id="badges-card" class="card hidden" data-tab="home">
-    <div class="card-head"><h2>Achievements</h2></div>
+    <div class="card-head"><h2>Achievements <button class="info-btn" type="button" data-info="achievements" aria-label="About this">i</button></h2></div>
     <div id="badges-list" class="badges-list"></div>
   </section>
 
   <!-- INSIGHTS TAB -->
 
   <section class="card" data-tab="insights">
-    <div class="card-head"><h2>Where you inject</h2><span id="site-suggest-label" class="muted small"></span></div>
-    <div class="body-toggle" role="group" aria-label="Body type">
-      <button class="body-toggle-btn" type="button" data-body-sex="male">Male</button>
-      <button class="body-toggle-btn" type="button" data-body-sex="female">Female</button>
-    </div>
+    <div class="card-head"><h2>Where you inject <button class="info-btn" type="button" data-info="inject-sites" aria-label="About this">i</button></h2><span id="site-suggest-label" class="muted small"></span></div>
     <div id="body-diagram-wrap" class="body-diagram-wrap"></div>
     <div id="site-legend" class="site-legend"></div>
   </section>
 
   <section class="card" data-tab="insights">
-    <div class="card-head"><h2>Calendar</h2><span id="heatmap-summary" class="muted small"></span></div>
+    <div class="card-head"><h2>Calendar <button class="info-btn" type="button" data-info="calendar-heatmap" aria-label="About this">i</button></h2><span id="heatmap-summary" class="muted small"></span></div>
     <div id="heatmap-wrap" class="heatmap-wrap"></div>
     <div class="heatmap-legend">
       <span class="muted small">Less</span>
@@ -218,7 +225,7 @@
   </section>
 
   <section class="card" data-tab="insights">
-    <div class="card-head"><h2>Weight</h2><button id="add-weight-btn" class="btn-ghost">+ Add</button></div>
+    <div class="card-head"><h2>Weight <button class="info-btn" type="button" data-info="weight-chart" aria-label="About this">i</button></h2><button id="add-weight-btn" class="btn-ghost">+ Add</button></div>
     <div class="range-bar" role="group" aria-label="Chart range">
       <button class="range-btn" type="button" data-range="30">1M</button>
       <button class="range-btn" type="button" data-range="90">3M</button>
@@ -240,19 +247,19 @@
   </section>
 
   <section id="mood-trend-card" class="card hidden" data-tab="insights">
-    <div class="card-head"><h2>Mood trend</h2><span id="mood-trend-summary" class="muted small"></span></div>
+    <div class="card-head"><h2>Mood trend <button class="info-btn" type="button" data-info="mood-trend" aria-label="About this">i</button></h2><span id="mood-trend-summary" class="muted small"></span></div>
     <div id="mood-trend-bars" class="mood-trend-bars"></div>
     <p class="muted small" id="mood-trend-hint">Each bar is one day. Taller = better. Tap the home tab to log today.</p>
   </section>
 
   <section class="card" data-tab="insights">
-    <div class="card-head"><h2>How much is in your system</h2></div>
+    <div class="card-head"><h2>How much is in your system <button class="info-btn" type="button" data-info="level-chart" aria-label="About this">i</button></h2></div>
     <canvas id="level-chart" height="140"></canvas>
     <p class="muted small">An estimate of how much medication is still active in your body, based on your shots and the half-life you set in Settings (Tirzepatide is about 5 days). The line shows your active level rising after each shot and slowly fading. This is for understanding your cycle only, not a clinical measurement.</p>
   </section>
 
   <section id="plateau-card" class="card hidden" data-tab="insights">
-    <div class="card-head"><h2>Hit a plateau?</h2></div>
+    <div class="card-head"><h2>Hit a plateau? <button class="info-btn" type="button" data-info="plateau" aria-label="About this">i</button></h2></div>
     <div id="plateau-body"></div>
   </section>
 
@@ -274,7 +281,7 @@
 
   <section id="supply-card" class="card" data-tab="more">
     <div class="card-head">
-      <h2>Pens &amp; vials <span class="lock-pill" id="supply-lock">Premium</span></h2>
+      <h2>Pens &amp; vials <button class="info-btn" type="button" data-info="supplies" aria-label="About this">i</button> <span class="lock-pill" id="supply-lock">Premium</span></h2>
       <button id="add-supply-btn" class="btn-ghost">+ Add</button>
     </div>
     <ul id="supply-list" class="supply-list"></ul>
@@ -283,7 +290,7 @@
 
   <section id="measurements-card" class="card" data-tab="more">
     <div class="card-head">
-      <h2>Measurements <span class="lock-pill" id="measurements-lock">Premium</span></h2>
+      <h2>Measurements <button class="info-btn" type="button" data-info="measurements" aria-label="About this">i</button> <span class="lock-pill" id="measurements-lock">Premium</span></h2>
       <button id="add-measurement-btn" class="btn-ghost">+ Add</button>
     </div>
     <div id="measurement-summary" class="measurement-summary"></div>
@@ -292,7 +299,7 @@
 
   <section id="labs-card" class="card" data-tab="more">
     <div class="card-head">
-      <h2>Lab numbers <span class="lock-pill" id="labs-lock">Premium</span></h2>
+      <h2>Lab numbers <button class="info-btn" type="button" data-info="labs" aria-label="About this">i</button> <span class="lock-pill" id="labs-lock">Premium</span></h2>
       <button id="add-lab-btn" class="btn-ghost">+ Add</button>
     </div>
     <div id="lab-summary" class="lab-summary"></div>
@@ -301,7 +308,7 @@
 
   <section id="cost-card" class="card" data-tab="more">
     <div class="card-head">
-      <h2>Spending <span class="lock-pill" id="cost-lock">Premium</span></h2>
+      <h2>Spending <button class="info-btn" type="button" data-info="spending" aria-label="About this">i</button> <span class="lock-pill" id="cost-lock">Premium</span></h2>
       <button id="add-expense-btn" class="btn-ghost">+ Add</button>
     </div>
     <div id="cost-summary" class="cost-summary"></div>
@@ -311,7 +318,7 @@
 
   <section id="theme-picker-card" class="card" data-tab="more">
     <div class="card-head">
-      <h2>App theme <span class="lock-pill" id="theme-lock">Premium</span></h2>
+      <h2>App theme <button class="info-btn" type="button" data-info="theme" aria-label="About this">i</button> <span class="lock-pill" id="theme-lock">Premium</span></h2>
     </div>
     <p class="muted small">Pick a color palette — changes the whole app instantly. Light + dark variants included.</p>
     <div id="theme-grid" class="theme-grid"></div>
@@ -319,20 +326,20 @@
 
   <section id="emoji-style-card" class="card" data-tab="more">
     <div class="card-head">
-      <h2>Mood emoji style <span class="lock-pill" id="emoji-lock">Premium</span></h2>
+      <h2>Mood emoji style <button class="info-btn" type="button" data-info="emoji-style" aria-label="About this">i</button> <span class="lock-pill" id="emoji-lock">Premium</span></h2>
     </div>
     <p class="muted small">Change how your daily mood emojis look.</p>
     <div id="emoji-style-grid" class="emoji-style-grid"></div>
   </section>
 
   <section class="card" data-tab="more">
-    <div class="card-head"><h2>Save a PDF for your doctor</h2></div>
+    <div class="card-head"><h2>Save a PDF for your doctor <button class="info-btn" type="button" data-info="pdf-export" aria-label="About this">i</button></h2></div>
     <p class="muted small">Generate a 90-day summary you can print or share at your next appointment.</p>
     <div class="btn-row"><button id="show-export-pdf-more" class="btn-primary" type="button">📄 Make PDF</button></div>
   </section>
 
   <section class="card" data-tab="more">
-    <div class="card-head"><h2>Share with your doctor</h2></div>
+    <div class="card-head"><h2>Share with your doctor <button class="info-btn" type="button" data-info="doctor-share" aria-label="About this">i</button></h2></div>
     <p class="muted small">Generate a private link you can text or email. Expires in 24 hours. Read-only.</p>
     <div class="btn-row"><button id="show-share-more" class="btn-primary" type="button">🔗 Make a share link</button></div>
   </section>
@@ -774,6 +781,6 @@
 </nav>
 
 <script src="lib/chart.min.js"></script>
-<script src="app.js?v=331"></script>
+<script src="app.js?v=340"></script>
 </body>
 </html>

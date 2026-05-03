@@ -6,7 +6,7 @@
 const DB_NAME = 'shotclock';
 // v5 bump: 'expenses' store added so the Spending card can take ad-hoc cost entries (copays, pharmacy fees, etc.) without needing a supply row.
 const DB_VERSION = 5;
-const APP_VERSION = '0.33.1';
+const APP_VERSION = '0.34.0';
 
 // Umami event tracker. Aggregates only — no PII (no email, no IDs). Safe to call before umami loads.
 function track(event, props) {
@@ -17,6 +17,183 @@ function track(event, props) {
   } catch (_) { /* never let analytics break the app */ }
 }
 const STORES = { shots: 'shots', weights: 'weights', settings: 'settings', moods: 'moods', supplies: 'supplies' };
+
+// Info-tooltip topics keyed by `data-info` on the (i) button. Plain-language explanations + formulas.
+const INFO_TOPICS = {
+  'next-shot': {
+    title: 'Next shot countdown',
+    body: `<p>The big number shows how long until your next scheduled shot.</p>
+      <p>It's based on:</p>
+      <ul>
+        <li>Your most recent logged shot</li>
+        <li>The cadence (days between shots) you set in <strong>Settings</strong></li>
+      </ul>
+      <p>If a shot is overdue, the card turns orange and shows how late it is.</p>
+      <h3>How it's calculated</h3>
+      <div class="formula">next shot = last shot + cadence days</div>`,
+  },
+  'progress-stats': {
+    title: 'Your progress',
+    body: `<p>Three quick numbers across the top of the home screen.</p>
+      <h3>Lost so far</h3>
+      <p>Difference between your starting weight and your most recent weight entry.</p>
+      <div class="formula">lost = start_weight − latest_weight</div>
+      <p>Set your starting weight in <strong>Settings → Weight goals</strong>, or it auto-detects from your first weight entry.</p>
+      <h3>Weeks on track</h3>
+      <p>How many weeks since your first logged shot.</p>
+      <h3>Shots taken</h3>
+      <p>Total number of shots logged.</p>`,
+  },
+  'todays-mood': {
+    title: 'Daily mood',
+    body: `<p>Tap a face to log how you're feeling today. One mood per day; tap "change" to update it.</p>
+      <p>Tracking mood alongside doses helps you spot patterns — for example, if you tend to feel low in the days right after a higher dose.</p>
+      <p>Change the emoji style on the <strong>Premium</strong> tab.</p>`,
+  },
+  'mixing-calc': {
+    title: 'Mixing calculator',
+    body: `<p>If you're reconstituting your own peptide (mixing powder with bacteriostatic water), this tells you how many units to draw into a U-100 insulin syringe.</p>
+      <h3>How it's calculated</h3>
+      <div class="formula">concentration = vial_mg / water_mL<br>draw_volume_mL = your_dose_mg / concentration<br>units = draw_volume_mL × 100</div>
+      <p>"Doses in this vial" is just <code>vial_mg ÷ your_dose_mg</code>, rounded down.</p>
+      <p>Always double-check with your prescriber. This is a math helper, not medical advice.</p>`,
+  },
+  'achievements': {
+    title: 'Achievements',
+    body: `<p>Small badges that unlock as you hit milestones.</p>
+      <ul>
+        <li><strong>First shot logged</strong> — once you log your first dose</li>
+        <li><strong>10 / 50 / 100 shots</strong> — total shots logged</li>
+        <li><strong>4-week streak</strong> — four shots in a row at your scheduled cadence</li>
+        <li><strong>5 / 10 / 25 lb lost</strong> — weight change from your starting weight</li>
+        <li><strong>Dose graduation</strong> — you've increased your dose at least once (typical titration)</li>
+      </ul>
+      <p>Locked badges are dimmed; unlocked ones are colored.</p>`,
+  },
+  'inject-sites': {
+    title: 'Where you inject',
+    body: `<p>The body diagram shows the six common shot sites — arms, abdomen, thighs. Each circle is colored by how recently you used that site:</p>
+      <ul>
+        <li><span style="color:#fb923c">●</span> <strong>This week</strong> — avoid; let it rest</li>
+        <li><span style="color:#0d9488">●</span> <strong>1–2 weeks</strong> — used recently</li>
+        <li><span style="color:#5eead4">●</span> <strong>2+ weeks</strong> — fresh, fine to reuse</li>
+        <li><span>○</span> <strong>Unused</strong> — never injected here</li>
+      </ul>
+      <p>Tap a site to suggest it for your next shot. Rotating sites helps prevent lipohypertrophy (lumps under the skin).</p>`,
+  },
+  'calendar-heatmap': {
+    title: 'Shot calendar',
+    body: `<p>One square per day for the past 12 months. Darker = higher dose taken that day.</p>
+      <ul>
+        <li>Empty = no shot</li>
+        <li>Light = under 5 mg</li>
+        <li>Medium = 5–7.5 mg</li>
+        <li>Dark = 7.5–12.5 mg</li>
+        <li>Darkest = 12.5+ mg</li>
+      </ul>
+      <p>Today is outlined. Hover/tap any square to see the date and dose.</p>`,
+  },
+  'weight-chart': {
+    title: 'Weight tracking',
+    body: `<p>Line chart of your logged weight entries over time.</p>
+      <p>Use the <strong>1M / 3M / 6M / 1Y / All</strong> buttons to zoom into a specific window.</p>
+      <p>Tap <strong>+ Add</strong> to log a new weight (lb or kg). Frequency doesn't matter — once a week, once a day, whatever fits your routine.</p>`,
+  },
+  'mood-trend': {
+    title: 'Mood trend',
+    body: `<p>The last 30 days of your daily moods, one bar per day.</p>
+      <p>Taller bar = better mood (1 = awful, 5 = great). Days you didn't log show as gaps.</p>
+      <p>Helps you see whether your dose changes correlate with how you feel.</p>`,
+  },
+  'level-chart': {
+    title: 'How much is in your system',
+    body: `<p>Estimates how much medication is still active in your body, based on every shot you've logged and the half-life you set in <strong>Settings → Medication</strong>.</p>
+      <h3>How it's calculated</h3>
+      <p>Each shot decays exponentially. The total is the sum of every past shot's remaining contribution at each point in time.</p>
+      <div class="formula">level(t) = Σ dose × e^(-ln(2) × days_since / half_life)</div>
+      <p>Default half-lives:</p>
+      <ul>
+        <li>Tirzepatide ≈ 5 days</li>
+        <li>Semaglutide ≈ 7 days</li>
+      </ul>
+      <p><strong>Not a clinical measurement</strong> — this is a learning tool to help you visualize the rhythm of your dosing.</p>`,
+  },
+  'plateau': {
+    title: 'Plateau detection',
+    body: `<p>Flags when your weight has been mostly flat for 4+ weeks at the same dose.</p>
+      <h3>Triggers when</h3>
+      <ul>
+        <li>You have at least 4 weight entries in the last 28 days</li>
+        <li>Total change is less than 1 lb</li>
+        <li>You haven't increased your dose during that window</li>
+      </ul>
+      <p>Plateaus are normal. The card just gives you a heads-up that it might be time to talk to your provider about a dose adjustment, diet/exercise tweaks, or just patience.</p>`,
+  },
+  'supplies': {
+    title: 'Pens & vials',
+    body: `<p>Track every pen or vial you have on hand: pharmacy, lot number, total mg, expiration date, cost.</p>
+      <p>The progress bar fills as the app counts down doses you've logged against the total mg in the supply.</p>
+      <p>You'll see a warning when a pen is within 7 days of expiring or has gone past expiration.</p>`,
+  },
+  'measurements': {
+    title: 'Body measurements',
+    body: `<p>Track waist, hips, chest, thighs, arms, neck. Useful when the scale isn't moving but you're losing inches.</p>
+      <p>Each card shows the latest value plus the change from your earliest entry.</p>`,
+  },
+  'labs': {
+    title: 'Lab numbers',
+    body: `<p>Log lab results so you can show your doctor a trend over time: A1c, fasting glucose, blood pressure, cholesterol panel, ALT.</p>
+      <p>Each lab shows your latest value with a green/yellow/red marker based on standard reference ranges.</p>`,
+  },
+  'spending': {
+    title: 'Spending',
+    body: `<p>Adds up everything you've spent on the program — pens, vials, copays, pharmacy fees, labs, insurance, supplies, shipping.</p>
+      <h3>How "$ per lb lost" is calculated</h3>
+      <div class="formula">$ per lb = total_spent ÷ pounds_lost</div>
+      <p>Includes both supply costs (entered when you add a pen/vial) and ad-hoc expenses (entered with the <strong>+ Add</strong> button on this card).</p>`,
+  },
+  'theme': {
+    title: 'App theme',
+    body: `<p>Pick from 20 color palettes. The theme covers the entire app — buttons, charts, calendar, badges, gradients — and applies to both light and dark mode.</p>
+      <p>Every theme is contrast-tested to stay readable.</p>`,
+  },
+  'emoji-style': {
+    title: 'Mood emoji style',
+    body: `<p>10 different emoji sets for the daily mood picker. Pick whichever fits your vibe.</p>
+      <p>Updates everywhere — picker buttons, today's mood card, mood trend chart.</p>`,
+  },
+  'pdf-export': {
+    title: 'PDF report for your doctor',
+    body: `<p>Generates a printable summary of the last 90 days: every shot, weight trend, mood overview, side effects.</p>
+      <p>Great for appointments — gives your provider the full picture in one page.</p>`,
+  },
+  'doctor-share': {
+    title: 'Doctor share link',
+    body: `<p>Creates a private, read-only link you can text or email to your provider.</p>
+      <p>The link expires in 24 hours. The data is end-to-end encrypted; the server can't read it. The link itself contains the decryption key, so anyone with the link can view it during the 24-hour window.</p>`,
+  },
+};
+
+function showInfo(key) {
+  const topic = INFO_TOPICS[key];
+  if (!topic) return;
+  document.getElementById('info-dialog-title').textContent = topic.title;
+  document.getElementById('info-dialog-body').innerHTML = topic.body;
+  document.getElementById('info-dialog').showModal();
+  track('info_opened', { topic: key });
+}
+
+function setupInfoButtons() {
+  // Wire all (i) buttons that exist in the DOM. One delegated listener so dynamically-rendered (i) buttons also work.
+  document.body.addEventListener('click', (e) => {
+    const btn = e.target.closest('.info-btn[data-info]');
+    if (!btn) return;
+    e.preventDefault();
+    showInfo(btn.dataset.info);
+  });
+  const closeBtn = document.getElementById('info-dialog-close');
+  if (closeBtn) closeBtn.addEventListener('click', () => document.getElementById('info-dialog').close());
+}
 
 // 20 color themes. Each defines a light-mode and dark-mode variant so the app stays readable in both.
 // Tokens overridden: --bronze (primary), --bronze-dk (darker primary, used for hover/active text), --bronze-lt (subtle tint background), --grad (hero/countdown gradient).
@@ -604,23 +781,40 @@ document.addEventListener('DOMContentLoaded', async () => {
   $('#shot-cancel').addEventListener('click', () => $('#shot-dialog').close());
   $('#shot-form').addEventListener('submit', async (e) => {
     e.preventDefault();
-    const id = $('#shot-id').value;
-    const data = {
-      med: $('#shot-med').value.trim() || 'Tirzepatide',
-      dose: parseFloat($('#shot-dose-amt').value),
-      when: new Date($('#shot-when').value).toISOString(),
-      site: $('#shot-site').value || null,
-      notes: $('#shot-notes').value.trim() || null,
-      sideEffects: readSideEffects(),
-    };
-    if (id) data.id = parseInt(id, 10);
-    await dbPut(STORES.shots, data);
-    await ensurePersisted();
-    $('#shot-dialog').close();
-    await renderShots();
-    maybeScheduleNotification();
-    markSyncDirty();
-    track(id ? 'shot_edited' : 'shot_logged', { has_site: !!data.site, has_notes: !!data.notes });
+    try {
+      const id = $('#shot-id').value;
+      const whenStr = $('#shot-when').value;
+      const whenDate = whenStr ? new Date(whenStr) : null;
+      if (!whenDate || isNaN(whenDate.getTime())) {
+        alert('Please pick a valid date and time for this shot.');
+        return;
+      }
+      const dose = parseFloat($('#shot-dose-amt').value);
+      if (!Number.isFinite(dose) || dose <= 0) {
+        alert('Please enter a dose in mg (e.g. 5).');
+        return;
+      }
+      const data = {
+        med: $('#shot-med').value.trim() || 'Tirzepatide',
+        dose,
+        when: whenDate.toISOString(),
+        site: $('#shot-site').value || null,
+        notes: $('#shot-notes').value.trim() || null,
+        sideEffects: readSideEffects(),
+      };
+      if (id) data.id = parseInt(id, 10);
+      await dbPut(STORES.shots, data);
+      await ensurePersisted();
+      $('#shot-dialog').close();
+      // Re-render every dependent surface (charts, hero stats, badges, heatmap, body diagram, etc.) so backfilled shots immediately show.
+      await renderShots();
+      maybeScheduleNotification();
+      markSyncDirty();
+      track(id ? 'shot_edited' : 'shot_logged', { has_site: !!data.site, has_notes: !!data.notes, backdate_days: Math.max(0, Math.round((Date.now() - whenDate.getTime()) / 86400000)) });
+    } catch (ex) {
+      console.error('[mgs] shot save failed:', ex);
+      alert('Could not save this shot: ' + (ex && ex.message ? ex.message : 'unknown error') + '. Please try again or screenshot this and send it.');
+    }
   });
   $('#shot-delete').addEventListener('click', async () => {
     const id = parseInt($('#shot-id').value, 10);
@@ -837,6 +1031,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupBodyToggle();
   renderThemeGrid();
   renderEmojiStyleGrid();
+  setupInfoButtons();
   setupShareUI();
 
   // (Session restore now happens via bootstrapSession() at script load — independent of this pipeline.)
@@ -862,6 +1057,9 @@ function applySettingsToInputs() {
   applyTheme();
   applyColorTheme(settings.colorTheme || 'teal');
   applyMoodStyle(settings.moodStyle || 'classic');
+  // Refresh the picker grids so their "active" class reflects the current setting (matters after cross-device pull).
+  try { if (typeof renderThemeGrid === 'function') renderThemeGrid(); } catch (_) {}
+  try { if (typeof renderEmojiStyleGrid === 'function') renderEmojiStyleGrid(); } catch (_) {}
   updateNotifyStatus();
 }
 
@@ -924,25 +1122,8 @@ function setupWeightRangeButtons() {
   });
 }
 
-function setupBodyToggle() {
-  // Initialize active state from current settings (default 'male' if unset).
-  const current = (settings.bodySex === 'female') ? 'female' : 'male';
-  document.querySelectorAll('.body-toggle-btn').forEach(b => {
-    b.classList.toggle('active', b.dataset.bodySex === current);
-  });
-  document.querySelectorAll('.body-toggle-btn').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const sex = btn.dataset.bodySex === 'female' ? 'female' : 'male';
-      if (settings.bodySex === sex) return;
-      settings.bodySex = sex;
-      document.querySelectorAll('.body-toggle-btn').forEach(b => b.classList.toggle('active', b === btn));
-      await saveSettings();
-      markSyncDirty();
-      track('body_sex_changed', { sex });
-      await renderShots(); // re-renders the body diagram via renderBodyDiagram(shots)
-    });
-  });
-}
+// Body sex toggle removed 2026-05-03 — only the male silhouette is anatomically right; female version was deferred.
+function setupBodyToggle() { /* no-op */ }
 
 function renderLevelChart(shots) {
   const ctx = $('#level-chart');
@@ -1598,6 +1779,14 @@ function setupAccountUI() {
     catch (e) { $('#acct-sync-status').textContent = 'Failed: ' + e.message; }
   });
   $('#show-export-pdf').addEventListener('click', exportPDFReport);
+  // Premium tab has duplicate button (-more suffix) — wire it to the same handler.
+  const exportMore = document.getElementById('show-export-pdf-more');
+  if (exportMore) exportMore.addEventListener('click', exportPDFReport);
+  const shareMore = document.getElementById('show-share-more');
+  if (shareMore) shareMore.addEventListener('click', () => {
+    if (!isPremium()) { $('#upgrade-dialog').showModal(); return; }
+    document.getElementById('show-share').click();
+  });
 }
 
 function setupSupplyUI() {
@@ -1924,12 +2113,8 @@ function renderBodyDiagram(shots) {
   // Anatomical front silhouettes — single continuous outline per sex.
   // Both fit viewBox 200x320 so SITE_POSITIONS dots (arms 60/140@y=90, abd 84/116@y=145, thighs 70/130@y=220) land on the body.
   // Male: broad shoulders (~108 wide at y=70), straight torso, narrow hips, straight legs.
-  // Female: narrower shoulders, defined waist (~y=140), wider hips (~y=180), tapered thighs.
-  // Hand-authored by Claude (CC0 / public domain — no third-party sources).
-  // Gemini 2.5 Flash (2026-05-02) scored both 9/10 for professional appearance + clearly distinguishable genders.
-  const MALE_PATH = "M 100 8 C 110 8 118 17 118 30 C 118 40 114 47 108 50 L 108 58 C 124 60 138 64 146 72 C 152 78 156 86 156 96 L 156 160 C 156 164 152 166 148 164 C 144 162 142 158 142 154 L 142 96 C 142 88 138 82 132 78 C 128 76 124 76 122 80 L 122 158 C 122 168 124 178 126 188 L 130 250 L 132 316 C 132 318 128 318 124 318 L 118 318 C 116 318 114 316 114 314 L 110 250 L 106 200 L 104 188 L 100 188 L 96 188 L 94 200 L 90 250 L 86 314 C 86 316 84 318 82 318 L 76 318 C 72 318 68 318 68 316 L 70 250 L 74 188 C 76 178 78 168 78 158 L 78 80 C 76 76 72 76 68 78 C 62 82 58 88 58 96 L 58 154 C 58 158 56 162 52 164 C 48 166 44 164 44 160 L 44 96 C 44 86 48 78 54 72 C 62 64 76 60 92 58 L 92 50 C 86 47 82 40 82 30 C 82 17 90 8 100 8 Z";
-  const FEMALE_PATH = "M 100 8 C 110 8 117 17 117 29 C 117 39 113 46 108 49 L 108 58 C 122 60 134 64 142 71 C 148 77 150 86 150 96 L 150 158 C 150 162 146 164 142 162 C 138 160 136 156 136 152 L 136 96 C 136 90 134 86 130 84 C 126 82 124 84 122 86 L 122 110 Q 122 124 120 138 Q 122 146 124 152 Q 128 162 130 174 L 132 192 Q 134 204 132 218 L 130 250 L 130 314 C 130 318 126 318 122 318 L 116 318 C 114 318 113 316 112 314 L 108 250 L 104 200 L 102 188 L 100 188 L 98 188 L 96 200 L 92 250 L 88 314 C 87 316 86 318 84 318 L 78 318 C 74 318 70 318 70 314 L 70 250 L 68 218 Q 66 204 68 192 L 70 174 Q 72 162 76 152 Q 78 146 80 138 Q 78 124 78 110 L 78 86 C 76 84 74 82 70 84 C 66 86 64 90 64 96 L 64 152 C 64 156 62 160 58 162 C 54 164 50 162 50 158 L 50 96 C 50 86 52 77 58 71 C 66 64 78 60 92 58 L 92 49 C 87 46 83 39 83 29 C 83 17 90 8 100 8 Z";
-  const bodyPath = settings.bodySex === 'female' ? FEMALE_PATH : MALE_PATH;
+  // Hand-authored male anatomical silhouette (CC0). Female version removed 2026-05-03 pending a better draft.
+  const bodyPath = "M 100 8 C 110 8 118 17 118 30 C 118 40 114 47 108 50 L 108 58 C 124 60 138 64 146 72 C 152 78 156 86 156 96 L 156 160 C 156 164 152 166 148 164 C 144 162 142 158 142 154 L 142 96 C 142 88 138 82 132 78 C 128 76 124 76 122 80 L 122 158 C 122 168 124 178 126 188 L 130 250 L 132 316 C 132 318 128 318 124 318 L 118 318 C 116 318 114 316 114 314 L 110 250 L 106 200 L 104 188 L 100 188 L 96 188 L 94 200 L 90 250 L 86 314 C 86 316 84 318 82 318 L 76 318 C 72 318 68 318 68 316 L 70 250 L 74 188 C 76 178 78 168 78 158 L 78 80 C 76 76 72 76 68 78 C 62 82 58 88 58 96 L 58 154 C 58 158 56 162 52 164 C 48 166 44 164 44 160 L 44 96 C 44 86 48 78 54 72 C 62 64 76 60 92 58 L 92 50 C 86 47 82 40 82 30 C 82 17 90 8 100 8 Z";
   wrap.innerHTML = `
     <svg class="body-svg" viewBox="0 0 200 320" xmlns="http://www.w3.org/2000/svg" aria-label="Body diagram showing injection sites">
       <path class="body-shape" d="${bodyPath}"/>
@@ -2100,7 +2285,8 @@ async function renderMood() {
     loggedSvg.dataset.value = String(todayMood.value);
     const styleId = settings.moodStyle || 'classic';
     if (styleId === 'classic') {
-      loggedSvg.innerHTML = MOOD_SVG[todayMood.value] || '';
+      // Wrap the SVG paths in a fresh <svg>; the wrapper is now a div so we render the SVG ourselves.
+      loggedSvg.innerHTML = `<svg viewBox="0 0 32 32" class="mood-svg">${MOOD_SVG[todayMood.value] || ''}</svg>`;
       loggedSvg.classList.remove('mood-emoji-display');
     } else {
       const s = MOOD_STYLES.find(x => x.id === styleId) || MOOD_STYLES[0];
@@ -2947,15 +3133,13 @@ function applyMoodStyle(styleId) {
       btn.innerHTML = `<span class="mood-emoji">${s.emojis[v - 1] || '🙂'}</span>`;
     }
   });
-  // Logged-state mood display.
+  // Logged-state mood display (parent div, not raw <svg>, so HTML children render).
   const loggedSvgEl = document.getElementById('mood-logged-svg');
   if (loggedSvgEl) {
-    // Keep its outer container but swap the inner content based on style.
-    // Read the logged value from the data attribute that renderMood writes.
     const v = parseInt(loggedSvgEl.dataset.value || '0', 10);
     if (v > 0) {
       if (styleId === 'classic') {
-        loggedSvgEl.innerHTML = MOOD_SVG[v] || '';
+        loggedSvgEl.innerHTML = `<svg viewBox="0 0 32 32" class="mood-svg">${MOOD_SVG[v] || ''}</svg>`;
         loggedSvgEl.classList.remove('mood-emoji-display');
       } else {
         loggedSvgEl.innerHTML = `<span class="mood-emoji-big">${s.emojis[v - 1] || '🙂'}</span>`;
