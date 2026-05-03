@@ -17,7 +17,7 @@
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="icon" type="image/png" sizes="512x512" href="icons/icon-512.png">
 <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png">
-<link rel="stylesheet" href="styles.css?v=340">
+<link rel="stylesheet" href="styles.css?v=350">
 <script>
 (function(){
   // Apply saved theme synchronously to avoid flash. Settings live in IndexedDB; theme also mirrored to localStorage for fast read.
@@ -179,6 +179,27 @@
     </div>
   </section>
 
+  <section class="card appetite-card" data-tab="home" id="appetite-card">
+    <div class="card-head"><h2 id="appetite-heading">How's your appetite today? <button class="info-btn" type="button" data-info="appetite" aria-label="About this">i</button></h2><span id="appetite-saved" class="mood-saved muted small"></span></div>
+    <div id="appetite-logged" class="mood-logged hidden">
+      <div class="mood-logged-row">
+        <div id="appetite-logged-graphic" class="mood-logged-graphic"></div>
+        <div class="mood-logged-text">
+          <strong id="appetite-logged-label">Logged</strong>
+          <span class="muted small">Logged today · <a href="#" id="appetite-change" class="link">change</a></span>
+        </div>
+      </div>
+    </div>
+    <div id="appetite-picker" class="mood-picker">
+      <button data-appetite="1" class="appetite-btn mood-btn" type="button" aria-label="None"><span class="appetite-emoji">🚫</span></button>
+      <button data-appetite="2" class="appetite-btn mood-btn" type="button" aria-label="Low"><span class="appetite-emoji">🤏</span></button>
+      <button data-appetite="3" class="appetite-btn mood-btn" type="button" aria-label="Normal"><span class="appetite-emoji">🍽️</span></button>
+      <button data-appetite="4" class="appetite-btn mood-btn" type="button" aria-label="Hungry"><span class="appetite-emoji">😋</span></button>
+      <button data-appetite="5" class="appetite-btn mood-btn" type="button" aria-label="Ravenous"><span class="appetite-emoji">😅</span></button>
+    </div>
+    <p class="muted small appetite-hint">For GLP-1 users, lower numbers usually mean the medication is working.</p>
+  </section>
+
   <section class="card recon-card" data-tab="home">
     <div class="card-head"><h2>Mixing calculator <button class="info-btn" type="button" data-info="mixing-calc" aria-label="About this">i</button></h2><span class="muted small">Free · for compounded peptide users</span></div>
     <p class="muted small">Mixing your own peptide? Enter the vial size, how much bacteriostatic water you added, and your dose. We'll tell you exactly how many units to draw into your insulin syringe.</p>
@@ -250,6 +271,12 @@
     <div class="card-head"><h2>Mood trend <button class="info-btn" type="button" data-info="mood-trend" aria-label="About this">i</button></h2><span id="mood-trend-summary" class="muted small"></span></div>
     <div id="mood-trend-bars" class="mood-trend-bars"></div>
     <p class="muted small" id="mood-trend-hint">Each bar is one day. Taller = better. Tap the home tab to log today.</p>
+  </section>
+
+  <section id="appetite-trend-card" class="card hidden" data-tab="insights">
+    <div class="card-head"><h2>Appetite trend <button class="info-btn" type="button" data-info="appetite-trend" aria-label="About this">i</button></h2><span id="appetite-trend-summary" class="muted small"></span></div>
+    <div id="appetite-trend-bars" class="mood-trend-bars"></div>
+    <p class="muted small">Each bar is one day. Lower = more suppressed (medication working). Empty = not logged.</p>
   </section>
 
   <section class="card" data-tab="insights">
@@ -781,6 +808,6 @@
 </nav>
 
 <script src="lib/chart.min.js"></script>
-<script src="app.js?v=340"></script>
+<script src="app.js?v=350"></script>
 </body>
 </html>

@@ -451,7 +451,30 @@ async function probe(name, fn) {
     if (!ok) throw new Error('PDF export buttons missing');
   });
 
-  // === 22. Level chart refreshes when a back-dated (missed) shot is added ===
+  // === 22. Daily appetite check-in persists ===
+  await probe('log_appetite', async () => {
+    await page.evaluate(() => document.querySelector('#bottom-nav .nav-btn[data-nav-tab="home"]').click());
+    await new Promise(r => setTimeout(r, 400));
+    await page.evaluate(() => {
+      const btn = document.querySelector('.appetite-btn[data-appetite="2"]');
+      if (btn) btn.click();
+    });
+    await new Promise(r => setTimeout(r, 1000));
+    const ok = await page.evaluate(async () => {
+      const req = indexedDB.open('shotclock');
+      return await new Promise((res) => {
+        req.onsuccess = () => {
+          const tx = req.result.transaction('appetites', 'readonly');
+          const ct = tx.objectStore('appetites').count();
+          ct.onsuccess = () => res(ct.result);
+        };
+      });
+    });
+    if (ok < 1) throw new Error('appetite not persisted');
+    return `idb appetites=${ok}`;
+  });
+
+  // === 23. Level chart refreshes when a back-dated (missed) shot is added ===
   await probe('level_chart_refresh_on_backdated_shot', async () => {
     // Read current level data, add a missed shot from 5 days ago, read again. Should differ.
     const before = await page.evaluate(() => {

@@ -163,6 +163,16 @@ canvas{width:100% !important;height:auto !important;max-height:200px}
 .info-body code{background:var(--surface-alt);padding:1px 5px;border-radius:4px;font-size:.88em}
 .info-body .formula{background:var(--surface-alt);border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin:8px 0;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.85rem}
 
+/* Appetite picker — same layout as mood, just emoji-based buttons */
+.appetite-emoji{font-size:2rem;line-height:1;display:flex;align-items:center;justify-content:center;width:48px;height:48px}
+.appetite-btn{padding:8px}
+.appetite-btn.selected{background:var(--bronze-lt);box-shadow:0 0 0 2px var(--bronze-dk) inset;border-radius:50%}
+.appetite-hint{margin-top:8px;text-align:center}
+/* Appetite trend bars use same .mood-bar styling, but with reverse intent (low = good): */
+#appetite-trend-bars .mood-bar.good{background:var(--bronze)}
+#appetite-trend-bars .mood-bar.mid{background:var(--muted)}
+#appetite-trend-bars .mood-bar.high{background:#fb923c}
+
 /* Mood emoji styles (premium emoji pack swap) */
 .mood-emoji{font-size:2rem;line-height:1;display:flex;align-items:center;justify-content:center;width:48px;height:48px}
 .mood-emoji-big{font-size:3.5rem;line-height:1;display:flex;align-items:center;justify-content:center}

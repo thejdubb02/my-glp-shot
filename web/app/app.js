@@ -4,9 +4,9 @@
 'use strict';
 
 const DB_NAME = 'shotclock';
-// v5 bump: 'expenses' store added so the Spending card can take ad-hoc cost entries (copays, pharmacy fees, etc.) without needing a supply row.
-const DB_VERSION = 5;
-const APP_VERSION = '0.34.0';
+// v6 bump: 'appetites' store added — daily appetite check-in alongside mood (GLP-1 mechanism is appetite suppression).
+const DB_VERSION = 6;
+const APP_VERSION = '0.35.0';
 
 // Umami event tracker. Aggregates only — no PII (no email, no IDs). Safe to call before umami loads.
 function track(event, props) {
@@ -49,6 +49,25 @@ const INFO_TOPICS = {
     body: `<p>Tap a face to log how you're feeling today. One mood per day; tap "change" to update it.</p>
       <p>Tracking mood alongside doses helps you spot patterns — for example, if you tend to feel low in the days right after a higher dose.</p>
       <p>Change the emoji style on the <strong>Premium</strong> tab.</p>`,
+  },
+  'appetite': {
+    title: 'Daily appetite',
+    body: `<p>One of the clearest signals that GLP-1 medication is working is appetite suppression. Logging this every day shows you whether your dose is still doing its job.</p>
+      <h3>The five levels</h3>
+      <ul>
+        <li>🚫 <strong>None</strong> — completely uninterested in food, may need to remind yourself to eat</li>
+        <li>🤏 <strong>Low</strong> — small portions feel filling, easy to eat below maintenance</li>
+        <li>🍽️ <strong>Normal</strong> — typical hunger signals</li>
+        <li>😋 <strong>Hungry</strong> — wanting more than usual</li>
+        <li>😅 <strong>Ravenous</strong> — strong cravings, hard to feel satisfied</li>
+      </ul>
+      <p>Use this to spot when appetite returns toward the end of your dose cycle (often a sign you're due for your shot) or when a higher dose is needed for continued suppression.</p>`,
+  },
+  'appetite-trend': {
+    title: 'Appetite trend',
+    body: `<p>The last 30 days of daily appetite, one bar per day.</p>
+      <p>Lower bars (teal) = stronger suppression = medication working. Higher bars (orange) = appetite returning. Empty bars = no log that day.</p>
+      <p>Compare against your dose schedule (Insights → How much is in your system) to see whether bumps line up with shot timing.</p>`,
   },
   'mixing-calc': {
     title: 'Mixing calculator',
@@ -333,6 +352,9 @@ function openDB() {
       }
       if (!db.objectStoreNames.contains('expenses')) {
         db.createObjectStore('expenses', { keyPath: 'id', autoIncrement: true });
+      }
+      if (!db.objectStoreNames.contains('appetites')) {
+        db.createObjectStore('appetites', { keyPath: 'date' });
       }
     };
     req.onsuccess = () => resolve(req.result);
@@ -1018,6 +1040,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   maybeScheduleNotification();
   initSyncUI();
   await renderMood();
+  await renderAppetite();
+  setupAppetiteUI();
   applyTimeOfDayGradient();
   setInterval(applyTimeOfDayGradient, 5 * 60 * 1000);
   setupPullToRefresh();
@@ -2007,6 +2031,105 @@ async function getMoodsSorted() {
 }
 async function saveMood(date, value) {
   await dbPut(STORES.moods, { date, value });
+}
+
+// ---------- Appetite store (daily) ----------
+const APPETITE_LABELS = { 1: 'No appetite', 2: 'Low', 3: 'Normal', 4: 'Hungry', 5: 'Ravenous' };
+const APPETITE_EMOJIS = { 1: '🚫', 2: '🤏', 3: '🍽️', 4: '😋', 5: '😅' };
+async function getAppetitesSorted() {
+  return new Promise((res) => {
+    openDB().then(db => {
+      const t = db.transaction('appetites', 'readonly');
+      const r = t.objectStore('appetites').getAll();
+      r.onsuccess = () => res((r.result || []).sort((a, b) => a.date.localeCompare(b.date)));
+      r.onerror = () => res([]);
+    });
+  });
+}
+async function saveAppetite(date, value) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const t = db.transaction('appetites', 'readwrite');
+    t.objectStore('appetites').put({ date, value });
+    t.oncomplete = resolve; t.onerror = () => reject(t.error);
+  });
+}
+
+async function renderAppetite() {
+  const today = todayISODate();
+  const appetites = await getAppetitesSorted();
+  const todayAppetite = appetites.find(a => a.date === today);
+  const card = $('#appetite-card');
+  const picker = $('#appetite-picker');
+  const logged = $('#appetite-logged');
+  const saved = $('#appetite-saved');
+  const heading = $('#appetite-heading');
+  $$('.appetite-btn').forEach(b => b.classList.toggle('selected', todayAppetite && +b.dataset.appetite === todayAppetite.value));
+  if (todayAppetite && !card.dataset.editing) {
+    picker.classList.add('hidden');
+    logged.classList.remove('hidden');
+    $('#appetite-logged-graphic').innerHTML = `<span class="mood-emoji-big">${APPETITE_EMOJIS[todayAppetite.value] || '🍽️'}</span>`;
+    $('#appetite-logged-graphic').classList.add('mood-emoji-display');
+    $('#appetite-logged-label').textContent = APPETITE_LABELS[todayAppetite.value] || 'Logged';
+    // Restore the heading text (it was preserved as innerHTML so the (i) button stays).
+    if (heading) heading.firstChild && (heading.childNodes[0].textContent = "Today's appetite ");
+    if (saved) saved.textContent = '';
+  } else {
+    picker.classList.remove('hidden');
+    logged.classList.add('hidden');
+    if (heading) heading.childNodes[0] && (heading.childNodes[0].textContent = "How's your appetite today? ");
+    if (saved) saved.textContent = todayAppetite ? '✓ saved' : '';
+  }
+  await renderAppetiteTrend(appetites);
+}
+
+async function renderAppetiteTrend(appetites) {
+  const card = $('#appetite-trend-card');
+  if (!card) return;
+  if (!appetites || appetites.length === 0) { card.classList.add('hidden'); return; }
+  card.classList.remove('hidden');
+  const days = 30;
+  const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - (days - 1));
+  const cutoffKey = cutoff.toISOString().slice(0, 10);
+  const inWindow = appetites.filter(a => a.date >= cutoffKey);
+  const wrap = $('#appetite-trend-bars');
+  if (!wrap) return;
+  const byDate = {};
+  inWindow.forEach(a => { byDate[a.date] = a.value; });
+  const bars = [];
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(); d.setDate(d.getDate() - i);
+    const key = d.toISOString().slice(0, 10);
+    const v = byDate[key];
+    if (v) {
+      // Color by suppression: 1-2 = strong (good for GLP-1) = teal, 3 = mid = grey, 4-5 = elevated = warning
+      const cls = v <= 2 ? 'good' : v === 3 ? 'mid' : 'high';
+      bars.push(`<div class="mood-bar ${cls}" style="height:${v * 18}%" title="${key}: ${APPETITE_LABELS[v]}"></div>`);
+    } else {
+      bars.push('<div class="mood-bar empty" title="' + key + ': not logged"></div>');
+    }
+  }
+  wrap.innerHTML = bars.join('');
+  const avg = inWindow.reduce((s, a) => s + a.value, 0) / inWindow.length;
+  const summary = $('#appetite-trend-summary');
+  if (summary) summary.textContent = `Avg ${avg.toFixed(1)} · ${inWindow.length}/${days} days logged`;
+}
+
+function setupAppetiteUI() {
+  $$('.appetite-btn').forEach(btn => btn.addEventListener('click', async () => {
+    const v = parseInt(btn.dataset.appetite, 10);
+    await saveAppetite(todayISODate(), v);
+    delete $('#appetite-card').dataset.editing;
+    await renderAppetite();
+    markSyncDirty();
+    track('appetite_logged', { value: v });
+  }));
+  const change = $('#appetite-change');
+  if (change) change.addEventListener('click', (e) => {
+    e.preventDefault();
+    $('#appetite-card').dataset.editing = '1';
+    renderAppetite();
+  });
 }
 
 // ---------- Stats helpers ----------
@@ -3485,16 +3608,17 @@ async function buildPayload() {
   const shots = (await dbAll(STORES.shots)) || [];
   const weights = (await dbAll(STORES.weights)) || [];
   const moods = (await dbAll(STORES.moods)) || [];
-  let supplies = [], measurements = [], labs = [], expenses = [];
+  let supplies = [], measurements = [], labs = [], expenses = [], appetites = [];
   try { supplies = await getSupplies(); } catch (e) {}
   try { measurements = await getMeasurements(); } catch (e) {}
   try { labs = await getLabs(); } catch (e) {}
   try { expenses = await getExpenses(); } catch (e) {}
+  try { appetites = await getAppetitesSorted(); } catch (e) {}
   return {
-    version: 3,
+    version: 4,
     exportedAt: new Date().toISOString(),
     settings,
-    shots, weights, moods,
+    shots, weights, moods, appetites,
     supplies, measurements, labs, expenses,
   };
 }
@@ -3544,7 +3668,7 @@ async function applyPulledPayload(payload) {
   // Replace local data with cloud copy. Settings merge (preserve local sync creds).
   const db = await openDB();
   await new Promise((resolve, reject) => {
-    const stores = [STORES.shots, STORES.weights, STORES.moods, 'supplies', 'measurements', 'labs', 'expenses'];
+    const stores = [STORES.shots, STORES.weights, STORES.moods, 'supplies', 'measurements', 'labs', 'expenses', 'appetites'];
     const t = db.transaction(stores, 'readwrite');
     stores.forEach(s => t.objectStore(s).clear());
     t.oncomplete = resolve; t.onerror = () => reject(t.error);
@@ -3552,6 +3676,7 @@ async function applyPulledPayload(payload) {
   for (const s of (payload.shots || [])) { delete s.id; await dbAdd(STORES.shots, s); }
   for (const w of (payload.weights || [])) { delete w.id; await dbAdd(STORES.weights, w); }
   for (const m of (payload.moods || [])) await dbPut(STORES.moods, m);
+  for (const a of (payload.appetites || [])) await saveAppetite(a.date, a.value);
   for (const s of (payload.supplies || [])) { delete s.id; await saveSupply(s); }
   for (const m of (payload.measurements || [])) { delete m.id; await saveMeasurement(m); }
   for (const l of (payload.labs || [])) { delete l.id; await saveLab(l); }
