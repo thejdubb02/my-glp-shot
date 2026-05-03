@@ -10,6 +10,11 @@
 <meta name="description" content="Private GLP-1 shot tracker for Tirzepatide, Mounjaro, Zepbound, Semaglutide, Ozempic, and Wegovy. Log doses, weight, side effects. Works offline. Your data stays on your device. $19.99/year.">
 <meta name="keywords" content="GLP-1 tracker, tirzepatide tracker, semaglutide tracker, shot tracker, weight loss shot tracker, injection tracker, Mounjaro tracker, Zepbound tracker, Ozempic tracker, Wegovy tracker, GLP-1 dose tracker, weekly shot reminder, privacy-first weight loss app">
 <link rel="canonical" href="https://myglpshot.com/">
+<!-- Allow Google AI Overviews / Bing Copilot / others to use full snippets and large images -->
+<meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1">
+<!-- Surface llms.txt the same way browsers already auto-discover sitemap, manifest, alternate feeds -->
+<link rel="alternate" type="text/plain" title="llms.txt summary" href="/llms.txt">
+<link rel="alternate" type="text/plain" title="llms-full.txt long form" href="/llms-full.txt">
 
 <!-- Open Graph -->
 <meta property="og:type" content="website">
@@ -148,6 +153,92 @@
   "sameAs": [
     "https://github.com/thejdubb02/my-glp-shot"
   ]
+}
+</script>
+
+<!-- Schema.org: WebApplication (more specific than SoftwareApplication for PWAs) -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "My GLP Shot",
+  "url": "https://app.myglpshot.com/",
+  "applicationCategory": "HealthApplication",
+  "applicationSubCategory": "GLP-1 Shot Tracker",
+  "browserRequirements": "Requires modern web browser with IndexedDB support (Chrome 90+, Safari 14+, Firefox 90+, Edge 90+).",
+  "operatingSystem": "Web, iOS 16.4+, Android 10+, Windows, macOS, Linux",
+  "permissions": "Notifications (optional), Persistent Storage",
+  "memoryRequirements": "<25 MB",
+  "storageRequirements": "<50 MB local storage",
+  "isAccessibleForFree": true,
+  "offers": {
+    "@type": "Offer",
+    "price": "0",
+    "priceCurrency": "USD"
+  },
+  "publisher": {
+    "@type": "Organization",
+    "name": "Willhite Strategy Group",
+    "url": "https://willhitestrategy.com"
+  },
+  "screenshot": "https://myglpshot.com/og-image.png",
+  "featureList": [
+    "Offline-capable Progressive Web App",
+    "Local-first IndexedDB storage",
+    "End-to-end encrypted optional cloud sync",
+    "Push notifications via Web Push API",
+    "32 progress achievements with shareable cards",
+    "Mixing calculator for compounded peptides",
+    "Active medication level chart",
+    "Injection site rotation"
+  ]
+}
+</script>
+
+<!-- Schema.org: WebPage with Speakable hints — flags the spans that voice assistants
+     and AI overviews should prefer when they read the page out loud. -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebPage",
+  "name": "My GLP Shot — Private GLP-1 Shot Tracker",
+  "url": "https://myglpshot.com/",
+  "inLanguage": "en-US",
+  "isPartOf": { "@type": "WebSite", "url": "https://myglpshot.com/" },
+  "primaryImageOfPage": { "@type": "ImageObject", "url": "https://myglpshot.com/og-image.png" },
+  "lastReviewed": "2026-05-03",
+  "speakable": {
+    "@type": "SpeakableSpecification",
+    "cssSelector": ["section.glance", "section#compare", "section#faq"]
+  }
+}
+</script>
+
+<!-- Schema.org: BreadcrumbList -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+    { "@type": "ListItem", "position": 1, "name": "Home", "item": "https://myglpshot.com/" },
+    { "@type": "ListItem", "position": 2, "name": "Open the app", "item": "https://app.myglpshot.com/" }
+  ]
+}
+</script>
+
+<!-- Schema.org: ImageObject for OG hero (helps image search + LLM citation of visuals) -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "ImageObject",
+  "contentUrl": "https://myglpshot.com/og-image.png",
+  "url": "https://myglpshot.com/og-image.png",
+  "width": 1200,
+  "height": 630,
+  "caption": "My GLP Shot — private GLP-1 shot tracker for Tirzepatide and Semaglutide",
+  "creditText": "My GLP Shot",
+  "creator": { "@type": "Organization", "name": "Willhite Strategy Group" },
+  "license": "https://myglpshot.com/terms.html"
 }
 </script>
 
