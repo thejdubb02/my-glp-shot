@@ -11,25 +11,60 @@ MODEL    = "imagen-4.0-generate-001"
 
 # Same ids as ACHIEVEMENTS in app.js. Each prompt is a self-contained scene
 # so the icons feel distinct, not just colour-shifted versions of one shape.
-STYLE = ("Luxe achievement medallion, 3D embossed metallic finish with soft realistic lighting, polished and gilded, "
-         "centered subject filling the composition, dark navy radial gradient background, subtle inner glow, "
-         "premium app trophy aesthetic in the spirit of Apple Fitness rings or Duolingo league badges, "
-         "vector-clean shapes, no text, no watermark, no letters, square 1:1.")
+# STANDARDIZED prompt template. Every badge follows the same visual language so the
+# collection feels like a coherent set, not 30 unrelated illustrations:
+#   • 3D embossed metallic medal/coin, polished gold-bronze with subtle highlights
+#   • Centered sculpted subject filling 60% of the composition
+#   • Deep navy radial gradient background with subtle vignette + a faint gold ring
+#   • Studio lighting, cinematic, premium app trophy aesthetic
+#   • No text, no letters, no watermark — the subject conveys the meaning
+STYLE = (
+  "3D embossed metallic medallion icon, polished gold and bronze finish with soft realistic studio "
+  "lighting, deep dark navy blue radial gradient background with a faint gold ring framing the edge, "
+  "centered sculpted subject filling about 60 percent of the composition, premium app trophy "
+  "aesthetic similar to Apple Fitness or Duolingo league badges, clean vector-like silhouette, "
+  "subtle inner glow, square 1:1 composition. No text, no letters, no watermark, no numbers in the image."
+)
 
 PROMPTS = {
-  "first":    f"Polished gold and rose-gold insulin syringe with a soft confetti burst of warm bronze and cream particles. {STYLE}",
-  "ten":      f"Large stylized numeral 10 sculpted in polished bronze with engraved highlights, sitting on a circular gilded coin with subtle starburst rays. {STYLE}",
-  "fifty":    f"Five-fingered open hand sculpted in polished bronze, palm forward, ringed by a thin gold halo and small twinkles. {STYLE}",
-  "hundred":  f"Bold sculpted 100 numeral on a layered ribbon-and-laurel gold medal, deep crimson velvet ribbon trailing, fireworks of gold sparks behind. {STYLE}",
-  "streak4":  f"Stylized 3D flame in molten gold and bronze with a delicate engraved 4 visible inside the flame core, warm glow. {STYLE}",
-  "streak12": f"Sleek streamlined rocket sculpted in chrome and bronze trailing a stardust comet of small gold particles, dynamic diagonal motion. {STYLE}",
-  "streak26": f"Tall classic trophy cup sculpted in polished gold with engraved laurel branches wrapping the cup, deep navy backdrop. {STYLE}",
-  "streak52": f"Regal jeweled crown sculpted in polished gold with small ruby-red gemstones, sitting above a softly draped gold ribbon banner. {STYLE}",
-  "lost5":    f"Single five-pointed star sculpted in polished emerald-and-gold bimetal, gentle scale-of-balance silhouette etched faintly behind. {STYLE}",
-  "lost10":   f"Radiant burst sculpted in polished gold and emerald with a downward-sweeping ribbon arc behind it, suggesting progress. {STYLE}",
-  "lost25":   f"Shooting star sculpted in polished gold with a long emerald vapor trail and small twinkles along the tail. {STYLE}",
-  "lost50":   f"Massive ornate starburst sculpted in polished emerald-green and bright gold, rays radiating outward, prestige tier finish. {STYLE}",
-  "titrate":  f"Three sculpted 3D bars rising in size left to right with an upward gold arrow soaring past the tallest bar, polished bronze finish. {STYLE}",
+  # Shot count
+  "first":      f"A single polished gold-and-rose-gold insulin syringe held diagonally with a small confetti burst of warm bronze sparkles. {STYLE}",
+  "three":      f"Three polished gold insulin syringes arranged in a tight fan formation, their tips meeting at center, gold sparks behind. {STYLE}",
+  "ten":        f"A single large polished gold coin with a deep engraved laurel wreath ring, soft glow at center. {STYLE}",
+  "twentyfive": f"A polished gold target with a single arrow striking dead center, tight bullseye, subtle starburst behind. {STYLE}",
+  "fifty":      f"An open polished gold hand, palm facing forward fingers spread, ringed by a thin gold halo and small twinkles. {STYLE}",
+  "hundred":    f"A grand layered gold medal hanging from a deep crimson velvet ribbon with a starburst rosette at the top, fireworks of small gold sparks behind. {STYLE}",
+  "twohundred": f"A double-tier gold and bronze medal stack with engraved laurels wrapping both layers, premium prestige finish. {STYLE}",
+  "fivehundred":f"An ornate antique gold service medallion with a polished engraved star at center surrounded by intricate filigree, prestige veteran-tier finish. {STYLE}",
+  # Streaks (consistency)
+  "streak2":    f"A single stylized polished gold flame, slim and elegant, with a soft warm glow. {STYLE}",
+  "streak4":    f"A larger stylized polished gold flame with a small bronze core, warm glow halo. {STYLE}",
+  "streak8":    f"A polished gold lightning bolt with a soft electric glow, dynamic and angular. {STYLE}",
+  "streak12":   f"A sleek streamlined polished gold rocket trailing a stardust comet of small bronze sparks, dynamic diagonal motion. {STYLE}",
+  "streak26":   f"A tall classic polished gold trophy cup with engraved laurel branches wrapping the cup, two upright handles. {STYLE}",
+  "streak52":   f"A regal jeweled polished gold crown with small ruby-red gemstones at the points, ornate filigree band. {STYLE}",
+  "streak104":  f"A faceted brilliant-cut diamond rendered in clear crystal with internal rainbow refractions, set on a small gold pedestal, sparkles around. {STYLE}",
+  # Weight loss
+  "lost2":      f"A young green sapling with two leaves emerging from polished gold soil, soft glow. {STYLE}",
+  "lost5":      f"A single five-pointed star sculpted in polished gold with a tiny etched balance scale silhouette behind it. {STYLE}",
+  "lost10":     f"A radiant ten-point starburst sculpted in polished gold and emerald, rays extending outward. {STYLE}",
+  "lost15":     f"A polished emerald heart with gold filigree edges, soft inner glow. {STYLE}",
+  "lost25":     f"A shooting star sculpted in polished gold with a long emerald vapor trail and small twinkles along the tail. {STYLE}",
+  "lost40":     f"A bright comet sculpted in polished gold with a sweeping emerald tail forming an arc, several small stars in its wake. {STYLE}",
+  "lost50":     f"A massive ornate sunburst sculpted in polished emerald and bright gold, twelve sharp rays radiating outward from a central polished orb. {STYLE}",
+  "lost75":     f"A graceful butterfly sculpted in polished gold and emerald with intricate engraved wing patterns. {STYLE}",
+  "lost100":    f"A majestic polished gold mountain peak with a small flag planted at the summit, dramatic shadows, prestige tier finish. {STYLE}",
+  # Dose ladder
+  "titrate":    f"Three sculpted 3D bars rising in size from left to right with a polished gold upward arrow soaring past the tallest bar. {STYLE}",
+  "maintain":   f"A polished gold balance scale, both pans perfectly level, sitting on a small ornate pedestal. {STYLE}",
+  # Engagement
+  "mood7":      f"A polished gold smiling sun with seven distinct rays radiating outward, warm cheerful glow. {STYLE}",
+  "mood30":     f"A polished gold thought bubble with a small sparkling heart inside, soft inner glow. {STYLE}",
+  "weight10":   f"A polished gold bar chart with three rising bars and a small magnifying glass overlapping them. {STYLE}",
+  "weight50":   f"A polished gold downward-trending line graph with several plotted dots and a small flag at the lowest point. {STYLE}",
+  # Special
+  "comeback":   f"A polished gold sunrise emerging from behind a stylized horizon line, golden rays fanning upward. {STYLE}",
+  "centurion":  f"An ornate polished gold heraldic shield with a small engraved 100 etched at center, surrounded by laurels. {STYLE}",
 }
 
 def load_key():
@@ -58,16 +93,26 @@ def main():
     os.makedirs(OUT_DIR, exist_ok=True)
     api_key = load_key()
     targets = PROMPTS.items() if not only else [(k, PROMPTS[k]) for k in only if k in PROMPTS]
+    # Lazy import PIL so the script runs without it for prompt-only edits.
+    try:
+        from PIL import Image
+        import io
+    except ImportError:
+        print("Pillow required: pip install Pillow")
+        return
     for bid, prompt in targets:
-        out = os.path.join(OUT_DIR, f"{bid}.png")
+        out = os.path.join(OUT_DIR, f"{bid}.webp")
         if os.path.exists(out) and not force:
             print(f"skip {bid} (exists)")
             continue
         for attempt in range(3):
             try:
                 png = gen(api_key, bid, prompt)
-                with open(out, "wb") as f: f.write(png)
-                print(f"ok   {bid}  {len(png)//1024} KB")
+                # Resize and write as WebP (massively smaller for the same fidelity).
+                im = Image.open(io.BytesIO(png)).convert("RGB").resize((640, 640), Image.LANCZOS)
+                im.save(out, "WEBP", quality=85, method=6)
+                kb = os.path.getsize(out) // 1024
+                print(f"ok   {bid}  {kb} KB")
                 break
             except Exception as e:
                 print(f"fail {bid} attempt {attempt+1}: {e}")

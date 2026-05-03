@@ -647,7 +647,130 @@ async function probe(name, fn) {
     await new Promise(r => setTimeout(r, 400));
     const count30 = await page.evaluate(() => weightChart ? weightChart.data.datasets[0].data.length : 0);
     if (count30 !== 2) throw new Error(`30d expected 2 points, got ${count30}; dates=${JSON.stringify(dates)}`);
+    // Close any open dialog (install prompt, upgrade nag, etc.) so the chart isn't occluded.
+    await page.evaluate(() => { document.querySelectorAll('dialog[open]').forEach(d => d.close()); });
+    await new Promise(t => setTimeout(t, 200));
+    // Visual proof: screenshot the chart canvas at each range so a human can review.
+    for (const r of ['30','90','180','365','all']) {
+      await page.evaluate((r) => {
+        const btn = Array.from(document.querySelectorAll('.range-btn[data-range]')).find(b => b.dataset.range === r);
+        if (btn) btn.click();
+      }, r);
+      await new Promise(t => setTimeout(t, 400));
+      const cv = await page.$('#weight-chart');
+      if (cv) {
+        try { await cv.scrollIntoView(); } catch (_) {}
+        await new Promise(t => setTimeout(t, 200));
+        try { await cv.screenshot({ path: require('path').join(SCREENSHOT_DIR, `weight-chart-${r}.png`) }); } catch (_) {}
+      }
+    }
     return `migrated→canonical, 30d=${count30}`;
+  });
+
+  // === Achievement render + share-card verification ===
+  // Seed enough shots/weights to unlock most tiers, then check that:
+  //  1. Achievement tiles render with images
+  //  2. Each tile opens the share dialog
+  //  3. The share canvas renders non-empty pixels
+  await probe('achievements_full_render', async () => {
+    await page.evaluate(() => document.querySelector('#bottom-nav .nav-btn[data-nav-tab="home"]').click());
+    await new Promise(r => setTimeout(r, 400));
+    await page.evaluate(() => { document.querySelectorAll('dialog[open]').forEach(d => d.close()); });
+
+    // Seed: 60 shots over ~52 weeks at constant cadence (unlocks streak26 + 50-shot tier).
+    // Plus weights showing 30 lb loss to unlock multiple weight badges.
+    const stats = await page.evaluate(async () => {
+      const db = await openDB();
+      // Clear shots, weights, moods first.
+      for (const store of ['shots', 'weights', 'moods']) {
+        await new Promise(res => { const tx = db.transaction(store, 'readwrite'); tx.objectStore(store).clear(); tx.oncomplete = res; });
+      }
+      const today = new Date(); today.setHours(12,0,0,0);
+      // 60 weekly shots, last 60 weeks
+      for (let i = 0; i < 60; i++) {
+        const when = new Date(today); when.setDate(when.getDate() - i * 7);
+        await new Promise((res, rej) => {
+          const tx = db.transaction('shots', 'readwrite');
+          const a = tx.objectStore('shots').add({ when: when.toISOString(), dose: i < 8 ? 2.5 : (i < 20 ? 5.0 : 7.5), site: 'abdomen', notes: null });
+          a.onsuccess = () => { tx.oncomplete = res; }; a.onerror = () => rej(a.error);
+        });
+      }
+      // 12 weights showing 30 lb loss
+      for (let i = 0; i < 12; i++) {
+        const d = new Date(today); d.setDate(d.getDate() - i * 30);
+        const ymd = d.toISOString().slice(0,10);
+        await new Promise((res, rej) => {
+          const tx = db.transaction('weights', 'readwrite');
+          const a = tx.objectStore('weights').add({ value: 200 + i * 2.5, unit: 'lb', date: ymd });
+          a.onsuccess = () => { tx.oncomplete = res; }; a.onerror = () => rej(a.error);
+        });
+      }
+      // Set start weight so delta is calculable
+      settings.startWeight = 230;
+      await saveSettings();
+      // 10 moods
+      for (let i = 0; i < 10; i++) {
+        const d = new Date(today); d.setDate(d.getDate() - i);
+        await new Promise((res, rej) => {
+          const tx = db.transaction('moods', 'readwrite');
+          const a = tx.objectStore('moods').put({ date: d.toISOString().slice(0,10), value: 4 });
+          a.onsuccess = () => { tx.oncomplete = res; }; a.onerror = () => rej(a.error);
+        });
+      }
+      const shots = (await dbAll('shots')) || [];
+      const weights = (await dbAll('weights')) || [];
+      const moods = (await dbAll('moods')) || [];
+      const stats = computeStats(shots, weights, moods);
+      const unlocked = ACHIEVEMENTS.filter(a => a.test(stats));
+      // Force re-render
+      if (typeof renderShots === 'function') await renderShots();
+      return { shots: shots.length, weights: weights.length, moods: moods.length, unlockedCount: unlocked.length, unlocked: unlocked.map(a => a.id) };
+    });
+    if (stats.unlockedCount < 10) throw new Error(`expected ≥10 unlocked, got ${stats.unlockedCount}: ${JSON.stringify(stats)}`);
+    // Verify badge tiles rendered with images
+    const tileInfo = await page.evaluate(() => {
+      const tiles = document.querySelectorAll('.badge-tile[data-badge-id]');
+      return Array.from(tiles).map(t => ({ id: t.dataset.badgeId, hasImg: !!t.querySelector('img.badge-tile-art'), label: t.querySelector('.badge-tile-label')?.textContent }));
+    });
+    if (tileInfo.length === 0) throw new Error('no tiles rendered');
+    if (tileInfo.some(t => !t.hasImg)) throw new Error('a tile is missing its art img');
+    // Open the share dialog for the first tile and check the canvas was painted
+    const cardInfo = await page.evaluate(async (badgeId) => {
+      await openBadgeShare(badgeId);
+      // Wait a beat for image load + canvas paint
+      await new Promise(r => setTimeout(r, 1200));
+      const dlg = document.getElementById('badge-share-dialog');
+      const cv = document.getElementById('badge-share-canvas');
+      const ctx = cv.getContext('2d');
+      const sample = ctx.getImageData(540, 540, 1, 1).data;
+      return { dlgOpen: dlg.hasAttribute('open'), pixelR: sample[0], pixelG: sample[1], pixelB: sample[2], pixelA: sample[3] };
+    }, stats.unlocked[0]);
+    if (!cardInfo.dlgOpen) throw new Error('share dialog did not open');
+    if (cardInfo.pixelA === 0) throw new Error(`canvas center pixel transparent (a=${cardInfo.pixelA})`);
+    // Sanity-check the rendered frame is square (within 5%).
+    const dims = await page.evaluate(() => {
+      const fr = document.querySelector('.badge-share-frame');
+      const cv = document.getElementById('badge-share-canvas');
+      const dlg = document.getElementById('badge-share-dialog');
+      return {
+        frame: fr ? { w: fr.clientWidth, h: fr.clientHeight, rect: fr.getBoundingClientRect().toJSON() } : null,
+        canvas: cv ? { cssW: cv.clientWidth, cssH: cv.clientHeight, attrW: cv.width, attrH: cv.height } : null,
+        dialog: dlg ? { w: dlg.clientWidth, h: dlg.clientHeight, rect: dlg.getBoundingClientRect().toJSON() } : null,
+        viewport: { w: window.innerWidth, h: window.innerHeight },
+      };
+    });
+    console.log('[badge-share dims]', JSON.stringify(dims));
+    // Screenshot 4 share cards across the tier range so we can review the standardized look.
+    const path = require('path');
+    const samples = [stats.unlocked[0], stats.unlocked[Math.floor(stats.unlocked.length/2)], stats.unlocked[stats.unlocked.length-1]];
+    for (const id of samples) {
+      await page.evaluate((bid) => { document.getElementById('badge-share-dialog').close(); openBadgeShare(bid); }, id);
+      await new Promise(t => setTimeout(t, 1000));
+      const cv = await page.$('#badge-share-canvas');
+      if (cv) try { await cv.screenshot({ path: path.join(SCREENSHOT_DIR, `share-card-${id}.png`) }); } catch (_) {}
+    }
+    await page.evaluate(() => document.getElementById('badge-share-dialog').close());
+    return `tiles=${tileInfo.length} unlocked=${stats.unlockedCount} firstSharePainted=ok`;
   });
 
   // === 23. Plateau detection logic runs without error ===

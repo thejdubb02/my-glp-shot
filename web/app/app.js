@@ -6,7 +6,7 @@
 const DB_NAME = 'shotclock';
 // v6 bump: 'appetites' store added — daily appetite check-in alongside mood (GLP-1 mechanism is appetite suppression).
 const DB_VERSION = 6;
-const APP_VERSION = '0.39.1';
+const APP_VERSION = '0.40.0';
 
 // Umami event tracker. Aggregates only — no PII (no email, no IDs). Safe to call before umami loads.
 function track(event, props) {
@@ -419,19 +419,44 @@ const SITE_POSITIONS = {
 };
 
 const ACHIEVEMENTS = [
-  { id: 'first',     icon: '💉', label: 'First shot logged',          test: ({shots}) => shots.length >= 1 },
-  { id: 'ten',       icon: '🔟', label: '10 shots',                    test: ({shots}) => shots.length >= 10 },
-  { id: 'fifty',     icon: '✋', label: '50 shots',                    test: ({shots}) => shots.length >= 50 },
-  { id: 'hundred',   icon: '💯', label: '100 shots',                   test: ({shots}) => shots.length >= 100 },
-  { id: 'streak4',   icon: '🔥', label: '4-week streak',               test: ({streak}) => streak >= 4 },
-  { id: 'streak12',  icon: '🚀', label: '12-week streak',              test: ({streak}) => streak >= 12 },
-  { id: 'streak26',  icon: '🏆', label: '6-month streak',              test: ({streak}) => streak >= 26 },
-  { id: 'streak52',  icon: '👑', label: '1-year streak',               test: ({streak}) => streak >= 52 },
-  { id: 'lost5',     icon: '⭐', label: '5 lb lost',                   test: ({delta}) => delta <= -5 },
-  { id: 'lost10',    icon: '🌟', label: '10 lb lost',                  test: ({delta}) => delta <= -10 },
-  { id: 'lost25',    icon: '💫', label: '25 lb lost',                  test: ({delta}) => delta <= -25 },
-  { id: 'lost50',    icon: '✨', label: '50 lb lost',                  test: ({delta}) => delta <= -50 },
-  { id: 'titrate',   icon: '📈', label: 'Dose graduation',             test: ({maxDose, minDose}) => maxDose > minDose },
+  // Shot count milestones — covers the full journey, with early wins to keep momentum
+  { id: 'first',     icon: '💉', label: 'First shot logged',           test: ({shots}) => shots.length >= 1 },
+  { id: 'three',     icon: '3️⃣', label: '3 shots taken',                test: ({shots}) => shots.length >= 3 },
+  { id: 'ten',       icon: '🔟', label: '10 shots',                     test: ({shots}) => shots.length >= 10 },
+  { id: 'twentyfive',icon: '🎯', label: '25 shots',                     test: ({shots}) => shots.length >= 25 },
+  { id: 'fifty',     icon: '✋', label: '50 shots',                     test: ({shots}) => shots.length >= 50 },
+  { id: 'hundred',   icon: '💯', label: '100 shots',                    test: ({shots}) => shots.length >= 100 },
+  { id: 'twohundred',icon: '🎖️', label: '200 shots',                    test: ({shots}) => shots.length >= 200 },
+  { id: 'fivehundred',icon: '🏅', label: '500 shots — veteran',         test: ({shots}) => shots.length >= 500 },
+  // On-cadence streaks — every week you hit your scheduled shot
+  { id: 'streak2',   icon: '✨', label: '2-week streak',                test: ({streak}) => streak >= 2 },
+  { id: 'streak4',   icon: '🔥', label: '4-week streak',                test: ({streak}) => streak >= 4 },
+  { id: 'streak8',   icon: '⚡', label: '8-week streak',                test: ({streak}) => streak >= 8 },
+  { id: 'streak12',  icon: '🚀', label: '12-week streak',               test: ({streak}) => streak >= 12 },
+  { id: 'streak26',  icon: '🏆', label: '6-month streak',               test: ({streak}) => streak >= 26 },
+  { id: 'streak52',  icon: '👑', label: '1-year streak',                test: ({streak}) => streak >= 52 },
+  { id: 'streak104', icon: '💎', label: '2-year streak',                test: ({streak}) => streak >= 104 },
+  // Weight loss tiers — all measured against starting weight
+  { id: 'lost2',     icon: '🌱', label: 'First 2 lb lost',              test: ({delta}) => delta <= -2 },
+  { id: 'lost5',     icon: '⭐', label: '5 lb lost',                    test: ({delta}) => delta <= -5 },
+  { id: 'lost10',    icon: '🌟', label: '10 lb lost',                   test: ({delta}) => delta <= -10 },
+  { id: 'lost15',    icon: '💚', label: '15 lb lost',                   test: ({delta}) => delta <= -15 },
+  { id: 'lost25',    icon: '💫', label: '25 lb lost',                   test: ({delta}) => delta <= -25 },
+  { id: 'lost40',    icon: '🌠', label: '40 lb lost',                   test: ({delta}) => delta <= -40 },
+  { id: 'lost50',    icon: '✨', label: '50 lb lost',                   test: ({delta}) => delta <= -50 },
+  { id: 'lost75',    icon: '🦋', label: '75 lb lost',                   test: ({delta}) => delta <= -75 },
+  { id: 'lost100',   icon: '🏔️', label: '100 lb lost — life-changing', test: ({delta}) => delta <= -100 },
+  // Dose ladder — recognizes the titration journey
+  { id: 'titrate',   icon: '📈', label: 'First dose increase',          test: ({maxDose, minDose, shots}) => shots.length >= 2 && maxDose > minDose },
+  { id: 'maintain',  icon: '⚖️', label: 'Holding steady',               test: ({shots, maxDose}) => shots.length >= 8 && shots.slice(-4).every(s => s.dose === maxDose) },
+  // Engagement — rewards using the tracker
+  { id: 'mood7',     icon: '😊', label: 'Mood tracked 7 days',          test: ({moodCount}) => moodCount >= 7 },
+  { id: 'mood30',    icon: '💭', label: 'Mood tracked 30 days',         test: ({moodCount}) => moodCount >= 30 },
+  { id: 'weight10',  icon: '📊', label: '10 weights logged',            test: ({weightCount}) => weightCount >= 10 },
+  { id: 'weight50',  icon: '📉', label: '50 weights logged',            test: ({weightCount}) => weightCount >= 50 },
+  // Special / milestone
+  { id: 'comeback',  icon: '🌅', label: 'Comeback — back on track',     test: ({comeback}) => comeback === true },
+  { id: 'centurion', icon: '🛡️', label: '100 days in the app',         test: ({appDays}) => appDays >= 100 },
 ];
 
 // ---------- IndexedDB helpers ----------
@@ -1335,6 +1360,16 @@ async function renderWeights() {
   const labels = ws.map(w => fmtDateShort(w.date));
   const data = ws.map(w => w.value);
   const unit = (ws[0] && ws[0].unit) || 'lb';
+  // Compute padded Y-axis bounds. If weights cluster within a small range (very common
+  // for short windows like 1M), Chart.js's auto-scale produces a near-flat line at the
+  // top of the canvas, which reads as "broken." Force at least a sensible visible range.
+  const minVal = Math.min(...data);
+  const maxVal = Math.max(...data);
+  const observedSpread = maxVal - minVal;
+  const minSpread = unit === 'kg' ? 4 : 8; // ~8 lb / 4 kg minimum on screen
+  const pad = Math.max((minSpread - observedSpread) / 2, observedSpread * 0.15);
+  const yMin = Math.max(0, Math.floor(minVal - pad));
+  const yMax = Math.ceil(maxVal + pad);
   if (weightChart) weightChart.destroy();
   weightChart = new Chart(ctx, {
     type: 'line',
@@ -1354,7 +1389,7 @@ async function renderWeights() {
           },
         },
       },
-      scales: { y: { beginAtZero: false } },
+      scales: { y: { beginAtZero: false, suggestedMin: yMin, suggestedMax: yMax } },
     },
   });
 }
@@ -2727,21 +2762,43 @@ async function renderMoodTrend(moods) {
 
 // ---------- Achievements ----------
 let _badgesExpanded = false;
-function computeStats(shots, weights) {
+function computeStats(shots, weights, moods) {
   const wd = weightDelta(weights, settings.startWeight);
   const delta = wd ? wd.delta : 0;
   const streak = computeStreak(shots, settings.cadenceDays || 7);
   const doses = shots.map(s => s.dose).filter(d => d > 0);
+  // Comeback: detect a gap of >2 cadence intervals followed by 2+ on-cadence shots.
+  let comeback = false;
+  if (shots.length >= 4) {
+    const sorted = [...shots].sort((a,b) => new Date(a.when) - new Date(b.when));
+    const cad = (settings.cadenceDays || 7) * 86400000;
+    for (let i = 1; i < sorted.length - 1; i++) {
+      const gap = new Date(sorted[i].when) - new Date(sorted[i-1].when);
+      if (gap > cad * 2.5) {
+        // there was a lapse — check that we have 2+ shots after this point on cadence
+        const tail = sorted.slice(i);
+        if (tail.length >= 2) { comeback = true; break; }
+      }
+    }
+  }
+  // Days since first shot, used for "centurion" engagement badge
+  const firstShot = shots.length ? new Date([...shots].sort((a,b) => new Date(a.when) - new Date(b.when))[0].when) : null;
+  const appDays = firstShot ? Math.floor((Date.now() - firstShot.getTime()) / 86400000) : 0;
   return {
     shots,
     streak,
     delta,
     maxDose: doses.length ? Math.max(...doses) : 0,
     minDose: doses.length ? Math.min(...doses) : 0,
+    moodCount: (moods || []).length,
+    weightCount: (weights || []).length,
+    comeback,
+    appDays,
   };
 }
 async function renderBadges(shots, weights) {
-  const stats = computeStats(shots, weights);
+  const moods = (await dbAll(STORES.moods)) || [];
+  const stats = computeStats(shots, weights, moods);
   const card = $('#badges-card');
   const list = $('#badges-list');
   const unlocked = ACHIEVEMENTS.filter(a => a.test(stats));
@@ -2765,7 +2822,7 @@ async function renderBadges(shots, weights) {
   const ordered = [...unlocked].sort((a, b) => (dates[b.id] || '').localeCompare(dates[a.id] || ''));
   const collapsed = !_badgesExpanded && ordered.length > 6;
   const visible = collapsed ? ordered.slice(0, 6) : ordered;
-  const cards = visible.map(a => `<button type="button" class="badge-tile" data-badge-id="${a.id}" aria-label="Share ${escapeHTML(a.label)}"><img class="badge-tile-art" src="icons/achievements/${a.id}.png" alt="" loading="lazy" onerror="this.style.display='none'"><span class="badge-tile-label">${escapeHTML(a.label)}</span></button>`).join('');
+  const cards = visible.map(a => `<button type="button" class="badge-tile" data-badge-id="${a.id}" aria-label="Share ${escapeHTML(a.label)}"><img class="badge-tile-art" src="icons/achievements/${a.id}.webp" alt="" loading="lazy" onerror="this.style.display='none'"><span class="badge-tile-label">${escapeHTML(a.label)}</span></button>`).join('');
   const toggleBtn = ordered.length > 6
     ? `<button type="button" id="badges-toggle" class="btn-ghost badges-toggle">${_badgesExpanded ? 'Show fewer' : `Show all (${ordered.length})`}</button>`
     : '';
@@ -2818,7 +2875,7 @@ function loadAchievementImage(badgeId) {
     img.crossOrigin = 'anonymous';
     img.onload = () => resolve(img);
     img.onerror = () => resolve(null);
-    img.src = `icons/achievements/${badgeId}.png`;
+    img.src = `icons/achievements/${badgeId}.webp`;
   });
 }
 
@@ -2851,10 +2908,10 @@ async function renderBadgeShareCanvas(a, earnedISO) {
   ctx.font = 'bold 38px -apple-system, "Helvetica Neue", system-ui, sans-serif';
   ctx.textAlign = 'center';
   ctx.fillText('★  ACHIEVEMENT UNLOCKED  ★', W / 2, 120);
-  // Hero image, large, centered, drop-shadow for lift (no clip — let the AI art's own framing show).
+  // Hero image, drop-shadow for lift. Smaller to leave clear room for label + date.
   const heroImg = await loadAchievementImage(a.id);
-  const heroSize = 720;
-  const cx = W / 2, cy = H * 0.46;
+  const heroSize = 600;
+  const cx = W / 2, cy = H * 0.42;
   if (heroImg) {
     ctx.save();
     ctx.shadowColor = 'rgba(0,0,0,0.55)';
@@ -2870,7 +2927,7 @@ async function renderBadgeShareCanvas(a, earnedISO) {
     ctx.textBaseline = 'alphabetic';
   }
   // Decorative gold rule
-  const ruleY = cy + heroSize/2 + 30;
+  const ruleY = cy + heroSize/2 + 20;
   const rule = ctx.createLinearGradient(W*0.2, 0, W*0.8, 0);
   rule.addColorStop(0, 'rgba(253,224,138,0)');
   rule.addColorStop(0.5, 'rgba(253,224,138,0.85)');
@@ -2879,13 +2936,13 @@ async function renderBadgeShareCanvas(a, earnedISO) {
   ctx.fillRect(W*0.2, ruleY, W*0.6, 2);
   // Label — large and confident
   ctx.fillStyle = '#fff';
-  ctx.font = 'bold 76px -apple-system, "Helvetica Neue", system-ui, sans-serif';
-  wrapText(ctx, a.label, W / 2, ruleY + 100, W - 160, 86);
+  ctx.font = 'bold 60px -apple-system, "Helvetica Neue", system-ui, sans-serif';
+  wrapText(ctx, a.label, W / 2, ruleY + 65, W - 160, 70);
   // Date — small caps style
   const dateStr = new Date(earnedISO + 'T00:00:00').toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
   ctx.fillStyle = 'rgba(253,224,138,0.92)';
-  ctx.font = '34px -apple-system, "Helvetica Neue", system-ui, sans-serif';
-  ctx.fillText(dateStr.toUpperCase(), W / 2, ruleY + 220);
+  ctx.font = '28px -apple-system, "Helvetica Neue", system-ui, sans-serif';
+  ctx.fillText(dateStr.toUpperCase(), W / 2, ruleY + 130);
   // Footer brand bar — gilt strip on dark
   ctx.fillStyle = 'rgba(0,0,0,0.55)';
   ctx.fillRect(0, H - 120, W, 120);
