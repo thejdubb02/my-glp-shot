@@ -556,9 +556,23 @@ async function getShotsSorted() {
   const all = (await dbAll(STORES.shots)) || [];
   return all.sort((a, b) => new Date(b.when) - new Date(a.when));
 }
+// Parse a stored date that might be 'YYYY-MM-DD', 'YYYY-MM-DDTHH:MM[:SSZ]', or a number.
+// Returns ms since epoch, or NaN if unparseable. Bare YYYY-MM-DD is anchored to local midnight
+// (not UTC) so day-bucket comparisons line up with the user's calendar.
+function parseDateFlexible(d) {
+  if (d == null) return NaN;
+  if (typeof d === 'number') return d;
+  const s = String(d);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    const [y, m, day] = s.split('-').map(Number);
+    return new Date(y, m - 1, day).getTime();
+  }
+  return new Date(s).getTime();
+}
+
 async function getWeightsSorted() {
   const all = (await dbAll(STORES.weights)) || [];
-  return all.sort((a, b) => new Date(a.date) - new Date(b.date));
+  return all.sort((a, b) => parseDateFlexible(a.date) - parseDateFlexible(b.date));
 }
 
 // ---------- Countdown / next shot ----------
@@ -1236,13 +1250,15 @@ async function renderWeights() {
     return;
   }
   // Apply selected range filter (default = all). Day-precision cutoff at local midnight.
+  // w.date can be 'YYYY-MM-DD' (logged) or a full ISO timestamp (imported). Parse robustly.
   let ws = wsAll;
   if (_weightRangeDays !== 'all') {
     const days = parseInt(_weightRangeDays, 10);
     const cutoff = new Date(); cutoff.setHours(0,0,0,0); cutoff.setDate(cutoff.getDate() - days);
+    const cutoffMs = cutoff.getTime();
     ws = wsAll.filter(w => {
-      const d = new Date(w.date + 'T00:00:00');
-      return d.getTime() >= cutoff.getTime();
+      const t = parseDateFlexible(w.date);
+      return Number.isFinite(t) && t >= cutoffMs;
     });
   }
   empty.classList.add('hidden');

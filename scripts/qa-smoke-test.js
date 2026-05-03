@@ -529,6 +529,54 @@ async function probe(name, fn) {
     return `Δ=${(after - before).toFixed(2)}`;
   });
 
+  // === Weight chart range filter — seed weights at 5/45/120/200 days back and verify counts ===
+  await probe('weight_chart_range_filters', async () => {
+    await page.evaluate(() => document.querySelector('#bottom-nav .nav-btn[data-nav-tab="insights"]').click());
+    await new Promise(r => setTimeout(r, 300));
+    // Seed: insert weights directly into IDB at known offsets, including one mixed-format ISO timestamp.
+    await page.evaluate(async () => {
+      const db = await openDB();
+      const today = new Date(); today.setHours(12,0,0,0);
+      const ymd = (off) => { const d = new Date(today); d.setDate(d.getDate()-off); return d.toISOString().slice(0,10); };
+      const isoTs = (off) => { const d = new Date(today); d.setDate(d.getDate()-off); return d.toISOString(); };
+      // Clear weights store
+      await new Promise((res, rej) => {
+        const tx = db.transaction('weights', 'readwrite');
+        const c = tx.objectStore('weights').clear();
+        c.onsuccess = () => { tx.oncomplete = res; }; c.onerror = () => rej(c.error);
+      });
+      const adds = [
+        { value: 200, unit: 'lb', date: ymd(5)   },
+        { value: 199, unit: 'lb', date: ymd(45)  },
+        { value: 198, unit: 'lb', date: ymd(120) },
+        { value: 197, unit: 'lb', date: ymd(200) },
+        { value: 196, unit: 'lb', date: isoTs(60) },
+      ];
+      for (const w of adds) {
+        await new Promise((res, rej) => {
+          const tx = db.transaction('weights', 'readwrite');
+          const a = tx.objectStore('weights').add(w);
+          a.onsuccess = () => { tx.oncomplete = res; }; a.onerror = () => rej(a.error);
+        });
+      }
+      if (typeof renderWeights === 'function') await renderWeights();
+    });
+    const counts = {};
+    for (const range of ['30','90','180','365','all']) {
+      await page.evaluate((r) => {
+        const btn = Array.from(document.querySelectorAll('.range-btn[data-range]')).find(b => b.dataset.range === r);
+        btn.click();
+      }, range);
+      await new Promise(r => setTimeout(r, 400));
+      counts[range] = await page.evaluate(() => (typeof weightChart !== 'undefined' && weightChart) ? weightChart.data.datasets[0].data.length : 0);
+    }
+    const expected = { '30': 1, '90': 3, '180': 4, '365': 5, 'all': 5 };
+    for (const k of Object.keys(expected)) {
+      if (counts[k] !== expected[k]) throw new Error(`range ${k}: expected ${expected[k]} points, got ${counts[k]} (${JSON.stringify(counts)})`);
+    }
+    return `30=${counts['30']} 90=${counts['90']} 180=${counts['180']} 365=${counts['365']} all=${counts['all']}`;
+  });
+
   // === 23. Plateau detection logic runs without error ===
   await probe('premium_plateau_logic', async () => {
     const r = await page.evaluate(() => {
