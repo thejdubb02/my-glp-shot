@@ -601,5 +601,162 @@
   });
 })();
 </script>
+
+<!-- Mobile install bottom sheet — shows once per visitor (until dismissed for 14 days). -->
+<div id="install-sheet" class="install-sheet hidden" role="dialog" aria-labelledby="install-sheet-title" aria-modal="false">
+  <button id="install-sheet-close" class="install-sheet-close" type="button" aria-label="Dismiss">×</button>
+  <div class="install-sheet-row">
+    <img src="/app/icons/icon-192.png" alt="" class="install-sheet-icon" width="56" height="56">
+    <div class="install-sheet-text">
+      <h3 id="install-sheet-title">Get the app on your phone</h3>
+      <p id="install-sheet-body">Install My GLP Shot to your home screen — runs offline, no app store, free 14-day trial.</p>
+    </div>
+  </div>
+  <div class="install-sheet-actions">
+    <button id="install-sheet-cta" type="button" class="btn-cta">Install</button>
+    <button id="install-sheet-later" type="button" class="btn-ghost">Maybe later</button>
+  </div>
+  <!-- iOS-specific instructions (revealed when CTA tapped on iOS) -->
+  <div id="install-sheet-ios-help" class="install-sheet-ios hidden">
+    <p>On iPhone:</p>
+    <ol>
+      <li>Tap the <strong>Share</strong> button <span class="ios-share-icon" aria-hidden="true">⬆︎</span> in Safari.</li>
+      <li>Scroll down and tap <strong>Add to Home Screen</strong>.</li>
+      <li>Tap <strong>Add</strong> in the top right.</li>
+    </ol>
+    <p class="muted">Tip: make sure you're in Safari (not Chrome or Instagram's in-app browser) for this to work.</p>
+  </div>
+</div>
+
+<style>
+.install-sheet{position:fixed;left:12px;right:12px;bottom:12px;z-index:9999;
+  background:var(--surface,#fff);color:var(--text,#0f172a);
+  border-radius:18px;padding:16px 18px 14px;
+  box-shadow:0 10px 40px rgba(0,0,0,.25),0 2px 8px rgba(0,0,0,.08);
+  border:1px solid rgba(199,145,91,.25);
+  animation:install-sheet-in .35s cubic-bezier(.2,.9,.3,1.1)}
+.install-sheet.hidden{display:none}
+@keyframes install-sheet-in{from{transform:translateY(120%);opacity:0}to{transform:translateY(0);opacity:1}}
+.install-sheet-close{position:absolute;top:8px;right:10px;background:transparent;border:none;
+  font-size:24px;line-height:1;color:var(--muted,#64748b);cursor:pointer;padding:4px 8px;border-radius:8px}
+.install-sheet-close:hover{background:rgba(0,0,0,.05);color:var(--text,#0f172a)}
+.install-sheet-row{display:flex;gap:12px;align-items:flex-start}
+.install-sheet-icon{flex-shrink:0;border-radius:12px;box-shadow:0 2px 6px rgba(0,0,0,.1)}
+.install-sheet-text h3{margin:0 0 4px;font-size:1.05rem;font-weight:700}
+.install-sheet-text p{margin:0;font-size:.9rem;line-height:1.4;color:var(--muted,#475569)}
+.install-sheet-actions{display:flex;gap:10px;margin-top:12px}
+.install-sheet-actions .btn-cta{flex:1;padding:11px 16px;font-size:.95rem;border-radius:10px;
+  background:#c7915b;color:#fff;border:none;font-weight:600;cursor:pointer}
+.install-sheet-actions .btn-cta:hover{background:#83542e}
+.install-sheet-actions .btn-ghost{padding:11px 14px;font-size:.9rem;border-radius:10px;
+  background:transparent;color:var(--muted,#64748b);border:1px solid rgba(0,0,0,.1);cursor:pointer}
+.install-sheet-ios{margin-top:14px;padding-top:12px;border-top:1px solid rgba(0,0,0,.08);font-size:.88rem}
+.install-sheet-ios.hidden{display:none}
+.install-sheet-ios ol{margin:6px 0 8px;padding-left:22px;line-height:1.5}
+.install-sheet-ios .ios-share-icon{display:inline-block;width:18px;height:18px;background:#0066cc;color:#fff;
+  border-radius:4px;text-align:center;font-size:13px;line-height:18px;vertical-align:middle}
+.install-sheet-ios .muted{color:var(--muted,#64748b);font-size:.82rem;margin-top:4px}
+@media (prefers-color-scheme: dark){
+  .install-sheet{background:#1f2937;color:#f1f5f9;border-color:rgba(199,145,91,.4)}
+  .install-sheet-text p,.install-sheet-actions .btn-ghost{color:#cbd5e1}
+  .install-sheet-actions .btn-ghost{border-color:rgba(255,255,255,.15)}
+  .install-sheet-close:hover{background:rgba(255,255,255,.1);color:#f1f5f9}
+}
+</style>
+
+<script>
+(function(){
+  // Mobile-only install prompt for the landing site. Shown once per visitor with
+  // a 14-day cooldown after dismiss, never shown to users who already have the
+  // PWA installed (display-mode: standalone matchMedia hits when the launched
+  // app navigates here, but we'd already have redirected — defensive anyway).
+  var KEY = 'mgs-install-dismissed-at';
+  var COOLDOWN_MS = 14 * 24 * 60 * 60 * 1000;
+  var ua = navigator.userAgent || '';
+  var isMobile = /iPhone|iPad|iPod|Android/i.test(ua) || (window.innerWidth < 720 && 'ontouchstart' in window);
+  var isIOS = /iPhone|iPad|iPod/i.test(ua);
+  var isAndroid = /Android/i.test(ua);
+  var isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+  if (!isMobile || isStandalone) return;
+  try {
+    var dismissedAt = parseInt(localStorage.getItem(KEY) || '0', 10);
+    if (dismissedAt && (Date.now() - dismissedAt) < COOLDOWN_MS) return;
+  } catch(e){}
+
+  var deferredPrompt = null;
+  window.addEventListener('beforeinstallprompt', function(e){
+    e.preventDefault();
+    deferredPrompt = e;
+  });
+
+  function dismiss(){
+    try { localStorage.setItem(KEY, String(Date.now())); } catch(e){}
+    var sheet = document.getElementById('install-sheet');
+    if (sheet) sheet.classList.add('hidden');
+    if (window.umami && typeof window.umami.track === 'function') window.umami.track('install_sheet_dismissed');
+  }
+
+  function showHelp(){
+    document.getElementById('install-sheet-ios-help').classList.remove('hidden');
+  }
+
+  function show(){
+    var sheet = document.getElementById('install-sheet');
+    if (!sheet) return;
+    // Tailor copy for the platform we detected.
+    var body = document.getElementById('install-sheet-body');
+    var cta  = document.getElementById('install-sheet-cta');
+    if (isIOS) {
+      body.textContent = 'Add My GLP Shot to your iPhone home screen — opens in one tap, works offline, free 14-day trial.';
+      cta.textContent = 'How to install';
+    } else if (isAndroid) {
+      body.textContent = 'Install My GLP Shot to your Android home screen — opens in one tap, works offline, free 14-day trial.';
+      cta.textContent = deferredPrompt ? 'Install now' : 'How to install';
+    }
+    sheet.classList.remove('hidden');
+    if (window.umami && typeof window.umami.track === 'function') window.umami.track('install_sheet_shown', { platform: isIOS ? 'ios' : isAndroid ? 'android' : 'other' });
+
+    document.getElementById('install-sheet-close').addEventListener('click', dismiss);
+    document.getElementById('install-sheet-later').addEventListener('click', dismiss);
+    cta.addEventListener('click', async function(){
+      if (window.umami && typeof window.umami.track === 'function') window.umami.track('install_sheet_cta', { platform: isIOS ? 'ios' : isAndroid ? 'android' : 'other' });
+      if (isIOS) {
+        showHelp();
+      } else if (deferredPrompt) {
+        try {
+          deferredPrompt.prompt();
+          var choice = await deferredPrompt.userChoice;
+          if (window.umami && typeof window.umami.track === 'function') window.umami.track('install_prompt_outcome', { outcome: choice.outcome });
+          deferredPrompt = null;
+          dismiss();
+        } catch(e) {
+          // Fallback: send them to the app — the app's own install dialog will trigger.
+          window.location.href = 'https://app.myglpshot.com/';
+        }
+      } else {
+        // No native prompt available — open the app, where the in-app install dialog fires.
+        window.location.href = 'https://app.myglpshot.com/';
+      }
+    });
+  }
+
+  // Slight delay so the page renders first; longer if the user is reading
+  // (don't surprise them while still on the hero).
+  setTimeout(show, 4500);
+})();
+</script>
+
+<!-- Listen for the close button (find by class because the inner button may not exist yet when above script binds) -->
+<script>
+(function(){
+  document.addEventListener('click', function(e){
+    if (e.target && e.target.classList && e.target.classList.contains('install-sheet-close')) {
+      try { localStorage.setItem('mgs-install-dismissed-at', String(Date.now())); } catch(_){}
+      var sheet = document.getElementById('install-sheet');
+      if (sheet) sheet.classList.add('hidden');
+    }
+  });
+})();
+</script>
 </body>
 </html>
