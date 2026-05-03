@@ -545,12 +545,22 @@ async function probe(name, fn) {
         const c = tx.objectStore('weights').clear();
         c.onsuccess = () => { tx.oncomplete = res; }; c.onerror = () => rej(c.error);
       });
+      // Mix every storage shape we've seen in the wild: bare YYYY-MM-DD, full ISO with Z,
+      // date-with-no-Z (input[type=datetime-local]), epoch ms number, US slashes, and a Date object.
+      const epoch = (off) => { const d = new Date(today); d.setDate(d.getDate()-off); return d.getTime(); };
+      const dateObj = (off) => { const d = new Date(today); d.setDate(d.getDate()-off); return d; };
+      const slash = (off) => { const d = new Date(today); d.setDate(d.getDate()-off); return `${d.getMonth()+1}/${d.getDate()}/${d.getFullYear()}`; };
+      const noZIso = (off) => { const d = new Date(today); d.setDate(d.getDate()-off); return d.toISOString().slice(0,19); };
       const adds = [
-        { value: 200, unit: 'lb', date: ymd(5)   },
-        { value: 199, unit: 'lb', date: ymd(45)  },
-        { value: 198, unit: 'lb', date: ymd(120) },
-        { value: 197, unit: 'lb', date: ymd(200) },
-        { value: 196, unit: 'lb', date: isoTs(60) },
+        { value: 200, unit: 'lb', date: ymd(5)      },  // 30/90/180/365
+        { value: 199, unit: 'lb', date: ymd(45)     },  // 90/180/365
+        { value: 198, unit: 'lb', date: ymd(120)    },  // 180/365
+        { value: 197, unit: 'lb', date: ymd(200)    },  // 365
+        { value: 196, unit: 'lb', date: isoTs(60)   },  // 90/180/365 — full ISO
+        { value: 195, unit: 'lb', date: epoch(15)   },  // 30/90/180/365 — numeric ms
+        { value: 194, unit: 'lb', date: dateObj(75) },  // 90/180/365 — Date obj
+        { value: 193, unit: 'lb', date: slash(20)   },  // 30/90/180/365 — US slashes
+        { value: 192, unit: 'lb', date: noZIso(100) },  // 180/365 — no-Z ISO
       ];
       for (const w of adds) {
         await new Promise((res, rej) => {
@@ -570,7 +580,13 @@ async function probe(name, fn) {
       await new Promise(r => setTimeout(r, 400));
       counts[range] = await page.evaluate(() => (typeof weightChart !== 'undefined' && weightChart) ? weightChart.data.datasets[0].data.length : 0);
     }
-    const expected = { '30': 1, '90': 3, '180': 4, '365': 5, 'all': 5 };
+    // Expected counts cross-checked by hand against the offsets above:
+    //   30d  → 5d, 15d, 20d                                        = 3
+    //   90d  → +45d, 60d, 75d                                      = 6
+    //   180d → +120d, 100d                                          = 8
+    //   365d → +200d                                                = 9
+    //   all  → 9
+    const expected = { '30': 3, '90': 6, '180': 8, '365': 9, 'all': 9 };
     for (const k of Object.keys(expected)) {
       if (counts[k] !== expected[k]) throw new Error(`range ${k}: expected ${expected[k]} points, got ${counts[k]} (${JSON.stringify(counts)})`);
     }

@@ -6,7 +6,7 @@
 const DB_NAME = 'shotclock';
 // v6 bump: 'appetites' store added — daily appetite check-in alongside mood (GLP-1 mechanism is appetite suppression).
 const DB_VERSION = 6;
-const APP_VERSION = '0.38.0';
+const APP_VERSION = '0.39.0';
 
 // Umami event tracker. Aggregates only — no PII (no email, no IDs). Safe to call before umami loads.
 function track(event, props) {
@@ -556,18 +556,36 @@ async function getShotsSorted() {
   const all = (await dbAll(STORES.shots)) || [];
   return all.sort((a, b) => new Date(b.when) - new Date(a.when));
 }
-// Parse a stored date that might be 'YYYY-MM-DD', 'YYYY-MM-DDTHH:MM[:SSZ]', or a number.
-// Returns ms since epoch, or NaN if unparseable. Bare YYYY-MM-DD is anchored to local midnight
-// (not UTC) so day-bucket comparisons line up with the user's calendar.
+// Parse a stored date that might be 'YYYY-MM-DD', 'YYYY-MM-DDTHH:MM[:SSZ]', a Date, a number, or
+// the various locale formats older imports may have left behind. Returns ms since epoch (or NaN).
+// Bare YYYY-MM-DD is anchored to local midnight so day-bucket comparisons line up with the user's calendar.
 function parseDateFlexible(d) {
   if (d == null) return NaN;
-  if (typeof d === 'number') return d;
-  const s = String(d);
-  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
-    const [y, m, day] = s.split('-').map(Number);
-    return new Date(y, m - 1, day).getTime();
+  if (d instanceof Date) return d.getTime();
+  if (typeof d === 'number') return d > 1e12 ? d : d * 1000; // accept seconds or ms
+  const s = String(d).trim();
+  if (!s) return NaN;
+  // Pure numeric string — treat as epoch.
+  if (/^\d{10,13}$/.test(s)) {
+    const n = parseInt(s, 10);
+    return n > 1e12 ? n : n * 1000;
   }
-  return new Date(s).getTime();
+  // YYYY-MM-DD (bare): anchor to local midnight, ignoring whatever time follows.
+  const ymd = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (ymd) {
+    const t = new Date(+ymd[1], +ymd[2] - 1, +ymd[3]).getTime();
+    return Number.isFinite(t) ? t : NaN;
+  }
+  // M/D/YYYY or D/M/YYYY (best-effort: assume month-first US format, then fall through to Date.parse).
+  const slash = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+  if (slash) {
+    let yr = +slash[3]; if (yr < 100) yr += 2000;
+    const t = new Date(yr, +slash[1] - 1, +slash[2]).getTime();
+    if (Number.isFinite(t)) return t;
+  }
+  // Final fallback — let the engine try.
+  const t = Date.parse(s);
+  return Number.isFinite(t) ? t : NaN;
 }
 
 async function getWeightsSorted() {
@@ -1250,23 +1268,28 @@ async function renderWeights() {
     return;
   }
   // Apply selected range filter (default = all). Day-precision cutoff at local midnight.
-  // w.date can be 'YYYY-MM-DD' (logged) or a full ISO timestamp (imported). Parse robustly.
   let ws = wsAll;
+  let unparseable = 0;
   if (_weightRangeDays !== 'all') {
     const days = parseInt(_weightRangeDays, 10);
     const cutoff = new Date(); cutoff.setHours(0,0,0,0); cutoff.setDate(cutoff.getDate() - days);
     const cutoffMs = cutoff.getTime();
     ws = wsAll.filter(w => {
       const t = parseDateFlexible(w.date);
-      return Number.isFinite(t) && t >= cutoffMs;
+      if (!Number.isFinite(t)) { unparseable++; console.warn('[weight-chart] unparseable date, skipping:', w.date, w); return false; }
+      return t >= cutoffMs;
     });
+    console.log(`[weight-chart] range=${days}d cutoff=${new Date(cutoffMs).toISOString().slice(0,10)} total=${wsAll.length} kept=${ws.length} unparseable=${unparseable}`);
   }
   empty.classList.add('hidden');
   ctx.style.display = 'block';
   if (!ws.length) {
     if (weightChart) { weightChart.destroy(); weightChart = null; }
     ctx.style.display = 'none';
-    empty.innerHTML = `<span class="empty-illus">⚖</span><br>No weight entries in this range. Try a wider time window.`;
+    const detail = wsAll.length
+      ? `<br><span class="muted small">${wsAll.length} entries on file${unparseable ? `, ${unparseable} with unrecognized date format` : ''}. Most recent: ${wsAll[wsAll.length-1]?.date || '?'}</span>`
+      : '';
+    empty.innerHTML = `<span class="empty-illus">⚖</span><br>No weight entries in this range. Try a wider time window.${detail}`;
     empty.classList.remove('hidden');
     return;
   }
@@ -2699,14 +2722,14 @@ async function renderBadges(shots, weights) {
   if (backfilled) await saveSettings();
   const dates = settings.achievementDates;
   const ordered = [...unlocked].sort((a, b) => (dates[b.id] || '').localeCompare(dates[a.id] || ''));
-  const collapsed = !_badgesExpanded && ordered.length > 5;
-  const visible = collapsed ? ordered.slice(0, 5) : ordered;
-  const cards = visible.map(a => `<button type="button" class="badge unlocked" data-badge-id="${a.id}" aria-label="Share ${escapeHTML(a.label)}"><img class="badge-art" src="icons/achievements/${a.id}.png" alt="" loading="lazy" onerror="this.style.display='none'"><span class="badge-label">${escapeHTML(a.label)}</span><span class="badge-share-hint">Tap to share</span></button>`).join('');
-  const toggleBtn = ordered.length > 5
+  const collapsed = !_badgesExpanded && ordered.length > 6;
+  const visible = collapsed ? ordered.slice(0, 6) : ordered;
+  const cards = visible.map(a => `<button type="button" class="badge-tile" data-badge-id="${a.id}" aria-label="Share ${escapeHTML(a.label)}"><img class="badge-tile-art" src="icons/achievements/${a.id}.png" alt="" loading="lazy" onerror="this.style.display='none'"><span class="badge-tile-label">${escapeHTML(a.label)}</span></button>`).join('');
+  const toggleBtn = ordered.length > 6
     ? `<button type="button" id="badges-toggle" class="btn-ghost badges-toggle">${_badgesExpanded ? 'Show fewer' : `Show all (${ordered.length})`}</button>`
     : '';
   list.innerHTML = cards + toggleBtn;
-  list.querySelectorAll('.badge[data-badge-id]').forEach(el => {
+  list.querySelectorAll('.badge-tile[data-badge-id]').forEach(el => {
     el.addEventListener('click', () => openBadgeShare(el.dataset.badgeId));
   });
   const tg = $('#badges-toggle');
@@ -2762,72 +2785,79 @@ async function renderBadgeShareCanvas(a, earnedISO) {
   const c = $('#badge-share-canvas');
   const ctx = c.getContext('2d');
   const W = c.width, H = c.height;
-  const root = getComputedStyle(document.documentElement);
-  const c1 = (root.getPropertyValue('--bronze-dk') || '#83542e').trim() || '#83542e';
-  const c2 = (root.getPropertyValue('--bronze') || '#c7915b').trim() || '#c7915b';
-  const grad = ctx.createLinearGradient(0, 0, 0, H);
-  grad.addColorStop(0, c1);
-  grad.addColorStop(1, c2);
-  ctx.fillStyle = grad;
+  // Deep navy radial gradient (matches the AI art backgrounds for a seamless look).
+  const bg = ctx.createRadialGradient(W/2, H*0.4, 50, W/2, H*0.4, W*0.85);
+  bg.addColorStop(0, '#1f2a4a');
+  bg.addColorStop(1, '#0a0f24');
+  ctx.fillStyle = bg;
   ctx.fillRect(0, 0, W, H);
-  ctx.globalAlpha = 0.10;
-  for (let i = 0; i < 40; i++) {
+  // Gold rays
+  ctx.save();
+  ctx.translate(W/2, H*0.45);
+  for (let i = 0; i < 24; i++) {
+    ctx.rotate(Math.PI / 12);
+    const ray = ctx.createLinearGradient(0, 0, 0, -W*0.7);
+    ray.addColorStop(0, 'rgba(253,224,138,0.20)');
+    ray.addColorStop(1, 'rgba(253,224,138,0)');
+    ctx.fillStyle = ray;
     ctx.beginPath();
-    ctx.arc(Math.random() * W, Math.random() * H, 4 + Math.random() * 14, 0, Math.PI * 2);
-    ctx.fillStyle = '#fff';
+    ctx.moveTo(-22, 0); ctx.lineTo(22, 0); ctx.lineTo(0, -W*0.7); ctx.closePath();
     ctx.fill();
   }
-  ctx.globalAlpha = 1;
-  ctx.fillStyle = 'rgba(255,255,255,0.92)';
-  ctx.font = 'bold 36px -apple-system, "Segoe UI", system-ui, sans-serif';
+  ctx.restore();
+  // Gilt header
+  ctx.fillStyle = '#fde68a';
+  ctx.font = 'bold 38px -apple-system, "Helvetica Neue", system-ui, sans-serif';
   ctx.textAlign = 'center';
-  ctx.fillText('ACHIEVEMENT UNLOCKED', W / 2, 130);
-  // Hero image (or fallback to emoji disc)
+  ctx.fillText('★  ACHIEVEMENT UNLOCKED  ★', W / 2, 120);
+  // Hero image, large, centered, drop-shadow for lift (no clip — let the AI art's own framing show).
   const heroImg = await loadAchievementImage(a.id);
-  const cx = W / 2, cy = H / 2 - 60, r = 220;
-  ctx.save();
-  ctx.beginPath();
-  ctx.arc(cx, cy, r, 0, Math.PI * 2);
-  ctx.fillStyle = 'rgba(255,255,255,0.97)';
-  ctx.fill();
-  // outer foil ring
-  ctx.lineWidth = 10;
-  const ring = ctx.createLinearGradient(cx - r, cy - r, cx + r, cy + r);
-  ring.addColorStop(0, '#fde68a'); ring.addColorStop(0.5, '#fff'); ring.addColorStop(1, c2);
-  ctx.strokeStyle = ring;
-  ctx.stroke();
+  const heroSize = 720;
+  const cx = W / 2, cy = H * 0.46;
   if (heroImg) {
-    ctx.clip();
-    const size = r * 2;
-    ctx.drawImage(heroImg, cx - r, cy - r, size, size);
+    ctx.save();
+    ctx.shadowColor = 'rgba(0,0,0,0.55)';
+    ctx.shadowBlur = 50;
+    ctx.shadowOffsetY = 14;
+    ctx.drawImage(heroImg, cx - heroSize/2, cy - heroSize/2, heroSize, heroSize);
+    ctx.restore();
   } else {
-    ctx.font = '220px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",system-ui';
+    ctx.font = '320px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",system-ui';
     ctx.textBaseline = 'middle';
-    ctx.fillStyle = '#000';
+    ctx.fillStyle = '#fde68a';
     ctx.fillText(a.icon, cx, cy);
     ctx.textBaseline = 'alphabetic';
   }
-  ctx.restore();
-  // Label
+  // Decorative gold rule
+  const ruleY = cy + heroSize/2 + 30;
+  const rule = ctx.createLinearGradient(W*0.2, 0, W*0.8, 0);
+  rule.addColorStop(0, 'rgba(253,224,138,0)');
+  rule.addColorStop(0.5, 'rgba(253,224,138,0.85)');
+  rule.addColorStop(1, 'rgba(253,224,138,0)');
+  ctx.fillStyle = rule;
+  ctx.fillRect(W*0.2, ruleY, W*0.6, 2);
+  // Label — large and confident
   ctx.fillStyle = '#fff';
-  ctx.font = 'bold 78px -apple-system, "Segoe UI", system-ui, sans-serif';
-  wrapText(ctx, a.label, W / 2, H / 2 + 220, W - 160, 90);
-  // Date
+  ctx.font = 'bold 76px -apple-system, "Helvetica Neue", system-ui, sans-serif';
+  wrapText(ctx, a.label, W / 2, ruleY + 100, W - 160, 86);
+  // Date — small caps style
   const dateStr = new Date(earnedISO + 'T00:00:00').toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
-  ctx.fillStyle = 'rgba(255,255,255,0.88)';
-  ctx.font = '40px -apple-system, "Segoe UI", system-ui, sans-serif';
-  ctx.fillText(dateStr, W / 2, H / 2 + 360);
-  // Footer brand bar
-  ctx.fillStyle = 'rgba(0,0,0,0.22)';
-  ctx.fillRect(0, H - 130, W, 130);
+  ctx.fillStyle = 'rgba(253,224,138,0.92)';
+  ctx.font = '34px -apple-system, "Helvetica Neue", system-ui, sans-serif';
+  ctx.fillText(dateStr.toUpperCase(), W / 2, ruleY + 220);
+  // Footer brand bar — gilt strip on dark
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.fillRect(0, H - 120, W, 120);
+  ctx.fillStyle = '#fde68a';
+  ctx.fillRect(0, H - 122, W, 2);
   ctx.fillStyle = '#fff';
-  ctx.font = 'bold 44px -apple-system, "Segoe UI", system-ui, sans-serif';
+  ctx.font = 'bold 40px -apple-system, "Helvetica Neue", system-ui, sans-serif';
   ctx.textAlign = 'left';
-  ctx.fillText('💉 My GLP Shot', 60, H - 70);
-  ctx.font = '32px -apple-system, "Segoe UI", system-ui, sans-serif';
-  ctx.fillStyle = 'rgba(255,255,255,0.85)';
+  ctx.fillText('💉 My GLP Shot', 60, H - 60);
+  ctx.font = '30px -apple-system, "Helvetica Neue", system-ui, sans-serif';
+  ctx.fillStyle = 'rgba(255,255,255,0.78)';
   ctx.textAlign = 'right';
-  ctx.fillText('myglpshot.com', W - 60, H - 70);
+  ctx.fillText('myglpshot.com', W - 60, H - 60);
   ctx.textAlign = 'center';
 }
 

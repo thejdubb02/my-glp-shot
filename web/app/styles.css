@@ -179,9 +179,11 @@ canvas{width:100% !important;height:auto !important;max-height:200px}
 .badge.unlocked:hover{transform:translateY(-2px);border-color:var(--bronze)}
 .badge-art{display:block;width:88px;height:88px;margin:0 auto 6px;border-radius:50%;object-fit:cover;background:linear-gradient(135deg, var(--bronze-lt), var(--bronze));box-shadow:0 2px 8px rgba(0,0,0,.12)}
 .badges-toggle{margin-top:10px;width:100%}
-.badge-share-preview-wrap{margin:10px 0;text-align:center;display:flex;justify-content:center}
-.badge-share-preview-wrap canvas{display:block;width:min(86vw,360px);aspect-ratio:1/1;height:auto;border-radius:14px;box-shadow:0 6px 20px rgba(0,0,0,.18)}
+.badge-share-preview-wrap{margin:10px 0;display:flex;justify-content:center}
+.badge-share-frame{width:min(86vw,340px);height:min(86vw,340px);border-radius:14px;overflow:hidden;box-shadow:0 6px 20px rgba(0,0,0,.18);background:#0b1220}
+.badge-share-frame canvas{display:block;width:100% !important;height:100% !important;border-radius:14px}
 #badge-share-dialog{max-width:440px;width:92vw}
+#badge-share-dialog form{box-sizing:border-box}
 /* Appetite trend bars use same .mood-bar styling, but with reverse intent (low = good): */
 #appetite-trend-bars .mood-bar.good{background:var(--bronze)}
 #appetite-trend-bars .mood-bar.mid{background:var(--muted)}
@@ -316,7 +318,13 @@ canvas{width:100% !important;height:auto !important;max-height:200px}
 .empty-illus{display:inline-block;font-size:1.4rem;opacity:.5;margin-bottom:4px}
 
 /* Badges */
-.badges-list{display:flex;flex-wrap:wrap;gap:10px}
+.badges-list{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+@media (max-width: 380px){.badges-list{grid-template-columns:repeat(2,1fr)}}
+.badge-tile{display:flex;flex-direction:column;align-items:center;gap:6px;padding:10px 8px;background:linear-gradient(160deg,#fff,var(--surface-alt));border:1px solid var(--line);border-radius:14px;cursor:pointer;transition:transform .15s ease,box-shadow .15s ease,border-color .15s ease;text-align:center}
+.badge-tile:hover{transform:translateY(-2px);border-color:var(--bronze);box-shadow:0 6px 16px rgba(0,0,0,.08)}
+.badge-tile-art{width:72px;height:72px;border-radius:50%;object-fit:cover;background:linear-gradient(135deg,var(--bronze-lt),var(--bronze));box-shadow:0 2px 8px rgba(0,0,0,.15),inset 0 0 0 2px rgba(255,255,255,.6)}
+.badge-tile-label{font-size:.78rem;font-weight:600;color:var(--text);line-height:1.2}
+.badges-list .badges-toggle{grid-column:1/-1}
 .badge{background:var(--surface);border:1.5px solid var(--line);border-radius:999px;padding:8px 14px 8px 12px;font-size:.82rem;display:flex;align-items:center;gap:8px;animation:badge-pop .4s ease-out;transition:transform .12s,box-shadow .15s}
 .badge.unlocked{background:linear-gradient(135deg,var(--bronze) 0%,var(--bronze-dk) 100%);border-color:transparent;color:#fff;box-shadow:0 2px 6px rgba(15,23,42,.10),0 0 0 1px rgba(255,255,255,.06) inset}
 .badge.unlocked .badge-label,

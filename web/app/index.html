@@ -17,7 +17,7 @@
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="icon" type="image/png" sizes="512x512" href="icons/icon-512.png">
 <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png">
-<link rel="stylesheet" href="styles.css?v=380">
+<link rel="stylesheet" href="styles.css?v=390">
 <script>
 (function(){
   // Apply saved theme synchronously to avoid flash. Settings live in IndexedDB; theme also mirrored to localStorage for fast read.
@@ -692,7 +692,9 @@
     <h2 id="badge-share-title">Share achievement</h2>
     <p class="muted small">A private, branded card you can save or share. Generated on your device — nothing leaves your phone unless you share it.</p>
     <div class="badge-share-preview-wrap">
-      <canvas id="badge-share-canvas" width="1080" height="1080"></canvas>
+      <div class="badge-share-frame">
+        <canvas id="badge-share-canvas" width="1080" height="1080"></canvas>
+      </div>
     </div>
     <div class="modal-actions">
       <button type="button" id="badge-share-close" class="btn-ghost">Close</button>
@@ -913,6 +915,6 @@
 </nav>
 
 <script src="lib/chart.min.js"></script>
-<script src="app.js?v=380"></script>
+<script src="app.js?v=390"></script>
 </body>
 </html>

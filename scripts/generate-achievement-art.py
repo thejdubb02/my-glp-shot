@@ -7,24 +7,29 @@ import base64, json, os, sys, time, urllib.request, urllib.error, re
 
 KEY_FILE = "/root/.openclaw/openclaw.json"
 OUT_DIR  = "/opt/my-glp-shot/web/app/icons/achievements"
-MODEL    = "imagen-4.0-fast-generate-001"
+MODEL    = "imagen-4.0-generate-001"
 
 # Same ids as ACHIEVEMENTS in app.js. Each prompt is a self-contained scene
 # so the icons feel distinct, not just colour-shifted versions of one shape.
+STYLE = ("Luxe achievement medallion, 3D embossed metallic finish with soft realistic lighting, polished and gilded, "
+         "centered subject filling the composition, dark navy radial gradient background, subtle inner glow, "
+         "premium app trophy aesthetic in the spirit of Apple Fitness rings or Duolingo league badges, "
+         "vector-clean shapes, no text, no watermark, no letters, square 1:1.")
+
 PROMPTS = {
-  "first":    "Flat vector medallion: a single insulin syringe with confetti bursting out, golden bronze gradient circle background, modern minimalist illustration, premium achievement badge style, centered, plain solid background, no text",
-  "ten":      "Flat vector achievement medal: a large stylized number 10 on a polished bronze coin, subtle sparkles, modern flat illustration, premium badge style, centered, plain solid background, no text",
-  "fifty":    "Flat vector achievement medal: a high-five hand with five fingers spread, surrounded by a glowing bronze ring and small stars, modern flat illustration, centered, plain solid background, no text",
-  "hundred":  "Flat vector achievement medal: a bold 100 numeral on a deep red and gold ribboned medallion, fireworks behind, modern flat illustration, premium prestige badge, centered, plain solid background, no text",
-  "streak4":  "Flat vector achievement medal: a stylized flame icon with a small 4 inside the flame, warm bronze and orange gradient background, modern flat illustration, centered, plain solid background, no text",
-  "streak12": "Flat vector achievement medal: a rocket trailing a comet streak of bronze stars, dynamic motion, modern flat illustration, premium badge, centered, plain solid background, no text",
-  "streak26": "Flat vector achievement medal: a tall trophy cup with laurel branches on either side, deep bronze gradient, modern flat illustration, centered, plain solid background, no text",
-  "streak52": "Flat vector achievement medal: a regal crown sitting above a 1-year ribbon banner, gold and bronze tones, modern flat illustration, premium prestige badge, centered, plain solid background, no text",
-  "lost5":    "Flat vector achievement medal: a single bright star with a small silhouette of a balance scale beneath, soft green and bronze tones suggesting progress, modern flat illustration, centered, plain solid background, no text",
-  "lost10":   "Flat vector achievement medal: a glowing star burst with a downward-trending line graph behind it, fresh green and bronze gradient, modern flat illustration, centered, plain solid background, no text",
-  "lost25":   "Flat vector achievement medal: a sparkling shooting star with a measuring tape coiling beneath, vibrant green and bronze gradient, modern flat illustration, premium badge, centered, plain solid background, no text",
-  "lost50":   "Flat vector achievement medal: a large radiant sparkle starburst with confetti, bold emerald green and gold gradient, premium prestige badge, modern flat illustration, centered, plain solid background, no text",
-  "titrate":  "Flat vector achievement medal: a clean ascending bar chart with an upward arrow, bronze gradient background, modern flat illustration, centered, plain solid background, no text",
+  "first":    f"Polished gold and rose-gold insulin syringe with a soft confetti burst of warm bronze and cream particles. {STYLE}",
+  "ten":      f"Large stylized numeral 10 sculpted in polished bronze with engraved highlights, sitting on a circular gilded coin with subtle starburst rays. {STYLE}",
+  "fifty":    f"Five-fingered open hand sculpted in polished bronze, palm forward, ringed by a thin gold halo and small twinkles. {STYLE}",
+  "hundred":  f"Bold sculpted 100 numeral on a layered ribbon-and-laurel gold medal, deep crimson velvet ribbon trailing, fireworks of gold sparks behind. {STYLE}",
+  "streak4":  f"Stylized 3D flame in molten gold and bronze with a delicate engraved 4 visible inside the flame core, warm glow. {STYLE}",
+  "streak12": f"Sleek streamlined rocket sculpted in chrome and bronze trailing a stardust comet of small gold particles, dynamic diagonal motion. {STYLE}",
+  "streak26": f"Tall classic trophy cup sculpted in polished gold with engraved laurel branches wrapping the cup, deep navy backdrop. {STYLE}",
+  "streak52": f"Regal jeweled crown sculpted in polished gold with small ruby-red gemstones, sitting above a softly draped gold ribbon banner. {STYLE}",
+  "lost5":    f"Single five-pointed star sculpted in polished emerald-and-gold bimetal, gentle scale-of-balance silhouette etched faintly behind. {STYLE}",
+  "lost10":   f"Radiant burst sculpted in polished gold and emerald with a downward-sweeping ribbon arc behind it, suggesting progress. {STYLE}",
+  "lost25":   f"Shooting star sculpted in polished gold with a long emerald vapor trail and small twinkles along the tail. {STYLE}",
+  "lost50":   f"Massive ornate starburst sculpted in polished emerald-green and bright gold, rays radiating outward, prestige tier finish. {STYLE}",
+  "titrate":  f"Three sculpted 3D bars rising in size left to right with an upward gold arrow soaring past the tallest bar, polished bronze finish. {STYLE}",
 }
 
 def load_key():
