@@ -6,7 +6,7 @@
 const DB_NAME = 'shotclock';
 // v5 bump: 'expenses' store added so the Spending card can take ad-hoc cost entries (copays, pharmacy fees, etc.) without needing a supply row.
 const DB_VERSION = 5;
-const APP_VERSION = '0.29.0';
+const APP_VERSION = '0.30.0';
 
 // Umami event tracker. Aggregates only — no PII (no email, no IDs). Safe to call before umami loads.
 function track(event, props) {
@@ -449,18 +449,40 @@ function wireCriticalUI() {
       const buf = new Uint8Array(bits);
       const aesKey = await crypto.subtle.importKey('raw', buf.slice(0, 32), 'AES-GCM', true, ['encrypt', 'decrypt']);
       const authToken = Array.from(buf.slice(32, 64)).map(b => b.toString(16).padStart(2, '0')).join('');
-      const path = _authMode === 'signup' ? '/api/signup' : '/api/login';
-      const r = await fetch(path, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: cleanEmail, authToken }),
-        credentials: 'include',
-      });
-      if (!r.ok) {
-        const j = await r.json().catch(() => ({}));
-        throw new Error(j.message || `${_authMode === 'signup' ? 'Signup' : 'Login'} failed (${r.status}).`);
+      // Smart fallback: signup with existing email → auto-try login; login with no account → auto-try signup.
+      // Same email/password works either way — server uses authToken (PBKDF2 of pw+email) so wrong pw on existing account fails both paths.
+      async function callAuth(mode) {
+        const resp = await fetch(mode === 'signup' ? '/api/signup' : '/api/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: cleanEmail, authToken }),
+          credentials: 'include',
+        });
+        let body = {}; try { body = await resp.json(); } catch (_) {}
+        return { resp, body };
       }
-      const j = await r.json();
+      let { resp: r, body: j } = await callAuth(_authMode);
+      let actualMode = _authMode;
+      if (!r.ok && _authMode === 'signup' && j.error === 'email_in_use') {
+        // Account already exists — silently log in instead.
+        track('signup_fallback_to_login');
+        ({ resp: r, body: j } = await callAuth('login'));
+        actualMode = 'login';
+      } else if (!r.ok && _authMode === 'login' && j.error === 'invalid_credentials') {
+        // Could be no-account-yet OR wrong password. Try signup.
+        track('login_fallback_to_signup');
+        const sg = await callAuth('signup');
+        if (sg.resp.ok) { r = sg.resp; j = sg.body; actualMode = 'signup'; }
+        else if (sg.body.error === 'email_in_use') {
+          // Account exists; password was wrong.
+          throw new Error('Email or password is incorrect. Try again or use "Forgot password".');
+        } else {
+          throw new Error(sg.body.message || 'Could not sign up.');
+        }
+      }
+      if (!r.ok) {
+        throw new Error(j.message || `${actualMode === 'signup' ? 'Signup' : 'Login'} failed (${r.status}).`);
+      }
       // Persist session token + AES key (NOT password).
       try {
         localStorage.setItem('mgs_session_token', j.token);
@@ -2277,6 +2299,23 @@ async function tryRestoreAccount() {
       account.encryptionKey = await importStoredAesKey(remembered.k);
     } catch (e) {}
   }
+  // Auto-pull on cross-device login: if local IDB is empty but a cloud blob exists, pull it silently.
+  // This is the "I logged in on my desktop and my data isn't there" fix — pull happens before first render.
+  if (account.encryptionKey) {
+    try {
+      const localShots = (await dbAll(STORES.shots)) || [];
+      const localWeights = (await dbAll(STORES.weights)) || [];
+      if (localShots.length === 0 && localWeights.length === 0) {
+        const result = await accountSyncPull();
+        if (result && result.payload) {
+          await applyPulledPayload(result.payload);
+          track('cross_device_auto_pull', { shots: (result.payload.shots || []).length });
+        }
+      }
+    } catch (e) {
+      console.warn('[mgs] auto-pull on login failed (non-fatal):', e);
+    }
+  }
   return true;
 }
 
@@ -3040,16 +3079,17 @@ async function buildPayload() {
   const shots = (await dbAll(STORES.shots)) || [];
   const weights = (await dbAll(STORES.weights)) || [];
   const moods = (await dbAll(STORES.moods)) || [];
-  let supplies = [], measurements = [], labs = [];
+  let supplies = [], measurements = [], labs = [], expenses = [];
   try { supplies = await getSupplies(); } catch (e) {}
   try { measurements = await getMeasurements(); } catch (e) {}
   try { labs = await getLabs(); } catch (e) {}
+  try { expenses = await getExpenses(); } catch (e) {}
   return {
-    version: 2,
+    version: 3,
     exportedAt: new Date().toISOString(),
     settings,
     shots, weights, moods,
-    supplies, measurements, labs,
+    supplies, measurements, labs, expenses,
   };
 }
 
@@ -3093,11 +3133,12 @@ async function syncCloudExists(creds) {
 
 async function applyPulledPayload(payload) {
   // Ensure premium stores exist before clearing
-  await ensureStore('supplies'); await ensureStore('measurements'); await ensureStore('labs');
+  // openDB() already creates all stores in v5 onupgradeneeded — no separate ensureStore needed.
+  await openDB();
   // Replace local data with cloud copy. Settings merge (preserve local sync creds).
   const db = await openDB();
   await new Promise((resolve, reject) => {
-    const stores = [STORES.shots, STORES.weights, STORES.moods, 'supplies', 'measurements', 'labs'];
+    const stores = [STORES.shots, STORES.weights, STORES.moods, 'supplies', 'measurements', 'labs', 'expenses'];
     const t = db.transaction(stores, 'readwrite');
     stores.forEach(s => t.objectStore(s).clear());
     t.oncomplete = resolve; t.onerror = () => reject(t.error);
@@ -3108,6 +3149,7 @@ async function applyPulledPayload(payload) {
   for (const s of (payload.supplies || [])) { delete s.id; await saveSupply(s); }
   for (const m of (payload.measurements || [])) { delete m.id; await saveMeasurement(m); }
   for (const l of (payload.labs || [])) { delete l.id; await saveLab(l); }
+  for (const e of (payload.expenses || [])) { delete e.id; await saveExpense(e); }
   if (payload.settings) {
     const preserve = { syncEnabled: settings.syncEnabled, syncUsername: settings.syncUsername, syncLastPushAt: settings.syncLastPushAt, syncLastPullAt: settings.syncLastPullAt, syncLastUpdatedAt: settings.syncLastUpdatedAt };
     settings = { ...DEFAULT_SETTINGS, ...payload.settings, ...preserve };
