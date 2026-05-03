@@ -17,7 +17,7 @@
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="icon" type="image/png" sizes="512x512" href="icons/icon-512.png">
 <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png">
-<link rel="stylesheet" href="styles.css?v=361">
+<link rel="stylesheet" href="styles.css?v=370">
 <script>
 (function(){
   // Apply saved theme synchronously to avoid flash. Settings live in IndexedDB; theme also mirrored to localStorage for fast read.
@@ -200,18 +200,6 @@
     <p class="muted small appetite-hint">For GLP-1 users, lower numbers usually mean the medication is working.</p>
   </section>
 
-  <section class="card recon-card" data-tab="home">
-    <div class="card-head"><h2>Mixing calculator <button class="info-btn" type="button" data-info="mixing-calc" aria-label="About this">i</button></h2><span class="muted small">Free · for compounded peptide users</span></div>
-    <p class="muted small">Mixing your own peptide? Enter the vial size, how much bacteriostatic water you added, and your dose. We'll tell you exactly how many units to draw into your insulin syringe.</p>
-    <div class="recon-grid">
-      <label>Vial (mg)<input id="recon-vial" type="number" step="0.1" min="0" value="10"></label>
-      <label>BAC water (mL)<input id="recon-water" type="number" step="0.1" min="0.1" value="2"></label>
-      <label>Your dose (mg)<input id="recon-dose" type="number" step="0.1" min="0" value="5"></label>
-    </div>
-    <div id="recon-output" class="recon-output"></div>
-    <p class="muted small">Always double-check with your prescriber before drawing a dose.</p>
-  </section>
-
   <section class="card" data-tab="home">
     <div class="card-head"><h2>Latest shots</h2><a href="#" id="view-all-history" class="link">See all</a></div>
     <ul id="recent-shots" class="shot-list"></ul>
@@ -221,6 +209,50 @@
   <section id="badges-card" class="card hidden" data-tab="home">
     <div class="card-head"><h2>Achievements <button class="info-btn" type="button" data-info="achievements" aria-label="About this">i</button></h2></div>
     <div id="badges-list" class="badges-list"></div>
+  </section>
+
+  <section class="card recon-card" data-tab="home">
+    <div class="card-head"><h2>Mixing calculator <button class="info-btn" type="button" data-info="mixing-calc" aria-label="About this">i</button></h2><span class="muted small">Free · for compounded peptide users</span></div>
+    <p class="muted small">Mixing your own peptide? Enter the vial size, how much bacteriostatic water you added, your dose, and your syringe size. We'll tell you exactly which line to draw to.</p>
+    <div class="recon-grid">
+      <label>Vial (mg)<input id="recon-vial" type="number" step="0.1" min="0" value="10"></label>
+      <label>BAC water (mL)<input id="recon-water" type="number" step="0.1" min="0.1" value="2"></label>
+      <label>Your dose (mg)<input id="recon-dose" type="number" step="0.1" min="0" value="5"></label>
+      <label>Syringe
+        <select id="recon-syringe">
+          <optgroup label="Insulin (U-100, units + mL)">
+            <option value="0.3">0.3 mL · 30 u</option>
+            <option value="0.5" selected>0.5 mL · 50 u</option>
+            <option value="1.0">1.0 mL · 100 u</option>
+          </optgroup>
+          <optgroup label="Insulin (U-40)">
+            <option value="0.5_u40">0.5 mL · 20 u (U-40)</option>
+            <option value="1.0_u40">1.0 mL · 40 u (U-40)</option>
+          </optgroup>
+          <optgroup label="Tuberculin / mL">
+            <option value="0.3tb">0.3 mL tuberculin</option>
+            <option value="0.5tb">0.5 mL tuberculin</option>
+            <option value="1.0tb">1.0 mL tuberculin</option>
+            <option value="3.0tb">3.0 mL tuberculin</option>
+            <option value="5.0tb">5.0 mL syringe</option>
+            <option value="10.0tb">10.0 mL syringe</option>
+          </optgroup>
+          <option value="custom">Custom…</option>
+        </select>
+      </label>
+    </div>
+    <div id="recon-custom" class="recon-custom hidden">
+      <label>Capacity (mL) <input id="recon-custom-ml" type="number" step="0.05" min="0.05" value="1"></label>
+      <label>Unit type
+        <select id="recon-custom-kind">
+          <option value="insulin">Insulin (U-100, 100 u/mL)</option>
+          <option value="insulin40">Insulin (U-40, 40 u/mL)</option>
+          <option value="tb">Tuberculin / mL only</option>
+        </select>
+      </label>
+    </div>
+    <div id="recon-output" class="recon-output"></div>
+    <p class="muted small">Always double-check with your prescriber before drawing a dose.</p>
   </section>
 
   <!-- INSIGHTS TAB -->
@@ -655,11 +687,46 @@
   </form>
 </dialog>
 
+<dialog id="badge-share-dialog" class="modal">
+  <form method="dialog">
+    <h2 id="badge-share-title">Share achievement</h2>
+    <p class="muted small">A private, branded card you can save or share. Generated on your device — nothing leaves your phone unless you share it.</p>
+    <div class="badge-share-preview-wrap">
+      <canvas id="badge-share-canvas" width="1080" height="1080"></canvas>
+    </div>
+    <div class="modal-actions">
+      <button type="button" id="badge-share-close" class="btn-ghost">Close</button>
+      <button type="button" id="badge-share-download" class="btn-ghost">Download</button>
+      <button type="button" id="badge-share-native" class="btn-primary">Share</button>
+    </div>
+  </form>
+</dialog>
+
 <dialog id="share-dialog" class="modal">
   <form method="dialog">
     <h2>🔗 Share with doctor</h2>
-    <p class="muted small">Generates a 24-hour read-only URL of your last 90 days. Encrypted in the URL fragment — only people with the link can view.</p>
+    <p class="muted small">Generates a 24-hour read-only URL. Encrypted in the URL fragment — only people with the link can view. Pick what to include.</p>
     <label>Label (optional) <input id="share-label" type="text" placeholder="e.g. Dr. Smith - April visit"></label>
+    <label>Date range
+      <select id="share-range">
+        <option value="30">Last 30 days</option>
+        <option value="90" selected>Last 90 days</option>
+        <option value="180">Last 6 months</option>
+        <option value="365">Last 12 months</option>
+        <option value="all">All-time</option>
+      </select>
+    </label>
+    <fieldset class="data-picker">
+      <legend>Include sections</legend>
+      <label class="check"><input type="checkbox" data-section="shots" checked> Shots & doses</label>
+      <label class="check"><input type="checkbox" data-section="weights" checked> Weight</label>
+      <label class="check"><input type="checkbox" data-section="measurements" checked> Body measurements</label>
+      <label class="check"><input type="checkbox" data-section="labs" checked> Labs</label>
+      <label class="check"><input type="checkbox" data-section="moods"> Mood log</label>
+      <label class="check"><input type="checkbox" data-section="appetites"> Appetite log</label>
+      <label class="check"><input type="checkbox" data-section="supplies"> Pens & vials</label>
+      <label class="check"><input type="checkbox" data-section="expenses"> Spending</label>
+    </fieldset>
     <div id="share-result" class="hidden">
       <p class="muted small">Share link (expires in 24h):</p>
       <div id="share-url-display" class="passphrase-display"></div>
@@ -668,6 +735,36 @@
     <div class="modal-actions">
       <button type="button" id="share-cancel" class="btn-ghost">Close</button>
       <button type="button" id="share-create" class="btn-primary">Create link</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="pdf-dialog" class="modal">
+  <form method="dialog">
+    <h2>📄 Generate PDF report</h2>
+    <p class="muted small">Choose what to include. Opens a print-ready window — use your browser's "Save as PDF".</p>
+    <label>Date range
+      <select id="pdf-range">
+        <option value="30">Last 30 days</option>
+        <option value="90" selected>Last 90 days</option>
+        <option value="180">Last 6 months</option>
+        <option value="365">Last 12 months</option>
+        <option value="all">All-time</option>
+      </select>
+    </label>
+    <fieldset class="data-picker">
+      <legend>Include sections</legend>
+      <label class="check"><input type="checkbox" data-pdf-section="shots" checked> Shots & doses</label>
+      <label class="check"><input type="checkbox" data-pdf-section="weights" checked> Weight</label>
+      <label class="check"><input type="checkbox" data-pdf-section="measurements" checked> Body measurements</label>
+      <label class="check"><input type="checkbox" data-pdf-section="labs" checked> Labs</label>
+      <label class="check"><input type="checkbox" data-pdf-section="moods"> Mood log</label>
+      <label class="check"><input type="checkbox" data-pdf-section="appetites"> Appetite log</label>
+      <label class="check"><input type="checkbox" data-pdf-section="sideEffects" checked> Side-effect summary</label>
+    </fieldset>
+    <div class="modal-actions">
+      <button type="button" id="pdf-cancel" class="btn-ghost">Cancel</button>
+      <button type="button" id="pdf-generate" class="btn-primary">Generate</button>
     </div>
   </form>
 </dialog>
@@ -816,6 +913,6 @@
 </nav>
 
 <script src="lib/chart.min.js"></script>
-<script src="app.js?v=361"></script>
+<script src="app.js?v=370"></script>
 </body>
 </html>

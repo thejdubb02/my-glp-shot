@@ -170,6 +170,16 @@ canvas{width:100% !important;height:auto !important;max-height:200px}
 .appetite-btn.selected{background:transparent;box-shadow:none;transform:scale(1.18)}
 .appetite-btn.selected .appetite-emoji{filter:drop-shadow(0 0 6px var(--bronze))}
 .appetite-hint{margin-top:8px;text-align:center}
+.data-picker{border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin:10px 0;display:grid;grid-template-columns:1fr 1fr;gap:6px 14px}
+.data-picker legend{padding:0 6px;font-size:.85rem;color:var(--muted);font-weight:600}
+.data-picker .check{display:flex;align-items:center;gap:8px;font-size:.9rem;cursor:pointer;margin:0}
+.data-picker .check input{margin:0}
+.badge-share-hint{display:block;font-size:.7rem;color:var(--muted);margin-top:2px}
+.badge.unlocked{cursor:pointer;background:none;border:1px solid var(--line);text-align:center;padding:10px;border-radius:10px;transition:transform .15s ease,border-color .15s ease}
+.badge.unlocked:hover{transform:translateY(-2px);border-color:var(--bronze)}
+.badges-toggle{margin-top:10px;width:100%}
+.badge-share-preview-wrap{margin:10px 0;text-align:center}
+.badge-share-preview-wrap canvas{width:100%;max-width:340px;height:auto;border-radius:12px;box-shadow:0 4px 14px rgba(0,0,0,.15)}
 /* Appetite trend bars use same .mood-bar styling, but with reverse intent (low = good): */
 #appetite-trend-bars .mood-bar.good{background:var(--bronze)}
 #appetite-trend-bars .mood-bar.mid{background:var(--muted)}
@@ -278,11 +288,15 @@ canvas{width:100% !important;height:auto !important;max-height:200px}
 
 /* Dose timeline strip */
 .dose-timeline-wrap{margin-top:14px;border-top:1px dashed var(--line);padding-top:10px}
-.dose-timeline-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:6px;flex-wrap:wrap}
-.dose-timeline-track{position:relative;height:22px;background:var(--surface-alt);border-radius:4px}
-.dose-timeline-axis{display:flex;justify-content:space-between;margin-top:4px}
-.dose-timeline-help{margin-top:8px;line-height:1.4}
-.dose-segment{position:absolute;top:3px;height:16px;background:var(--bronze);opacity:.7;border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;color:#fff;letter-spacing:.3px;overflow:hidden;white-space:nowrap}
+.dose-timeline-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:8px;flex-wrap:wrap}
+.dose-history-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px}
+.dose-history-list .dose-row{display:flex;align-items:center;gap:10px;padding:6px 10px;background:var(--surface-alt);border-radius:6px;flex-wrap:wrap}
+.dose-history-list .dose-row.current{background:color-mix(in srgb, var(--bronze) 18%, var(--surface-alt));border-left:3px solid var(--bronze-dk);font-weight:600}
+.dose-history-list .dose-mg{min-width:60px;font-weight:600;color:var(--bronze-dk)}
+.dose-history-list .dose-when{flex:1;color:var(--text)}
+.dose-arrow{font-size:.8rem;font-weight:600}
+.dose-arrow.up{color:#16a34a}
+.dose-arrow.down{color:#dc2626}
 
 /* Side effects */
 .se-grid{display:grid;grid-template-columns:1fr;gap:6px;margin-top:8px}
@@ -352,7 +366,15 @@ canvas{width:100% !important;height:auto !important;max-height:200px}
 .acct-err{color:var(--danger);font-size:.85rem;min-height:1.2em;margin:6px 0}
 
 /* Reconstitution calc */
-.recon-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin:8px 0}
+.recon-grid{display:grid;grid-template-columns:1fr 1fr 1fr 2fr;gap:8px;margin:8px 0}
+.recon-result.big{flex-direction:column;align-items:flex-start;border-bottom:none;padding:6px 0 10px}
+.recon-result.big strong{font-size:1.7rem;color:var(--bronze-dk)}
+.recon-sub{font-size:.85rem;font-weight:400;color:var(--muted)}
+.recon-custom{display:grid;grid-template-columns:1fr 2fr;gap:8px;margin:6px 0 10px;padding:10px;background:var(--surface-alt);border-radius:8px}
+.recon-custom label{margin:0;font-size:.78rem}
+.recon-row{display:flex;flex-wrap:wrap;gap:14px;border-top:1px dashed var(--line);padding-top:8px;margin-top:6px}
+.recon-row .recon-result{flex:1 1 auto;min-width:120px;border:none;padding:0}
+.recon-warn{background:#fef3c7;color:#92400e;border-radius:6px;padding:8px 10px;margin:6px 0;font-size:.9rem}
 .recon-grid label{margin:0;font-size:.78rem}
 .recon-output{background:var(--surface-alt);border-radius:10px;padding:12px;margin:10px 0;font-variant-numeric:tabular-nums}
 .recon-output .recon-result{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--line)}
@@ -362,6 +384,7 @@ canvas{width:100% !important;height:auto !important;max-height:200px}
 @media (max-width:480px){
   .recon-grid{grid-template-columns:1fr 1fr}
   .recon-grid label:last-child{grid-column:span 2}
+  .recon-grid label:nth-child(3){grid-column:auto}
 }
 
 /* Premium lock pill */

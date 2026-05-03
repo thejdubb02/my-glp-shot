@@ -6,7 +6,7 @@
 const DB_NAME = 'shotclock';
 // v6 bump: 'appetites' store added — daily appetite check-in alongside mood (GLP-1 mechanism is appetite suppression).
 const DB_VERSION = 6;
-const APP_VERSION = '0.36.1';
+const APP_VERSION = '0.37.0';
 
 // Umami event tracker. Aggregates only — no PII (no email, no IDs). Safe to call before umami loads.
 function track(event, props) {
@@ -352,8 +352,8 @@ const THEMES = [
 // Mood styles — 5 clear sets with unambiguous low→high progression. (Reduced from 10; ambiguous packs removed.)
 // 'classic' uses the hand-drawn SVG faces (handled separately in applyMoodStyle).
 const MOOD_STYLES = [
-  { id: 'classic', name: 'Classic',  emojis: ['😣', '😕', '😐', '🙂', '😄'] }, // SVG faces in app, emojis only used in picker preview
-  { id: 'simple',  name: 'Simple',   emojis: ['😢', '🙁', '😐', '🙂', '😀'] },
+  { id: 'classic', name: 'Classic',  emojis: ['😣', '😕', '😐', '🙂', '😄'] }, // SVG faces in main UI; emojis are picker preview only
+  { id: 'animals', name: 'Animals',  emojis: ['🐢', '🐌', '🐱', '🐶', '🦁'] },
   { id: 'weather', name: 'Weather',  emojis: ['⛈️', '🌧️', '☁️', '⛅', '☀️'] },
   { id: 'hearts',  name: 'Hearts',   emojis: ['💔', '🤍', '💛', '💚', '❤️'] },
   { id: 'energy',  name: 'Energy',   emojis: ['🪫', '😴', '😶', '😊', '⚡'] },
@@ -1173,6 +1173,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   renderAppetiteStyleGrid();
   setupInfoButtons();
   setupShareUI();
+  setupBadgeShareDialog();
 
   // (Session restore now happens via bootstrapSession() at script load — independent of this pipeline.)
 
@@ -1234,22 +1235,49 @@ async function renderWeights() {
     if (weightChart) { weightChart.destroy(); weightChart = null; }
     return;
   }
-  // Apply selected range filter (default = all).
+  // Apply selected range filter (default = all). Day-precision cutoff at local midnight.
   let ws = wsAll;
   if (_weightRangeDays !== 'all') {
-    const cutoff = Date.now() - parseInt(_weightRangeDays, 10) * 86400000;
-    ws = wsAll.filter(w => new Date(w.date).getTime() >= cutoff);
-    if (!ws.length) ws = wsAll.slice(-2); // never blank — show last 2 if range too tight
+    const days = parseInt(_weightRangeDays, 10);
+    const cutoff = new Date(); cutoff.setHours(0,0,0,0); cutoff.setDate(cutoff.getDate() - days);
+    ws = wsAll.filter(w => {
+      const d = new Date(w.date + 'T00:00:00');
+      return d.getTime() >= cutoff.getTime();
+    });
   }
   empty.classList.add('hidden');
   ctx.style.display = 'block';
+  if (!ws.length) {
+    if (weightChart) { weightChart.destroy(); weightChart = null; }
+    ctx.style.display = 'none';
+    empty.innerHTML = `<span class="empty-illus">⚖</span><br>No weight entries in this range. Try a wider time window.`;
+    empty.classList.remove('hidden');
+    return;
+  }
   const labels = ws.map(w => fmtDateShort(w.date));
   const data = ws.map(w => w.value);
+  const unit = (ws[0] && ws[0].unit) || 'lb';
   if (weightChart) weightChart.destroy();
   weightChart = new Chart(ctx, {
     type: 'line',
-    data: { labels, datasets: [{ data, borderColor: getThemeColor('--bronze-dk'), backgroundColor: getThemeColorAlpha('--bronze', .2), tension: .3, fill: true, pointRadius: 3 }] },
-    options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: false } } }
+    data: { labels, datasets: [{ label: `Weight (${unit})`, data, borderColor: getThemeColor('--bronze-dk'), backgroundColor: getThemeColorAlpha('--bronze', .2), tension: .3, fill: true, pointRadius: 3, pointHoverRadius: 6, pointHitRadius: 18 }] },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false, axis: 'x' },
+      hover: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          mode: 'index', intersect: false,
+          callbacks: {
+            title: (items) => items.length ? ws[items[0].dataIndex].date : '',
+            label: (ctx2) => `${ctx2.parsed.y} ${unit}`,
+          },
+        },
+      },
+      scales: { y: { beginAtZero: false } },
+    },
   });
 }
 
@@ -1929,6 +1957,17 @@ function setupAccountUI() {
     if (!isPremium()) { $('#upgrade-dialog').showModal(); return; }
     document.getElementById('show-share').click();
   });
+  const pdfDlg = document.getElementById('pdf-dialog');
+  if (pdfDlg) {
+    document.getElementById('pdf-cancel')?.addEventListener('click', () => pdfDlg.close());
+    document.getElementById('pdf-generate')?.addEventListener('click', async () => {
+      const sections = Array.from(pdfDlg.querySelectorAll('[data-pdf-section]:checked')).map(el => el.dataset.pdfSection);
+      const range = document.getElementById('pdf-range').value;
+      pdfDlg.close();
+      try { await runPdfExport({ range, sections }); track('pdf_export_created'); }
+      catch (e) { track('pdf_export_failed'); alert('Failed: ' + e.message); }
+    });
+  }
 }
 
 function setupSupplyUI() {
@@ -2061,7 +2100,9 @@ function setupShareUI() {
   $('#share-cancel').addEventListener('click', () => $('#share-dialog').close());
   $('#share-create').addEventListener('click', async () => {
     try {
-      const result = await createShareLink($('#share-label').value.trim());
+      const sections = Array.from(document.querySelectorAll('#share-dialog [data-section]:checked')).map(el => el.dataset.section);
+      const range = $('#share-range').value;
+      const result = await createShareLink($('#share-label').value.trim(), { range, sections });
       $('#share-url-display').textContent = result.url;
       $('#share-result').classList.remove('hidden');
       track('doctor_share_created');
@@ -2445,21 +2486,28 @@ function renderDoseTimeline(shots) {
   const fmt = (t) => new Date(t).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
   const totalDays = Math.round(span / 86400000);
   const currentDose = sorted[sorted.length - 1].dose;
-  const bars = segments.map(seg => {
-    const left = ((seg.start - minT) / span) * 100;
-    const width = Math.max(2, ((seg.end - seg.start) / span) * 100);
-    const intensity = 0.45 + 0.55 * (seg.dose / maxDose);
+  const reversed = [...segments].reverse();
+  const rows = reversed.map((seg, i) => {
     const days = Math.max(1, Math.round((seg.end - seg.start) / 86400000));
-    return `<div class="dose-segment" style="left:${left}%;width:${width}%;opacity:${intensity}" title="${seg.dose} mg · ${fmt(seg.start)} → ${fmt(seg.end)} (${days}d)">${seg.dose}mg</div>`;
+    const isCurrent = i === 0;
+    const prev = reversed[i + 1];
+    let arrow = '';
+    if (prev) {
+      if (seg.dose > prev.dose) arrow = `<span class="dose-arrow up">↑ from ${prev.dose} mg</span>`;
+      else if (seg.dose < prev.dose) arrow = `<span class="dose-arrow down">↓ from ${prev.dose} mg</span>`;
+    }
+    return `<li class="dose-row${isCurrent ? ' current' : ''}">
+      <span class="dose-mg">${seg.dose} mg</span>
+      <span class="dose-when">${fmt(seg.start)}${isCurrent ? ' → today' : ` → ${fmt(seg.end)}`} <span class="muted small">(${days}d)</span></span>
+      ${arrow}
+    </li>`;
   }).join('');
   wrap.innerHTML = `
     <div class="dose-timeline-head">
       <strong>Dose history</strong>
-      <span class="muted small">Currently ${currentDose} mg · ${segments.length} dose ${segments.length === 1 ? 'level' : 'changes'} over ${totalDays}d</span>
+      <span class="muted small">Currently <strong>${currentDose} mg</strong>${segments.length > 1 ? ` · ${segments.length - 1} change${segments.length === 2 ? '' : 's'} in ${totalDays}d` : ''}</span>
     </div>
-    <div class="dose-timeline-track">${bars}</div>
-    <div class="dose-timeline-axis"><span class="muted small">${fmt(minT)}</span><span class="muted small">Today</span></div>
-    <p class="muted small dose-timeline-help">Each bar is a dose level, plotted over the same time range as the weight chart above. Wider bars = longer time at that dose. Darker bars = higher dose. Tap a bar for the date range.</p>
+    <ol class="dose-history-list">${rows}</ol>
   `;
 }
 
@@ -2598,6 +2646,7 @@ async function renderMoodTrend(moods) {
 }
 
 // ---------- Achievements ----------
+let _badgesExpanded = false;
 function computeStats(shots, weights) {
   const wd = weightDelta(weights, settings.startWeight);
   const delta = wd ? wd.delta : 0;
@@ -2618,16 +2667,164 @@ async function renderBadges(shots, weights) {
   const unlocked = ACHIEVEMENTS.filter(a => a.test(stats));
   if (!unlocked.length && !shots.length) { card.classList.add('hidden'); return; }
   card.classList.remove('hidden');
-  list.innerHTML = unlocked.map(a => `<div class="badge unlocked"><span class="badge-icon">${a.icon}</span><span class="badge-label">${a.label}</span></div>`).join('');
+  // Most recently unlocked first when we know dates; otherwise preserve definition order reversed.
+  const dates = settings.achievementDates || {};
+  const ordered = [...unlocked].sort((a, b) => {
+    const ad = dates[a.id] || ''; const bd = dates[b.id] || '';
+    return bd.localeCompare(ad);
+  });
+  const collapsed = !_badgesExpanded && ordered.length > 5;
+  const visible = collapsed ? ordered.slice(0, 5) : ordered;
+  const cards = visible.map(a => `<button type="button" class="badge unlocked" data-badge-id="${a.id}" aria-label="Share ${escapeHTML(a.label)}"><span class="badge-icon">${a.icon}</span><span class="badge-label">${escapeHTML(a.label)}</span><span class="badge-share-hint">Tap to share</span></button>`).join('');
+  const toggleBtn = ordered.length > 5
+    ? `<button type="button" id="badges-toggle" class="btn-ghost badges-toggle">${_badgesExpanded ? 'Show fewer' : `Show all (${ordered.length})`}</button>`
+    : '';
+  list.innerHTML = cards + toggleBtn;
+  list.querySelectorAll('.badge[data-badge-id]').forEach(el => {
+    el.addEventListener('click', () => openBadgeShare(el.dataset.badgeId));
+  });
+  const tg = $('#badges-toggle');
+  if (tg) tg.addEventListener('click', async () => {
+    _badgesExpanded = !_badgesExpanded;
+    await renderBadges(shots, weights);
+  });
 
-  // Detect newly unlocked → confetti
+  // Detect newly unlocked → confetti + stamp earned date
   const prev = new Set(settings.achievements || []);
   const newly = unlocked.filter(a => !prev.has(a.id));
   if (newly.length) {
     settings.achievements = unlocked.map(a => a.id);
+    settings.achievementDates = settings.achievementDates || {};
+    const today = todayISODate();
+    for (const a of newly) {
+      if (!settings.achievementDates[a.id]) settings.achievementDates[a.id] = today;
+    }
     await saveSettings();
     fireConfetti();
   }
+}
+
+// ---------- Achievement share-card ----------
+async function openBadgeShare(badgeId) {
+  const a = ACHIEVEMENTS.find(x => x.id === badgeId);
+  if (!a) return;
+  const dlg = $('#badge-share-dialog');
+  if (!dlg) return;
+  const earned = (settings.achievementDates && settings.achievementDates[badgeId]) || todayISODate();
+  if (!settings.achievementDates) settings.achievementDates = {};
+  if (!settings.achievementDates[badgeId]) {
+    settings.achievementDates[badgeId] = earned;
+    await saveSettings();
+  }
+  $('#badge-share-title').textContent = `🎉 ${a.label}`;
+  await renderBadgeShareCanvas(a, earned);
+  dlg.showModal();
+  track('badge_share_opened', { id: badgeId });
+}
+
+async function renderBadgeShareCanvas(a, earnedISO) {
+  const c = $('#badge-share-canvas');
+  const ctx = c.getContext('2d');
+  const W = c.width, H = c.height;
+  // Theme-derived colors
+  const root = getComputedStyle(document.documentElement);
+  const c1 = (root.getPropertyValue('--bronze-dk') || '#83542e').trim() || '#83542e';
+  const c2 = (root.getPropertyValue('--bronze') || '#c7915b').trim() || '#c7915b';
+  // Background gradient
+  const grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, c1);
+  grad.addColorStop(1, c2);
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+  // Decorative dots
+  ctx.globalAlpha = 0.10;
+  for (let i = 0; i < 40; i++) {
+    ctx.beginPath();
+    ctx.arc(Math.random() * W, Math.random() * H, 4 + Math.random() * 14, 0, Math.PI * 2);
+    ctx.fillStyle = '#fff';
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  // Header
+  ctx.fillStyle = 'rgba(255,255,255,0.92)';
+  ctx.font = 'bold 36px -apple-system, "Segoe UI", system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('ACHIEVEMENT UNLOCKED', W / 2, 130);
+  // Big icon disc
+  ctx.beginPath();
+  ctx.arc(W / 2, H / 2 - 60, 200, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(255,255,255,0.97)';
+  ctx.fill();
+  ctx.font = '220px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",system-ui';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(a.icon, W / 2, H / 2 - 60);
+  ctx.textBaseline = 'alphabetic';
+  // Label
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 78px -apple-system, "Segoe UI", system-ui, sans-serif';
+  wrapText(ctx, a.label, W / 2, H / 2 + 220, W - 160, 90);
+  // Date
+  const dateStr = new Date(earnedISO + 'T00:00:00').toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
+  ctx.fillStyle = 'rgba(255,255,255,0.88)';
+  ctx.font = '40px -apple-system, "Segoe UI", system-ui, sans-serif';
+  ctx.fillText(dateStr, W / 2, H / 2 + 360);
+  // Footer brand bar
+  ctx.fillStyle = 'rgba(0,0,0,0.22)';
+  ctx.fillRect(0, H - 130, W, 130);
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 44px -apple-system, "Segoe UI", system-ui, sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText('💉 My GLP Shot', 60, H - 70);
+  ctx.font = '32px -apple-system, "Segoe UI", system-ui, sans-serif';
+  ctx.fillStyle = 'rgba(255,255,255,0.85)';
+  ctx.textAlign = 'right';
+  ctx.fillText('myglpshot.com', W - 60, H - 70);
+  ctx.textAlign = 'center';
+}
+
+function wrapText(ctx, text, x, y, maxWidth, lineHeight) {
+  const words = text.split(' ');
+  const lines = [];
+  let line = '';
+  for (const w of words) {
+    const test = line ? line + ' ' + w : w;
+    if (ctx.measureText(test).width > maxWidth && line) { lines.push(line); line = w; }
+    else line = test;
+  }
+  if (line) lines.push(line);
+  const startY = y - ((lines.length - 1) * lineHeight) / 2;
+  lines.forEach((ln, i) => ctx.fillText(ln, x, startY + i * lineHeight));
+}
+
+function setupBadgeShareDialog() {
+  const dlg = $('#badge-share-dialog');
+  if (!dlg) return;
+  $('#badge-share-close')?.addEventListener('click', () => dlg.close());
+  $('#badge-share-download')?.addEventListener('click', () => {
+    const c = $('#badge-share-canvas');
+    const a = document.createElement('a');
+    a.href = c.toDataURL('image/png');
+    a.download = `myglpshot-achievement-${todayISODate()}.png`;
+    document.body.appendChild(a); a.click(); a.remove();
+    track('badge_share_downloaded');
+  });
+  $('#badge-share-native')?.addEventListener('click', async () => {
+    const c = $('#badge-share-canvas');
+    c.toBlob(async (blob) => {
+      if (!blob) return;
+      const file = new File([blob], `myglpshot-achievement.png`, { type: 'image/png' });
+      try {
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          await navigator.share({ files: [file], title: 'My GLP Shot achievement', text: 'Just unlocked an achievement on My GLP Shot 💉' });
+          track('badge_share_native');
+        } else {
+          $('#badge-share-download').click();
+        }
+      } catch (e) {
+        if (e.name !== 'AbortError') alert('Share failed: ' + e.message);
+      }
+    }, 'image/png');
+  });
 }
 
 // ---------- Confetti ----------
@@ -3091,19 +3288,59 @@ function renderReconCalc() {
     out.textContent = `Desired dose (${dose} mg) exceeds vial total (${vial} mg).`;
     return;
   }
-  const concentration = vial / water;        // mg/mL
-  const drawMl = dose / concentration;       // mL to draw
-  const drawUnits100 = drawMl * 100;         // units on 100u/1mL syringe
-  const drawUnits50 = drawMl * 100;          // 50u syringe = same units, just smaller scale
+  const concentration = vial / water;
+  const drawMl = dose / concentration;
   const dosesInVial = Math.floor(vial / dose);
+  const syringe = ($('#recon-syringe')?.value) || '0.5';
+  const SYRINGES = {
+    '0.3':     { capMl: 0.3, kind: 'insulin' },
+    '0.5':     { capMl: 0.5, kind: 'insulin' },
+    '1.0':     { capMl: 1.0, kind: 'insulin' },
+    '0.5_u40': { capMl: 0.5, kind: 'insulin40' },
+    '1.0_u40': { capMl: 1.0, kind: 'insulin40' },
+    '0.3tb':   { capMl: 0.3, kind: 'tb' },
+    '0.5tb':   { capMl: 0.5, kind: 'tb' },
+    '1.0tb':   { capMl: 1.0, kind: 'tb' },
+    '3.0tb':   { capMl: 3.0, kind: 'tb' },
+    '5.0tb':   { capMl: 5.0, kind: 'tb' },
+    '10.0tb':  { capMl: 10.0, kind: 'tb' },
+  };
+  let sy;
+  if (syringe === 'custom') {
+    const customMl = parseFloat($('#recon-custom-ml')?.value);
+    const customKind = $('#recon-custom-kind')?.value || 'insulin';
+    if (!customMl || customMl <= 0) {
+      out.classList.add('error'); out.textContent = 'Enter a valid custom syringe capacity.'; return;
+    }
+    sy = { capMl: customMl, kind: customKind };
+  } else {
+    sy = SYRINGES[syringe] || SYRINGES['0.5'];
+  }
+  const unitsPerMl = sy.kind === 'insulin' ? 100 : (sy.kind === 'insulin40' ? 40 : null);
+  let drawToHtml;
+  let warning = '';
+  if (drawMl > sy.capMl + 1e-9) {
+    warning = `<div class="recon-warn">⚠ Draw volume (${drawMl.toFixed(3)} mL) exceeds this syringe's ${sy.capMl} mL capacity. Pick a larger syringe or reconstitute with more water.</div>`;
+    drawToHtml = `<div class="recon-result big"><span>Draw to</span><strong>—</strong></div>`;
+  } else if (unitsPerMl) {
+    const units = drawMl * unitsPerMl;
+    const roundedUnits = Math.round(units * 2) / 2;
+    const capUnits = Math.round(sy.capMl * unitsPerMl);
+    const scaleNote = unitsPerMl === 40 ? 'U-40 scale' : `${capUnits}u line`;
+    drawToHtml = `<div class="recon-result big"><span>Draw to</span><strong>${roundedUnits} u <span class="recon-sub">(${scaleNote} · ${drawMl.toFixed(3)} mL)</span></strong></div>`;
+  } else {
+    drawToHtml = `<div class="recon-result big"><span>Draw to</span><strong>${drawMl.toFixed(2)} mL <span class="recon-sub">(read mL marks)</span></strong></div>`;
+  }
   out.innerHTML = `
-    <div class="recon-result"><span>Concentration</span><strong>${concentration.toFixed(2)} mg/mL</strong></div>
-    <div class="recon-result"><span>Draw volume</span><strong>${drawMl.toFixed(3)} mL</strong></div>
-    <div class="recon-result"><span>Units (100u syringe)</span><strong>${drawUnits100.toFixed(0)} u</strong></div>
-    <div class="recon-result"><span>Doses in this vial</span><strong>${dosesInVial}</strong></div>
+    ${drawToHtml}
+    ${warning}
+    <div class="recon-row">
+      <div class="recon-result"><span>Concentration</span><strong>${concentration.toFixed(2)} mg/mL</strong></div>
+      <div class="recon-result"><span>Draw volume</span><strong>${drawMl.toFixed(3)} mL</strong></div>
+      <div class="recon-result"><span>Doses in vial</span><strong>${dosesInVial}</strong></div>
+    </div>
   `;
-  // Save preset
-  try { localStorage.setItem('recon.preset', JSON.stringify({ vial, water, dose })); } catch (e) {}
+  try { localStorage.setItem('recon.preset', JSON.stringify({ vial, water, dose, syringe })); } catch (e) {}
 }
 
 function setupReconCalc() {
@@ -3114,11 +3351,18 @@ function setupReconCalc() {
       if (p.vial != null) $('#recon-vial').value = p.vial;
       if (p.water != null) $('#recon-water').value = p.water;
       if (p.dose != null) $('#recon-dose').value = p.dose;
+      if (p.syringe && $('#recon-syringe')) $('#recon-syringe').value = p.syringe;
     }
   } catch (e) {}
-  ['#recon-vial', '#recon-water', '#recon-dose'].forEach(sel => {
-    $(sel).addEventListener('input', renderReconCalc);
+  ['#recon-vial', '#recon-water', '#recon-dose', '#recon-syringe', '#recon-custom-ml', '#recon-custom-kind'].forEach(sel => {
+    const el = $(sel); if (!el) return;
+    el.addEventListener('input', renderReconCalc);
+    el.addEventListener('change', renderReconCalc);
   });
+  const sy = $('#recon-syringe'), customWrap = $('#recon-custom');
+  const toggleCustom = () => { if (customWrap) customWrap.classList.toggle('hidden', sy?.value !== 'custom'); };
+  if (sy) sy.addEventListener('change', toggleCustom);
+  toggleCustom();
   renderReconCalc();
 }
 
@@ -3649,15 +3893,50 @@ async function renderPlateau(weights, shots) {
 // ----- PDF report (client-side print) -----
 async function exportPDFReport() {
   if (!isPremium()) { $('#upgrade-dialog').showModal(); return; }
+  const dlg = $('#pdf-dialog');
+  if (dlg) { dlg.showModal(); return; }
+  await runPdfExport({ range: '90', sections: ['shots','weights','measurements','labs','sideEffects'] });
+}
+
+function rangeCutoff(range) {
+  if (range === 'all') return new Date(0);
+  const days = parseInt(range, 10);
+  if (!Number.isFinite(days) || days <= 0) return new Date(0);
+  const c = new Date(); c.setDate(c.getDate() - days); return c;
+}
+function rangeLabel(range) {
+  return range === 'all' ? 'All-time' : `Last ${range} days`;
+}
+
+async function runPdfExport(opts) {
+  const inc = (k) => opts.sections.includes(k);
   const w = window.open('', '_blank');
   if (!w) { alert('Please allow popups to generate the PDF.'); return; }
-  const shots = await getShotsSorted();
-  const weights = await getWeightsSorted();
-  const measurements = await getMeasurements();
-  const labs = await getLabs();
-  const wd = weightDelta(weights, settings.startWeight);
-  const since = new Date(); since.setDate(since.getDate() - 90);
-  const rShots = shots.filter(s => new Date(s.when) >= since);
+  const since = rangeCutoff(opts.range);
+  const shotsAll = await getShotsSorted();
+  const weightsAll = await getWeightsSorted();
+  const measurements = inc('measurements') ? (await getMeasurements()).filter(m => new Date(m.date) >= since) : [];
+  const labs = inc('labs') ? (await getLabs()).filter(l => new Date(l.date) >= since) : [];
+  const moodsAll = inc('moods') ? (await dbAll(STORES.moods) || []).filter(m => new Date(m.date) >= since).sort((a,b) => new Date(b.date)-new Date(a.date)) : [];
+  const appetitesAll = inc('appetites') ? (await getAppetitesSorted()).filter(a => new Date(a.date) >= since) : [];
+  const wd = weightDelta(weightsAll, settings.startWeight);
+  const rShots = inc('shots') ? shotsAll.filter(s => new Date(s.when) >= since) : [];
+  const rWeights = inc('weights') ? weightsAll.filter(w2 => new Date(w2.date) >= since) : [];
+  const sideEffectCounts = (() => {
+    if (!inc('sideEffects')) return [];
+    const counts = {};
+    for (const s of shotsAll) {
+      if (new Date(s.when) < since || !s.sideEffects) continue;
+      for (const [k, lvl] of Object.entries(s.sideEffects)) {
+        counts[k] = counts[k] || { mild: 0, moderate: 0, severe: 0 };
+        if (counts[k][lvl] != null) counts[k][lvl]++;
+      }
+    }
+    const labelOf = (k) => (SIDE_EFFECTS.find(s => s[0] === k) || [k, k])[1];
+    return Object.entries(counts).sort((a,b) => (b[1].severe*4+b[1].moderate*2+b[1].mild) - (a[1].severe*4+a[1].moderate*2+a[1].mild)).map(([k,c]) => ({ label: labelOf(k), ...c, total: c.mild+c.moderate+c.severe }));
+  })();
+  const MOOD_TXT = { 1:'Awful',2:'Low',3:'Okay',4:'Good',5:'Great' };
+  const APP_TXT = { 1:'None',2:'Low',3:'Normal',4:'Hungry',5:'Ravenous' };
   const html = `<!doctype html><html><head><meta charset="utf-8"><title>My GLP Shot Report</title>
     <style>
       body{font-family:-apple-system,Arial,sans-serif;color:#0f172a;margin:30px;line-height:1.5}
@@ -3671,32 +3950,44 @@ async function exportPDFReport() {
       .stat span{color:#64748b;font-size:.78rem;text-transform:uppercase;letter-spacing:.5px}
       @media print { body{margin:14mm} }
     </style></head><body>
-    <h1>My GLP Shot — 90-Day Report</h1>
+    <h1>My GLP Shot — ${escapeHTML(rangeLabel(opts.range))} Report</h1>
     <p class="meta">Generated ${new Date().toLocaleString()} for ${escapeHTML(account.user?.email || '(local)')}</p>
 
     <h2>Summary</h2>
     <div>
-      <div class="stat"><strong>${rShots.length}</strong><span>shots (90d)</span></div>
-      ${wd ? `<div class="stat"><strong>${wd.delta < 0 ? '−' : '+'}${Math.abs(wd.delta).toFixed(1)} lb</strong><span>since start</span></div>` : ''}
-      ${wd ? `<div class="stat"><strong>${wd.current.toFixed(1)} lb</strong><span>current weight</span></div>` : ''}
+      ${inc('shots') ? `<div class="stat"><strong>${rShots.length}</strong><span>shots</span></div>` : ''}
+      ${inc('weights') && wd ? `<div class="stat"><strong>${wd.delta < 0 ? '−' : '+'}${Math.abs(wd.delta).toFixed(1)} lb</strong><span>since start</span></div>` : ''}
+      ${inc('weights') && wd ? `<div class="stat"><strong>${wd.current.toFixed(1)} lb</strong><span>current weight</span></div>` : ''}
     </div>
     <p class="meta">Medication: ${escapeHTML(settings.medication)} · Cadence: every ${settings.cadenceDays} day${settings.cadenceDays === 1 ? '' : 's'}</p>
 
-    <h2>Recent shots (${rShots.length})</h2>
+    ${inc('shots') ? `<h2>Shots (${rShots.length})</h2>
     <table><thead><tr><th>Date</th><th>Dose</th><th>Site</th><th>Notes</th></tr></thead><tbody>
-    ${rShots.slice(0, 60).map(s => `<tr><td>${new Date(s.when).toLocaleString()}</td><td>${s.dose} mg</td><td>${escapeHTML(s.site || '')}</td><td>${escapeHTML(s.notes || '')}</td></tr>`).join('')}
-    </tbody></table>
-
-    ${weights.length ? `<h2>Weight</h2><table><thead><tr><th>Date</th><th>Weight</th></tr></thead><tbody>
-    ${weights.slice(-30).map(w => `<tr><td>${w.date}</td><td>${w.value} ${w.unit}</td></tr>`).join('')}
+    ${rShots.slice(0, 200).map(s => `<tr><td>${new Date(s.when).toLocaleString()}</td><td>${s.dose} mg</td><td>${escapeHTML(s.site || '')}</td><td>${escapeHTML(s.notes || '')}</td></tr>`).join('')}
     </tbody></table>` : ''}
 
-    ${labs.length ? `<h2>Labs</h2><table><thead><tr><th>Date</th><th>Test</th><th>Value</th><th>Notes</th></tr></thead><tbody>
+    ${inc('weights') && rWeights.length ? `<h2>Weight</h2><table><thead><tr><th>Date</th><th>Weight</th></tr></thead><tbody>
+    ${rWeights.slice(-60).map(w => `<tr><td>${w.date}</td><td>${w.value} ${w.unit}</td></tr>`).join('')}
+    </tbody></table>` : ''}
+
+    ${inc('labs') && labs.length ? `<h2>Labs</h2><table><thead><tr><th>Date</th><th>Test</th><th>Value</th><th>Notes</th></tr></thead><tbody>
     ${labs.map(l => { const [label, unit] = LAB_LABELS[l.type] || [l.type, '']; return `<tr><td>${l.date}</td><td>${label}</td><td>${l.value} ${unit}</td><td>${escapeHTML(l.notes || '')}</td></tr>`; }).join('')}
     </tbody></table>` : ''}
 
-    ${measurements.length ? `<h2>Body measurements</h2><table><thead><tr><th>Date</th><th>Type</th><th>Value</th></tr></thead><tbody>
+    ${inc('measurements') && measurements.length ? `<h2>Body measurements</h2><table><thead><tr><th>Date</th><th>Type</th><th>Value</th></tr></thead><tbody>
     ${measurements.map(m => `<tr><td>${m.date}</td><td>${m.type}</td><td>${m.value} ${m.unit}</td></tr>`).join('')}
+    </tbody></table>` : ''}
+
+    ${inc('moods') && moodsAll.length ? `<h2>Mood log</h2><table><thead><tr><th>Date</th><th>Mood</th></tr></thead><tbody>
+    ${moodsAll.map(m => `<tr><td>${m.date}</td><td>${MOOD_TXT[m.value] || m.value}</td></tr>`).join('')}
+    </tbody></table>` : ''}
+
+    ${inc('appetites') && appetitesAll.length ? `<h2>Appetite log</h2><table><thead><tr><th>Date</th><th>Appetite</th></tr></thead><tbody>
+    ${appetitesAll.map(a => `<tr><td>${a.date}</td><td>${APP_TXT[a.value] || a.value}</td></tr>`).join('')}
+    </tbody></table>` : ''}
+
+    ${inc('sideEffects') && sideEffectCounts.length ? `<h2>Side-effect summary</h2><table><thead><tr><th>Symptom</th><th>Total</th><th>Mild</th><th>Moderate</th><th>Severe</th></tr></thead><tbody>
+    ${sideEffectCounts.map(s => `<tr><td>${escapeHTML(s.label)}</td><td>${s.total}</td><td>${s.mild}</td><td>${s.moderate}</td><td>${s.severe}</td></tr>`).join('')}
     </tbody></table>` : ''}
 
     <p class="meta">This report is for personal/clinical reference. Not medical advice.</p>
@@ -3706,9 +3997,9 @@ async function exportPDFReport() {
   w.document.close();
 }
 
-async function createShareLink(label) {
+async function createShareLink(label, opts) {
   if (!account.user || !account.encryptionKey) throw new Error('Not unlocked');
-  const payload = await buildPayload();
+  const payload = await buildPayload(opts);
   // Generate per-share random key, embed in URL fragment
   const shareKey = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt']);
   const rawKey = await crypto.subtle.exportKey('raw', shareKey);
@@ -3778,19 +4069,24 @@ function suggestPassphrase() {
   return out;
 }
 
-async function buildPayload() {
-  const shots = (await dbAll(STORES.shots)) || [];
-  const weights = (await dbAll(STORES.weights)) || [];
-  const moods = (await dbAll(STORES.moods)) || [];
+async function buildPayload(opts) {
+  const all = !opts || !opts.sections || !opts.sections.length;
+  const inc = (k) => all || opts.sections.includes(k);
+  const since = opts && opts.range ? rangeCutoff(opts.range) : new Date(0);
+  const filterByWhen = (rows) => rows.filter(r => new Date(r.when || r.date) >= since);
+  const shots = inc('shots') ? filterByWhen((await dbAll(STORES.shots)) || []) : [];
+  const weights = inc('weights') ? filterByWhen((await dbAll(STORES.weights)) || []) : [];
+  const moods = inc('moods') ? filterByWhen((await dbAll(STORES.moods)) || []) : [];
   let supplies = [], measurements = [], labs = [], expenses = [], appetites = [];
-  try { supplies = await getSupplies(); } catch (e) {}
-  try { measurements = await getMeasurements(); } catch (e) {}
-  try { labs = await getLabs(); } catch (e) {}
-  try { expenses = await getExpenses(); } catch (e) {}
-  try { appetites = await getAppetitesSorted(); } catch (e) {}
+  if (inc('supplies')) { try { supplies = await getSupplies(); } catch (e) {} }
+  if (inc('measurements')) { try { measurements = filterByWhen(await getMeasurements()); } catch (e) {} }
+  if (inc('labs')) { try { labs = filterByWhen(await getLabs()); } catch (e) {} }
+  if (inc('expenses')) { try { expenses = filterByWhen(await getExpenses()); } catch (e) {} }
+  if (inc('appetites')) { try { appetites = filterByWhen(await getAppetitesSorted()); } catch (e) {} }
   return {
     version: 4,
     exportedAt: new Date().toISOString(),
+    range: opts && opts.range ? opts.range : 'all',
     settings,
     shots, weights, moods, appetites,
     supplies, measurements, labs, expenses,
