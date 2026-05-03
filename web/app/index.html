@@ -55,6 +55,12 @@
   <button id="acct-banner-dismiss" class="btn-ghost tiny">×</button>
 </div>
 
+<div id="trial-end-banner" class="acct-banner trial-end hidden">
+  <span>⏳ <strong>Trial ending soon</strong> · <span id="trial-end-days">3</span> day(s) left · keep premium for $19.99/year</span>
+  <button id="trial-end-cta" class="btn-primary tiny">Upgrade</button>
+  <button id="trial-end-dismiss" class="btn-ghost tiny">×</button>
+</div>
+
 <dialog id="info-dialog" class="modal info-modal">
   <form method="dialog">
     <h2 id="info-dialog-title">About this</h2>
@@ -134,6 +140,7 @@
       <p class="muted small center" style="margin-top:10px"><a href="#" id="auth-forgot" class="link">Forgot password?</a></p>
     </form>
     <p class="muted small center auth-perks">14-day premium trial included · No credit card · Cancel anytime</p>
+    <p class="muted small center auth-skip"><a href="#" id="auth-skip-link" class="link">Skip for now — just try it →</a><br><span style="font-size:.78rem;opacity:.75">No account, no cloud sync. Data stays on this device only.</span></p>
   </section>
   <p class="muted small center auth-legal">By continuing you agree to the <a href="terms.html">Terms</a> and <a href="privacy.html">Privacy Policy</a>.</p>
   <p class="muted small center auth-legal">🔓 <a href="https://github.com/thejdubb02/my-glp-shot" target="_blank" rel="noopener">Open source on GitHub</a> · audit the code yourself</p>

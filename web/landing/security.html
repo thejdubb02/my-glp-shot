@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#c7915b">
+
+<title>Security — My GLP Shot</title>
+<meta name="description" content="My GLP Shot security: how we protect your data, our cryptography, and how to responsibly disclose vulnerabilities.">
+<link rel="canonical" href="https://myglpshot.com/security.html">
+<meta name="robots" content="index, follow, max-snippet:-1">
+
+<meta property="og:type" content="article">
+<meta property="og:title" content="Security — My GLP Shot">
+<meta property="og:description" content="How we protect your data, our cryptography, and how to report a vulnerability.">
+<meta property="og:url" content="https://myglpshot.com/security.html">
+<meta property="og:image" content="https://myglpshot.com/og-image.png">
+<meta name="twitter:card" content="summary_large_image">
+
+<link rel="icon" href="/app/icons/favicon.ico">
+<link rel="icon" type="image/png" sizes="32x32" href="/app/icons/favicon-32.png">
+<link rel="apple-touch-icon" href="/app/icons/apple-touch-icon.png">
+<link rel="preconnect" href="https://analytics.willhitestrategy.org" crossorigin>
+<link rel="stylesheet" href="/landing.css?v=4">
+
+<script defer src="https://analytics.willhitestrategy.org/script.js" data-website-id="51c31e21-5e35-47e5-a3a1-bf810825758e"></script>
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+    {"@type":"ListItem","position":1,"name":"My GLP Shot","item":"https://myglpshot.com/"},
+    {"@type":"ListItem","position":2,"name":"Security","item":"https://myglpshot.com/security.html"}
+  ]
+}
+</script>
+
+<style>
+  .security-body{max-width:760px;margin:0 auto;padding:32px 24px 64px}
+  .security-body h2{margin-top:32px}
+  .security-body h3{margin-top:20px;font-size:1.05rem}
+  .security-body code{background:var(--surface-alt,#f7f0e8);padding:1px 6px;border-radius:4px;font-size:.92em}
+  .security-body .key-row{margin-top:6px;font-family:ui-monospace,Menlo,monospace;font-size:.85rem;background:var(--surface-alt,#f7f0e8);padding:10px 12px;border-radius:6px;word-break:break-all}
+</style>
+</head>
+<body>
+
+<header class="hdr">
+  <div class="brand"><a href="/"><img src="/app/icons/icon-192.png" alt="My GLP Shot logo" width="32" height="32" loading="eager"> My GLP Shot</a></div>
+  <nav class="hdr-nav">
+    <a href="/#pricing">Pricing</a>
+    <a href="/#faq">FAQ</a>
+    <a href="/privacy.html">Privacy</a>
+    <a href="https://app.myglpshot.com/" class="btn-cta-sm">Open app →</a>
+  </nav>
+</header>
+
+<main class="security-body">
+  <h1>Security</h1>
+  <p class="muted">Last updated: <time datetime="2026-05-03">May 3, 2026</time></p>
+
+  <h2>How My GLP Shot protects your data</h2>
+  <p>The default mode is <strong>local-only</strong>. Your shots, doses, weights, mood, body measurements, lab values, photos, and notes never leave your device unless you explicitly opt into cloud sync.</p>
+  <p>If you turn on cloud sync, the encryption happens in your browser before any byte hits our server:</p>
+  <ul>
+    <li>Your password is never sent to our server. It is run through <code>PBKDF2-SHA-256</code> with <strong>600,000 iterations</strong> in the browser to derive both an authentication token (sent to the server) and an AES-256-GCM key (kept on your device).</li>
+    <li>All synced data is encrypted with that AES-256-GCM key using a fresh random 12-byte IV before upload.</li>
+    <li>The server stores opaque ciphertext only. We have no key material. We literally cannot read your data.</li>
+    <li>Doctor-share links generate a fresh per-share AES key and place it in the URL fragment after the <code>#</code> — fragments are not sent to servers, so the share link's key never reaches us either.</li>
+  </ul>
+  <p>The full encryption code is short, idiomatic, and uses only the platform's built-in <code>SubtleCrypto</code> Web API. You can read every line on <a href="https://github.com/thejdubb02/my-glp-shot" target="_blank" rel="noopener">GitHub</a>.</p>
+
+  <h2>Independent audits</h2>
+  <p>As of <time datetime="2026-05-03">May 2026</time>, My GLP Shot has not undergone a formal third-party penetration test or cryptographic audit. The code is public; community audit is welcome and encouraged.</p>
+  <p>If a formal audit is conducted, results will be published here.</p>
+
+  <h2>What we promise on disclosure</h2>
+  <ul>
+    <li><strong>Acknowledge within 48 hours.</strong> A real human will reply, not an autoresponder.</li>
+    <li><strong>Patch critical issues fast.</strong> Privacy and crypto issues take priority over feature work.</li>
+    <li><strong>Public credit.</strong> If you'd like to be credited (with a name, handle, or anonymously), we'll add you to a public security acknowledgements list. Credits live in <a href="https://github.com/thejdubb02/my-glp-shot/blob/main/SECURITY.md" target="_blank" rel="noopener">SECURITY.md</a>.</li>
+    <li><strong>No legal threats for good-faith research.</strong> If you're acting in good faith — testing only your own data, not exfiltrating other users' data, not running denial-of-service against production — we are not going to come after you.</li>
+  </ul>
+
+  <h2>How to report</h2>
+  <p>Email <a href="mailto:security@myglpshot.com">security@myglpshot.com</a> with:</p>
+  <ul>
+    <li>A clear description of the issue and the impact.</li>
+    <li>Steps to reproduce (test account, sample input, etc.).</li>
+    <li>Optionally, a suggested fix or mitigation.</li>
+  </ul>
+  <p>For high-severity issues, please <strong>do not</strong> open a public GitHub issue first — give us a chance to fix it before broad disclosure.</p>
+
+  <h3>Encrypted channel</h3>
+  <p>If your report contains anything you'd like to encrypt in transit, encrypt to the email address above's public key. PGP key fingerprint will be added here once published; until then, plain TLS email to <code>security@myglpshot.com</code> is the supported channel.</p>
+
+  <h2>Out of scope</h2>
+  <ul>
+    <li>Theoretical attacks against the underlying primitives we depend on (browser <code>SubtleCrypto</code>, TLS, the Stripe billing flow).</li>
+    <li>Vulnerabilities that require a compromised user device or a fully compromised browser — at that point, all bets are off, regardless of our app's design.</li>
+    <li>Self-XSS or social-engineering of the user's own browser console.</li>
+    <li>Issues only reachable from a custom-built or modified version of the code.</li>
+  </ul>
+
+  <h2>Infrastructure</h2>
+  <ul>
+    <li>Servers: independent VPS infrastructure (not AWS or Google Cloud).</li>
+    <li>Backups: daily encrypted (AES-256-CBC + PBKDF2) backups to a second VPS.</li>
+    <li>TLS: Let's Encrypt certificates, auto-rotated, OCSP stapling enabled.</li>
+    <li>Email: Resend for transactional mail; no marketing automation, no third-party tracking pixels.</li>
+    <li>Analytics on the marketing site: self-hosted privacy-friendly Umami (no IPs, no cookies, no cross-site tracking). The app itself loads zero third-party scripts.</li>
+  </ul>
+
+  <h2>Account deletion</h2>
+  <p>To delete your account and the encrypted cloud blob, open the app → Settings → "Delete account and all cloud data." The deletion is immediate and irreversible; we do not retain backups of deleted account data beyond the rolling encrypted snapshot, which is itself unreadable to us and rolls over.</p>
+
+  <p style="margin-top:48px">Questions? <a href="mailto:security@myglpshot.com">security@myglpshot.com</a></p>
+</main>
+
+<footer class="ftr">
+  <p class="ftr-bottom">© 2026 My GLP Shot. Not medical advice. Talk to your doctor.</p>
+</footer>
+</body>
+</html>

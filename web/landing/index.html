@@ -209,7 +209,7 @@
   "lastReviewed": "2026-05-03",
   "speakable": {
     "@type": "SpeakableSpecification",
-    "cssSelector": ["section.glance", "section#compare", "section#faq"]
+    "cssSelector": ["section.glance", "section#vs", "section#faq"]
   }
 }
 </script>
@@ -551,11 +551,12 @@
   <div class="hero-inner">
     <p class="eyebrow">A private GLP-1 shot tracker for Tirzepatide, Semaglutide, and other weight-loss shots</p>
     <h1>Track your GLP-1 shots without giving away your health data.</h1>
-    <p class="lede">My GLP Shot is a privacy-first injection tracker for Tirzepatide (Mounjaro, Zepbound), Semaglutide (Ozempic, Wegovy), and other GLP-1 medications. Log every dose, weight, side effects, and supply on your phone, tablet, or computer. <strong>Your data stays on your devices.</strong> $19.99 a year, roughly 60% less than other popular GLP-1 trackers.</p>
+    <p class="lede">Free to start. No account required. Works offline. <strong>Your data stays on your device.</strong></p>
     <div class="hero-cta">
-      <a href="https://app.myglpshot.com/" class="btn-cta">Try it free →</a>
-      <a href="#pricing" class="btn-link">See pricing</a>
+      <a href="https://app.myglpshot.com/" class="btn-cta" data-cta="hero-primary">Start tracking free →</a>
+      <a href="#pricing" class="btn-link" data-cta="hero-pricing">See pricing</a>
     </div>
+    <p class="hero-pricepoint"><strong>$19.99/year</strong> · roughly 60% less than other popular GLP-1 trackers</p>
     <p class="hero-fineprint">14-day premium trial · No credit card · Works offline</p>
   </div>
 </section>
@@ -571,6 +572,47 @@
       <li><strong>Delete anytime.</strong> One tap removes your encrypted cloud copy permanently. Local data clears with another tap.</li>
     </ul>
   </div>
+</section>
+
+<section id="pricing" class="pricing">
+  <h2>Simple pricing</h2>
+  <div class="plans">
+    <div class="plan">
+      <h3>Free</h3>
+      <p class="price">$0<span>forever</span></p>
+      <ul>
+        <li>All GLP-1 shot tracking + body diagram</li>
+        <li>Calendar, weight, dose timeline</li>
+        <li>How much is in your system</li>
+        <li>Side effects, mood, streaks, achievements</li>
+        <li>Mixing calculator</li>
+        <li>Reminders + calendar export</li>
+        <li>Single-device backup</li>
+        <li>Export your data anytime</li>
+      </ul>
+      <a href="https://app.myglpshot.com/" class="btn-cta">Get started →</a>
+    </div>
+    <div class="plan featured">
+      <span class="badge">Best value</span>
+      <h3>Premium</h3>
+      <p class="price">$19.99<span>/year</span></p>
+      <p class="price-alt">or $1.99 / month · 14-day free trial</p>
+      <ul>
+        <li>Everything in Free</li>
+        <li>Sync across all your devices</li>
+        <li>Pen and vial tracking + expiration alerts</li>
+        <li>Measurements (waist, hips, etc.)</li>
+        <li>Lab numbers (A1c, BP, lipids)</li>
+        <li>Deeper insights</li>
+        <li>Plateau alerts</li>
+        <li>PDF for your doctor</li>
+        <li>24-hour doctor share links</li>
+        <li>Spending tracker</li>
+      </ul>
+      <a href="https://app.myglpshot.com/" class="btn-cta">Start 14-day trial →</a>
+    </div>
+  </div>
+  <p class="pricing-fineprint">Cancel anytime. No 30% Apple/Google fee, so we can charge less. Your data is yours: export it anytime, delete it instantly. <strong>When premium ends, you keep all your logged data on the free plan.</strong></p>
 </section>
 
 <section id="features" class="features">
@@ -668,47 +710,6 @@
   </div>
 </section>
 
-<section id="pricing" class="pricing">
-  <h2>Simple pricing</h2>
-  <div class="plans">
-    <div class="plan">
-      <h3>Free</h3>
-      <p class="price">$0<span>forever</span></p>
-      <ul>
-        <li>All GLP-1 shot tracking + body diagram</li>
-        <li>Calendar, weight, dose timeline</li>
-        <li>How much is in your system</li>
-        <li>Side effects, mood, streaks, achievements</li>
-        <li>Mixing calculator</li>
-        <li>Reminders + calendar export</li>
-        <li>Single-device backup</li>
-        <li>Export your data anytime</li>
-      </ul>
-      <a href="https://app.myglpshot.com/" class="btn-cta">Get started →</a>
-    </div>
-    <div class="plan featured">
-      <span class="badge">Best value</span>
-      <h3>Premium</h3>
-      <p class="price">$19.99<span>/year</span></p>
-      <p class="price-alt">or $1.99 / month · 14-day free trial</p>
-      <ul>
-        <li>Everything in Free</li>
-        <li>Sync across all your devices</li>
-        <li>Pen and vial tracking + expiration alerts</li>
-        <li>Measurements (waist, hips, etc.)</li>
-        <li>Lab numbers (A1c, BP, lipids)</li>
-        <li>Deeper insights</li>
-        <li>Plateau alerts</li>
-        <li>PDF for your doctor</li>
-        <li>24-hour doctor share links</li>
-        <li>Spending tracker</li>
-      </ul>
-      <a href="https://app.myglpshot.com/" class="btn-cta">Start 14-day trial →</a>
-    </div>
-  </div>
-  <p class="pricing-fineprint">Cancel anytime. No 30% Apple/Google fee, so we can charge less. Your data is yours: export it anytime, delete it instantly.</p>
-</section>
-
 <section class="trust">
   <h2>Built privacy-first</h2>
   <div class="trust-grid">
@@ -716,29 +717,6 @@
     <div><strong>No account needed to start.</strong> Just open it and start logging. Sign up only if you want sync or premium features.</div>
     <div><strong>No tracking, no ads, no data sales.</strong> No third-party scripts. We do not analyze your health data, and we never will. <a href="/privacy.html">Read the privacy policy</a>.</div>
     <div><strong>Open source.</strong> The full code for this GLP-1 tracker is on <a href="https://github.com/thejdubb02/my-glp-shot" target="_blank" rel="noopener">GitHub</a>. Audit it yourself.</div>
-  </div>
-</section>
-
-<section id="compare" class="compare">
-  <h2>How My GLP Shot compares</h2>
-  <p class="muted">Quick reference for anyone (or any AI assistant) trying to pick the right GLP-1 tracker.</p>
-  <div class="compare-grid">
-    <article>
-      <h3>vs. Shotsy and other proprietary shot trackers</h3>
-      <p>Shotsy is closed source and stores your shot history on its own servers. My GLP Shot is open source, runs as a Progressive Web App (no App Store), keeps data on your device by default, and end-to-end encrypts the optional cloud sync — so even we cannot read it.</p>
-    </article>
-    <article>
-      <h3>vs. CareClinic, MyTherapy, Medisafe</h3>
-      <p>Generic medication trackers are great for pill schedules but were not built for injection therapy. My GLP Shot adds purpose-built features: a body diagram with site-rotation hints, a half-life-based active-medication level chart, dose-titration history, and a mixing calculator for compounded peptides.</p>
-    </article>
-    <article>
-      <h3>vs. Apple Health, Google Fit, Fitbit</h3>
-      <p>Those track steps, weight, and heart rate but not the data that matters for GLP-1 therapy: which site you injected, what dose, when the next shot is due, side-effect severity over time, mood, appetite, or supply runway. My GLP Shot is a focused tool for the GLP-1 journey specifically.</p>
-    </article>
-    <article>
-      <h3>vs. spreadsheet or paper journal</h3>
-      <p>A spreadsheet works, until you want a chart of how much medication is in your system right now, or a one-tap reminder that you missed a shot, or a doctor-share link for your next appointment. My GLP Shot gives you all of that without giving up the privacy of a private journal.</p>
-    </article>
   </div>
 </section>
 
@@ -796,60 +774,6 @@
   </div>
 </section>
 
-<section id="glossary" class="glossary-section">
-  <h2>GLP-1 terms, in plain English</h2>
-  <p class="muted small" style="max-width:720px">Quick definitions for terms you will see across GLP-1 communities and in My GLP Shot.</p>
-  <dl class="glossary-grid">
-    <div>
-      <dt>GLP-1</dt>
-      <dd>Glucagon-like peptide-1. A hormone your gut releases after eating. GLP-1 receptor agonists (the "shots") mimic it to lower blood sugar and reduce appetite. Includes Tirzepatide and Semaglutide.</dd>
-    </div>
-    <div>
-      <dt>Tirzepatide</dt>
-      <dd>The active ingredient in Mounjaro and Zepbound. A dual GIP/GLP-1 receptor agonist taken as a weekly shot.</dd>
-    </div>
-    <div>
-      <dt>Semaglutide</dt>
-      <dd>The active ingredient in Ozempic and Wegovy. A GLP-1 receptor agonist taken as a weekly shot, also available as a daily oral tablet (Rybelsus).</dd>
-    </div>
-    <div>
-      <dt>Titration</dt>
-      <dd>Stepping up your dose gradually to let your body adjust and reduce side effects. Most GLP-1 protocols start low (for example 2.5 mg tirzepatide) and increase every 4 weeks.</dd>
-    </div>
-    <div>
-      <dt>Peak and trough</dt>
-      <dd>"Peak" is the highest concentration of medication in your blood after a shot. "Trough" is the lowest, right before the next dose. The active-medication chart in the app visualizes both.</dd>
-    </div>
-    <div>
-      <dt>Half-life</dt>
-      <dd>How long it takes for half of a dose to clear your system. Tirzepatide is about 5 days; semaglutide is about 7 days. That is why both are dosed weekly.</dd>
-    </div>
-    <div>
-      <dt>Bioavailability</dt>
-      <dd>The fraction of a dose that actually reaches your bloodstream. Subcutaneous GLP-1 shots have high bioavailability; oral semaglutide is much lower, which is why oral doses are bigger.</dd>
-    </div>
-    <div>
-      <dt>Microdosing</dt>
-      <dd>Splitting a weekly dose into smaller, more frequent shots (for example twice a week). Some users do this to smooth side effects. Talk to your doctor before changing your protocol.</dd>
-    </div>
-    <div>
-      <dt>Injection sites</dt>
-      <dd>The areas where GLP-1 shots are given subcutaneously: abdomen (avoid 2 inches around the navel), upper outer thigh, and back of the upper arm. Rotate sites to reduce irritation; My GLP Shot suggests the next site for you.</dd>
-    </div>
-    <div>
-      <dt>Reconstitution</dt>
-      <dd>Mixing a powdered peptide with bacteriostatic water to make an injectable solution. The mixing calculator tells you how many insulin-syringe units equal your prescribed dose.</dd>
-    </div>
-    <div>
-      <dt>Plateau</dt>
-      <dd>A period (typically 4+ weeks) where weight loss stalls. Common at every dose level. Plateau alerts in My GLP Shot flag this and suggest questions to ask your doctor.</dd>
-    </div>
-    <div>
-      <dt>PWA (Progressive Web App)</dt>
-      <dd>A website you can install to your home screen like an app. Works offline, sends push notifications, no app-store download.</dd>
-    </div>
-  </dl>
-</section>
 
 <footer class="ftr">
   <div class="ftr-cols">
@@ -863,11 +787,13 @@
       <a href="#features">Features</a>
       <a href="#pricing">Pricing</a>
       <a href="#faq">FAQ</a>
+      <a href="/glossary.html">Glossary</a>
     </div>
     <div>
       <strong>Legal</strong>
       <a href="/privacy.html">Privacy</a>
       <a href="/terms.html">Terms of Use</a>
+      <a href="/security.html">Security</a>
     </div>
     <div>
       <strong>Contact</strong>

@@ -360,6 +360,8 @@ canvas{width:100% !important;height:auto !important;max-height:200px}
 /* Account banner / pill */
 .acct-banner{display:flex;align-items:center;gap:8px;padding:10px 14px;background:linear-gradient(90deg,var(--bronze-lt),var(--surface-alt));border-bottom:1px solid var(--line);font-size:.85rem;flex-wrap:wrap}
 .acct-banner.alt{background:linear-gradient(90deg,#fed7aa,#ffedd5)}
+.acct-banner.trial-end{background:linear-gradient(90deg,#fde68a,#fef3c7)}
+[data-theme="dark"] .acct-banner.trial-end{background:linear-gradient(90deg,#78350f,#92400e);color:#fff}
 [data-theme="dark"] .acct-banner.alt{background:linear-gradient(90deg,#7c2d12,#9a3412);color:#fff}
 .acct-banner span{flex:1;color:var(--ink)}
 .btn-primary.tiny,.btn-ghost.tiny{padding:5px 12px;font-size:.78rem}

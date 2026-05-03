@@ -6,7 +6,7 @@
 const DB_NAME = 'shotclock';
 // v6 bump: 'appetites' store added — daily appetite check-in alongside mood (GLP-1 mechanism is appetite suppression).
 const DB_VERSION = 6;
-const APP_VERSION = '0.41.1';
+const APP_VERSION = '0.41.2';
 
 // Umami event tracker. Aggregates only — no PII (no email, no IDs). Safe to call before umami loads.
 function track(event, props) {
@@ -853,10 +853,21 @@ function wireCriticalUI() {
   // Auth gate — show by default. tryRestoreAccount can hide it if a session restores.
   // Doing this synchronously in wireCriticalUI guarantees the user always sees the
   // sign-in form even if every other init step fails.
-  document.body.classList.add('auth-active');
-  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
-  const authViewEl = document.getElementById('view-auth');
-  if (authViewEl) authViewEl.classList.add('active');
+  // Honor the "skip for now" local-only mode: if the user previously chose to try without an account,
+  // boot straight into the home view instead of forcing the auth gate.
+  const _skippedAuth = (() => { try { return localStorage.getItem('mglp_skip_auth') === '1'; } catch (e) { return false; } })();
+  if (!_skippedAuth) {
+    document.body.classList.add('auth-active');
+    document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+    const authViewEl = document.getElementById('view-auth');
+    if (authViewEl) authViewEl.classList.add('active');
+  } else {
+    document.body.classList.remove('auth-active');
+    const authViewEl = document.getElementById('view-auth');
+    if (authViewEl) authViewEl.classList.remove('active');
+    const homeEl = document.getElementById('view-home');
+    if (homeEl) homeEl.classList.add('active');
+  }
 
   document.querySelectorAll('#view-auth .auth-toggle-btn').forEach(btn => {
     btn.addEventListener('click', () => setAuthMode(btn.getAttribute('data-auth-mode')));
@@ -868,6 +879,20 @@ function wireCriticalUI() {
       e.preventDefault();
       const dlg = document.getElementById('forgot-dialog');
       if (dlg && dlg.showModal) dlg.showModal();
+    });
+  }
+  const authSkip = document.getElementById('auth-skip-link');
+  if (authSkip) {
+    authSkip.addEventListener('click', (e) => {
+      e.preventDefault();
+      try { localStorage.setItem('mglp_skip_auth', '1'); } catch (err) {}
+      try { track('tried_without_account'); } catch (err) {}
+      document.body.classList.remove('auth-active');
+      const av = document.getElementById('view-auth');
+      if (av) av.classList.remove('active');
+      const home = document.getElementById('view-home');
+      if (home) home.classList.add('active');
+      if (typeof maybeAutoShowInstall === 'function') { try { maybeAutoShowInstall(); } catch (err) {} }
     });
   }
   async function handleAuthSubmit() {
@@ -2025,6 +2050,17 @@ function setupAccountUI() {
     localStorage.setItem('acct.banner.dismissed', '1');
     $('#account-banner').classList.add('hidden');
   });
+  const tebDismiss = document.getElementById('trial-end-dismiss');
+  if (tebDismiss) tebDismiss.addEventListener('click', () => {
+    try { localStorage.setItem('mglp_trial_end_dismissed', todayISODate()); } catch (e) {}
+    document.getElementById('trial-end-banner')?.classList.add('hidden');
+    track('trial_end_banner_dismissed');
+  });
+  const tebCta = document.getElementById('trial-end-cta');
+  if (tebCta) tebCta.addEventListener('click', () => {
+    track('trial_end_banner_clicked');
+    document.getElementById('upgrade-cta')?.click();
+  });
   $('#account-form').addEventListener('submit', handleAccountSubmit);
 
   // (Auth form + toggle wired in wireCriticalUI() so it works even if init hangs.)
@@ -2898,6 +2934,22 @@ async function renderBadges(shots, weights) {
     }
     await saveSettings();
     fireConfetti();
+    // Auto-open the share-card modal on a fresh unlock — pick the highest-tier new achievement
+    // (last in the canonical ACHIEVEMENTS order). One pop-up per render cycle, never on first load.
+    try {
+      const seenInitial = settings._achievementsInitialized;
+      if (seenInitial) {
+        const order = ACHIEVEMENTS.map(a => a.id);
+        const top = newly.slice().sort((a, b) => order.indexOf(b.id) - order.indexOf(a.id))[0];
+        if (top) setTimeout(() => { try { openBadgeShare(top.id); } catch (e) {} }, 600);
+      } else {
+        settings._achievementsInitialized = true;
+        await saveSettings();
+      }
+    } catch (e) {}
+  } else if (!settings._achievementsInitialized) {
+    settings._achievementsInitialized = true;
+    try { await saveSettings(); } catch (e) {}
   }
 }
 
@@ -3413,11 +3465,13 @@ async function onAccountChanged() {
   const pill = $('#hdr-account-pill');
   // Auth gate: require signup/login on every fresh device. Once signed in, app unlocks.
   // (Old jdubb-style legacy sync bypass removed — everyone uses the email/password account flow.)
-  if (!u) {
+  const skippedAuth = (() => { try { return localStorage.getItem('mglp_skip_auth') === '1'; } catch (e) { return false; } })();
+  if (!u && !skippedAuth) {
     document.body.classList.add('auth-active');
     $$('.view').forEach(v => v.classList.remove('active'));
     $('#view-auth').classList.add('active');
   } else {
+    if (u) { try { localStorage.removeItem('mglp_skip_auth'); } catch (e) {} }
     document.body.classList.remove('auth-active');
     if ($('#view-auth').classList.contains('active')) {
       $('#view-auth').classList.remove('active');
@@ -3451,6 +3505,22 @@ async function onAccountChanged() {
     } else {
       $('#account-trial-bar').classList.add('hidden');
     }
+    // Trial-ending banner: show when 3 or fewer days remain on a free trial. Dismissible per-day.
+    try {
+      const teb = $('#trial-end-banner');
+      if (teb) {
+        const isTrial = u.subscriptionStatus === 'trial' && u.isPremium && u.trialEndsAt;
+        const daysLeft = isTrial ? Math.max(0, Math.ceil((u.trialEndsAt - Date.now() / 1000) / 86400)) : null;
+        const todayKey = todayISODate();
+        const dismissedKey = (() => { try { return localStorage.getItem('mglp_trial_end_dismissed') || ''; } catch (e) { return ''; } })();
+        if (isTrial && daysLeft !== null && daysLeft <= 3 && daysLeft > 0 && dismissedKey !== todayKey) {
+          $('#trial-end-days').textContent = String(daysLeft);
+          teb.classList.remove('hidden');
+        } else {
+          teb.classList.add('hidden');
+        }
+      }
+    } catch (e) {}
     $('#upgrade-cta').classList.toggle('hidden', isPremium());
     $('#manage-billing-cta').classList.toggle('hidden', !u.hasStripeCustomer);
     const legacySync = $('#legacy-cloud-sync-card');
