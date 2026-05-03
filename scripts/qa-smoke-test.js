@@ -773,6 +773,96 @@ async function probe(name, fn) {
     return `tiles=${tileInfo.length} unlocked=${stats.unlockedCount} firstSharePainted=ok`;
   });
 
+  // === Cross-device sync verification ===
+  // Simulates: User on device A logs a shot, picks a theme, picks a mood pack;
+  // Device B (a separate browser context) logs into the same account; should see
+  // all of it. The original bug was a 30 s push debounce + an auto-pull guard
+  // that fired only when local IDB was empty — both fixed in v0.40.0.
+  await probe('cross_device_sync', async () => {
+    // === Device A: clear cloud, write data, force-flush. ===
+    await page.evaluate(async () => {
+      // First clear the cloud blob so the test state is deterministic.
+      await accountSyncDelete().catch(() => {});
+      // Clear local stores too.
+      const db = await openDB();
+      for (const store of ['shots', 'weights', 'moods']) {
+        await new Promise(res => { const tx = db.transaction(store, 'readwrite'); tx.objectStore(store).clear(); tx.oncomplete = res; });
+      }
+      // Add a recognizable shot, set theme, set mood style.
+      const when = new Date().toISOString();
+      await new Promise((res, rej) => {
+        const tx = db.transaction('shots', 'readwrite');
+        const a = tx.objectStore('shots').add({ when, dose: 7.5, site: 'thigh', notes: 'CROSS_DEVICE_PROBE' });
+        a.onsuccess = () => { tx.oncomplete = res; }; a.onerror = () => rej(a.error);
+      });
+      settings.colorTheme = 'sapphire';
+      settings.moodStyle = 'animals';
+      settings.appetiteStyle = 'plates';
+      await saveSettings();
+      // Push immediately (no waiting for the 1.5 s debounce).
+      await accountSyncPush();
+    });
+    // === Device B: brand-new browser context, same account, expect data to appear. ===
+    const ctx2 = await browser.createBrowserContext();
+    const pageB = await ctx2.newPage();
+    await pageB.goto(APP_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    pageB.on('console', m => { if (m.type() === 'error' || m.text().includes('mgs')) console.log('[B-live]', m.type(), m.text().slice(0, 200)); });
+    pageB.on('pageerror', e => console.log('[B-pageerror]', e.message));
+    await pageB.waitForSelector('#auth-email', { timeout: 8000 });
+    // Make sure DOMContentLoaded handlers have run (auth-form listener attached) before clicking.
+    await new Promise(r => setTimeout(r, 2000));
+    await pageB.evaluate(() => {
+      document.querySelector('[data-auth-mode="login"]').click();
+    });
+    await pageB.evaluate((e, p) => {
+      document.getElementById('auth-email').value = e;
+      document.getElementById('auth-pw').value = p;
+    }, QA_EMAIL, QA_PASS);
+    const navP = pageB.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 25000 }).catch(() => null);
+    await pageB.click('#auth-submit');
+    // Capture any auth error before reload races us
+    await new Promise(r => setTimeout(r, 2000));
+    const authErr = await pageB.evaluate(() => document.getElementById('auth-err')?.textContent).catch(() => '');
+    if (authErr) console.log('[B] auth-err:', authErr);
+    const tokAfterClick = await pageB.evaluate(() => localStorage.getItem('mgs_session_token') ? 'yes' : 'no').catch(() => '?');
+    console.log('[B] post-click token in LS:', tokAfterClick);
+    await navP;
+    await pageB.waitForFunction(() => typeof account !== 'undefined' && !!(account && account.user && account.encryptionKey), { timeout: 15000 }).catch(() => {});
+    // Wait for auto-pull to complete (settings.syncLastPullAt updates on apply).
+    await pageB.waitForFunction(() => settings && settings.syncLastPullAt, { timeout: 15000 }).catch(() => {});
+    await new Promise(r => setTimeout(r, 1200));
+    pageB.on('console', m => console.log('[B]', m.type(), m.text().slice(0, 200)));
+    const onB = await pageB.evaluate(async () => {
+      // Debug: try to pull manually and see what comes back.
+      const probe = {};
+      try {
+        probe.user = !!(account && account.user);
+        probe.key = !!(account && account.encryptionKey);
+        probe.token = !!localStorage.getItem('mgs_session_token');
+        probe.cred = !!localStorage.getItem('account.cred');
+        const r = await accountSyncPull();
+        probe.pullResult = r ? { exists: true, payloadShots: (r.payload?.shots || []).length, settings: r.payload?.settings ? Object.keys(r.payload.settings).length : 0 } : 'null';
+      } catch (e) { probe.pullErr = e.message; }
+      const shots = (await dbAll('shots')) || [];
+      return {
+        debug: probe,
+        shotCount: shots.length,
+        probeShot: shots.find(s => s.notes === 'CROSS_DEVICE_PROBE') ? 'present' : 'missing',
+        colorTheme: settings.colorTheme,
+        moodStyle: settings.moodStyle,
+        appetiteStyle: settings.appetiteStyle,
+        pullStamp: settings.syncLastPullAt,
+      };
+    });
+    console.log('B debug:', JSON.stringify(onB));
+    await ctx2.close();
+    if (onB.probeShot !== 'present') throw new Error(`device B did not see the probe shot: ${JSON.stringify(onB)}`);
+    if (onB.colorTheme !== 'sapphire') throw new Error(`device B theme not synced: ${onB.colorTheme}`);
+    if (onB.moodStyle !== 'animals') throw new Error(`device B mood style not synced: ${onB.moodStyle}`);
+    if (onB.appetiteStyle !== 'plates') throw new Error(`device B appetite style not synced: ${onB.appetiteStyle}`);
+    return `shot=${onB.probeShot} theme=${onB.colorTheme} mood=${onB.moodStyle} appetite=${onB.appetiteStyle}`;
+  });
+
   // === 23. Plateau detection logic runs without error ===
   await probe('premium_plateau_logic', async () => {
     const r = await page.evaluate(() => {

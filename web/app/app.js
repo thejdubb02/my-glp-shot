@@ -6,7 +6,7 @@
 const DB_NAME = 'shotclock';
 // v6 bump: 'appetites' store added — daily appetite check-in alongside mood (GLP-1 mechanism is appetite suppression).
 const DB_VERSION = 6;
-const APP_VERSION = '0.40.0';
+const APP_VERSION = '0.41.0';
 
 // Umami event tracker. Aggregates only — no PII (no email, no IDs). Safe to call before umami loads.
 function track(event, props) {
@@ -1270,6 +1270,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupInfoButtons();
   setupShareUI();
   setupBadgeShareDialog();
+  setupSyncFlushAndVisibilityPull();
 
   // (Session restore now happens via bootstrapSession() at script load — independent of this pipeline.)
 
@@ -1954,11 +1955,60 @@ function maybeAutoShowInstall() {
   } catch (_) {}
 }
 
+// Flush pending pushes when the tab loses focus / unloads, and pull fresh data
+// when it regains focus (covers the "I switched devices" UX). Without this,
+// debounced writes can be silently dropped and the user sees stale data.
+function setupSyncFlushAndVisibilityPull() {
+  const flush = () => {
+    if (!window._syncDirty) return;
+    if (!account.user || !account.encryptionKey) return;
+    // Cancel the debounced push and fire one synchronously-initiated push now.
+    clearTimeout(window._syncDebounce);
+    window._syncDirty = false;
+    accountSyncPush().catch(() => { window._syncDirty = true; });
+  };
+  document.addEventListener('visibilitychange', async () => {
+    if (document.visibilityState === 'hidden') {
+      flush();
+    } else if (document.visibilityState === 'visible') {
+      // Coming back to the tab — pull any remote changes another device pushed
+      // while we were away. Skip if we just pushed (within last 10 s) to avoid loops.
+      if (!account.user || !account.encryptionKey) return;
+      const recentPush = settings.syncLastPushAt && (Date.now() - new Date(settings.syncLastPushAt).getTime() < 10000);
+      if (recentPush) return;
+      try {
+        const result = await accountSyncPull();
+        if (result && result.payload) {
+          const cloudUpdatedAt = result.updatedAt || 0;
+          const lastSeen = settings.syncLastUpdatedAt || 0;
+          if (cloudUpdatedAt > lastSeen) {
+            await applyPulledPayload(result.payload);
+            track('visibility_pull_applied');
+          }
+        }
+      } catch (e) {
+        console.warn('[mgs] visibility pull failed:', e);
+      }
+    }
+  });
+  // pagehide is the most reliable event on mobile Safari for "tab is going away."
+  window.addEventListener('pagehide', flush);
+  // beforeunload is desktop-friendly.
+  window.addEventListener('beforeunload', flush);
+}
+
 async function markSyncDirty() {
   if (account.user && account.encryptionKey) {
-    // Account-based sync: auto-push debounced
+    // Account-based sync: auto-push with a *short* debounce so the cloud copy is
+    // always within ~2 s of local. Anything longer means closing the tab can drop
+    // a write. visibilitychange + pagehide listeners (registered at boot) flush
+    // any still-pending writes when the tab backgrounds or unloads.
+    window._syncDirty = true;
     clearTimeout(window._syncDebounce);
-    window._syncDebounce = setTimeout(() => { accountSyncPush().catch(() => {}); }, 30000);
+    window._syncDebounce = setTimeout(() => {
+      window._syncDirty = false;
+      accountSyncPush().catch(() => { window._syncDirty = true; });
+    }, 1500);
     return;
   }
   if (!syncCreds || !settings.syncEnabled || !settings.syncAutoPush) return;
@@ -3206,17 +3256,39 @@ async function tryRestoreAccount() {
       account.encryptionKey = await importStoredAesKey(remembered.k);
     } catch (e) {}
   }
-  // Auto-pull on cross-device login: if local IDB is empty but a cloud blob exists, pull it silently.
-  // This is the "I logged in on my desktop and my data isn't there" fix — pull happens before first render.
+  // Auto-pull on every login. Strategy:
+  //   - Pull cloud copy if it exists.
+  //   - If local is empty: apply pulled payload directly (cross-device login).
+  //   - If local has data AND cloud is newer than our last-pull stamp: apply pulled
+  //     payload (cloud is source of truth — another device pushed since we last synced).
+  //   - If local has data and cloud is stale or absent: push local up.
+  // The previous "only pull if local empty" check was the bug — if a user opened
+  // the app on a second device that had any prior local data, the pull was skipped
+  // and they'd never see their phone's shots.
   if (account.encryptionKey) {
     try {
       const localShots = (await dbAll(STORES.shots)) || [];
       const localWeights = (await dbAll(STORES.weights)) || [];
-      if (localShots.length === 0 && localWeights.length === 0) {
-        const result = await accountSyncPull();
-        if (result && result.payload) {
+      const localEmpty = localShots.length === 0 && localWeights.length === 0;
+      const result = await accountSyncPull();
+      if (result && result.payload) {
+        const cloudUpdatedAt = result.updatedAt || 0;
+        const lastSeenUpdatedAt = settings.syncLastUpdatedAt || 0;
+        const cloudNewer = cloudUpdatedAt > lastSeenUpdatedAt;
+        if (localEmpty || cloudNewer) {
           await applyPulledPayload(result.payload);
-          track('cross_device_auto_pull', { shots: (result.payload.shots || []).length });
+          track('cross_device_auto_pull', {
+            shots: (result.payload.shots || []).length,
+            reason: localEmpty ? 'local_empty' : 'cloud_newer',
+          });
+        } else {
+          // Local has unsynced changes newer than cloud — push them.
+          try { await accountSyncPush(); } catch (e) { console.warn('[mgs] auto-push on login failed:', e); }
+        }
+      } else {
+        // No cloud copy yet — push local if we have anything to push.
+        if (!localEmpty) {
+          try { await accountSyncPush(); } catch (e) { console.warn('[mgs] initial push on login failed:', e); }
         }
       }
     } catch (e) {
