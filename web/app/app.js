@@ -6,7 +6,7 @@
 const DB_NAME = 'shotclock';
 // v5 bump: 'expenses' store added so the Spending card can take ad-hoc cost entries (copays, pharmacy fees, etc.) without needing a supply row.
 const DB_VERSION = 5;
-const APP_VERSION = '0.33.0';
+const APP_VERSION = '0.33.1';
 
 // Umami event tracker. Aggregates only — no PII (no email, no IDs). Safe to call before umami loads.
 function track(event, props) {
@@ -908,7 +908,7 @@ async function renderWeights() {
   if (weightChart) weightChart.destroy();
   weightChart = new Chart(ctx, {
     type: 'line',
-    data: { labels, datasets: [{ data, borderColor: '#0f766e', backgroundColor: 'rgba(20,184,166,.2)', tension: .3, fill: true, pointRadius: 3 }] },
+    data: { labels, datasets: [{ data, borderColor: getThemeColor('--bronze-dk'), backgroundColor: getThemeColorAlpha('--bronze', .2), tension: .3, fill: true, pointRadius: 3 }] },
     options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: false } } }
   });
 }
@@ -971,7 +971,7 @@ function renderLevelChart(shots) {
   if (levelChart) levelChart.destroy();
   levelChart = new Chart(ctx, {
     type: 'line',
-    data: { labels, datasets: [{ data, borderColor: '#14b8a6', backgroundColor: 'rgba(20,184,166,.25)', tension: .35, fill: true, pointRadius: 0 }] },
+    data: { labels, datasets: [{ data, borderColor: getThemeColor('--bronze'), backgroundColor: getThemeColorAlpha('--bronze', .25), tension: .35, fill: true, pointRadius: 0 }] },
     options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, title: { display: true, text: 'mg-equivalent' } } } }
   });
 }
@@ -2096,9 +2096,19 @@ async function renderMood() {
   if (todayMood && !card.dataset.editing) {
     picker.classList.add('hidden');
     logged.classList.remove('hidden');
-    $('#mood-logged-svg').innerHTML = MOOD_SVG[todayMood.value] || '';
-    $('#mood-logged-svg').classList.toggle('mood-positive', todayMood.value >= 4);
-    $('#mood-logged-svg').classList.toggle('mood-negative', todayMood.value <= 2);
+    const loggedSvg = $('#mood-logged-svg');
+    loggedSvg.dataset.value = String(todayMood.value);
+    const styleId = settings.moodStyle || 'classic';
+    if (styleId === 'classic') {
+      loggedSvg.innerHTML = MOOD_SVG[todayMood.value] || '';
+      loggedSvg.classList.remove('mood-emoji-display');
+    } else {
+      const s = MOOD_STYLES.find(x => x.id === styleId) || MOOD_STYLES[0];
+      loggedSvg.innerHTML = `<span class="mood-emoji-big">${s.emojis[todayMood.value - 1] || '🙂'}</span>`;
+      loggedSvg.classList.add('mood-emoji-display');
+    }
+    loggedSvg.classList.toggle('mood-positive', todayMood.value >= 4);
+    loggedSvg.classList.toggle('mood-negative', todayMood.value <= 2);
     $('#mood-logged-label').textContent = MOOD_LABELS[todayMood.value] || 'Logged';
     heading.textContent = "Today's mood";
     saved.textContent = '';
@@ -2884,6 +2894,26 @@ function isDarkModeActive() {
   return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
 }
 
+// Reads a CSS custom property from :root as a hex/rgb string. Used by Chart.js datasets so they honor the active theme.
+function getThemeColor(varName) {
+  const v = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+  return v || '#0f766e';
+}
+function getThemeColorAlpha(varName, alpha) {
+  const c = getThemeColor(varName);
+  // Convert #rgb / #rrggbb to rgba; pass through rgb()/rgba() with alpha override.
+  if (c.startsWith('#')) {
+    const h = c.replace('#', '');
+    const r = parseInt(h.length === 3 ? h[0]+h[0] : h.slice(0,2), 16);
+    const g = parseInt(h.length === 3 ? h[1]+h[1] : h.slice(2,4), 16);
+    const b = parseInt(h.length === 3 ? h[2]+h[2] : h.slice(4,6), 16);
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  }
+  const m = c.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
+  if (m) return `rgba(${m[1]}, ${m[2]}, ${m[3]}, ${alpha})`;
+  return c;
+}
+
 function applyColorTheme(themeId) {
   const t = THEMES.find(x => x.id === themeId) || THEMES[0];
   const variant = isDarkModeActive() ? t.dark : t.light;
@@ -2906,13 +2936,33 @@ function reapplyCurrentColorTheme() {
 
 function applyMoodStyle(styleId) {
   const s = MOOD_STYLES.find(x => x.id === styleId) || MOOD_STYLES[0];
-  // Mood buttons live in #mood-card with .mood-btn data-mood="1..5". Replace inner text with emoji.
+  // Replace each mood picker button's inner SVG with a big emoji.
+  // Default 'classic' keeps the hand-drawn smileys (which are SVG-based for theming) by NOT replacing — restore SVGs from MOOD_SVG.
   document.querySelectorAll('.mood-btn').forEach(btn => {
     const v = parseInt(btn.dataset.mood, 10);
     if (!Number.isFinite(v)) return;
-    // Preserve any svg icons by checking — but our buttons just use plain text/emoji content.
-    btn.textContent = s.emojis[v - 1] || '🙂';
+    if (styleId === 'classic') {
+      btn.innerHTML = `<svg viewBox="0 0 32 32" class="mood-svg">${MOOD_SVG[v] || ''}</svg>`;
+    } else {
+      btn.innerHTML = `<span class="mood-emoji">${s.emojis[v - 1] || '🙂'}</span>`;
+    }
   });
+  // Logged-state mood display.
+  const loggedSvgEl = document.getElementById('mood-logged-svg');
+  if (loggedSvgEl) {
+    // Keep its outer container but swap the inner content based on style.
+    // Read the logged value from the data attribute that renderMood writes.
+    const v = parseInt(loggedSvgEl.dataset.value || '0', 10);
+    if (v > 0) {
+      if (styleId === 'classic') {
+        loggedSvgEl.innerHTML = MOOD_SVG[v] || '';
+        loggedSvgEl.classList.remove('mood-emoji-display');
+      } else {
+        loggedSvgEl.innerHTML = `<span class="mood-emoji-big">${s.emojis[v - 1] || '🙂'}</span>`;
+        loggedSvgEl.classList.add('mood-emoji-display');
+      }
+    }
+  }
 }
 
 function renderThemeGrid() {
@@ -2921,7 +2971,7 @@ function renderThemeGrid() {
   const current = settings.colorTheme || 'teal';
   grid.innerHTML = THEMES.map(t => `
     <button type="button" class="theme-swatch ${t.id === current ? 'active' : ''}" data-theme-id="${t.id}" aria-label="${t.name}">
-      <span class="theme-swatch-dot" style="background:linear-gradient(135deg,${t.primary} 0%,${t.grad2} 100%)"></span>
+      <span class="theme-swatch-dot" style="background:linear-gradient(135deg,${t.light.primary} 0%,${t.light.grad2} 100%)"></span>
       <span class="theme-swatch-name">${t.name}</span>
     </button>
   `).join('');
@@ -2933,6 +2983,8 @@ function renderThemeGrid() {
       await saveSettings();
       applyColorTheme(id);
       grid.querySelectorAll('.theme-swatch').forEach(b => b.classList.toggle('active', b === btn));
+      // Rebuild charts with new colors. (CSS-driven elements like heatmap/badges retint automatically via custom properties.)
+      try { await renderShots(); } catch (_) {}
       markSyncDirty();
       track('theme_changed', { theme: id });
     });

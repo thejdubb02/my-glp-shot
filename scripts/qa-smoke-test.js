@@ -451,7 +451,35 @@ async function probe(name, fn) {
     if (!ok) throw new Error('PDF export buttons missing');
   });
 
-  // === 22. Plateau detection logic runs without error ===
+  // === 22. Level chart refreshes when a back-dated (missed) shot is added ===
+  await probe('level_chart_refresh_on_backdated_shot', async () => {
+    // Read current level data, add a missed shot from 5 days ago, read again. Should differ.
+    const before = await page.evaluate(() => {
+      const c = typeof levelChart !== 'undefined' && levelChart ? levelChart.data.datasets[0].data.slice() : null;
+      return c ? c.reduce((a, b) => a + b, 0) : 0;
+    });
+    await page.evaluate(() => document.querySelector('#bottom-nav .nav-btn[data-nav-tab="home"]').click());
+    await new Promise(r => setTimeout(r, 300));
+    await page.evaluate(() => document.getElementById('log-shot-btn').click());
+    await new Promise(r => setTimeout(r, 400));
+    await page.evaluate(() => {
+      const f = document.getElementById('shot-form');
+      f.querySelector('#shot-dose-amt').value = '7.5';
+      const d = new Date(Date.now() - 5 * 86400000);
+      f.querySelector('#shot-when').value = d.toISOString().slice(0, 16);
+      f.setAttribute('novalidate', 'true');
+      f.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    });
+    await new Promise(r => setTimeout(r, 1500));
+    const after = await page.evaluate(() => {
+      const c = typeof levelChart !== 'undefined' && levelChart ? levelChart.data.datasets[0].data.slice() : null;
+      return c ? c.reduce((a, b) => a + b, 0) : 0;
+    });
+    if (after <= before) throw new Error(`level chart did not change: before=${before.toFixed(2)} after=${after.toFixed(2)}`);
+    return `Δ=${(after - before).toFixed(2)}`;
+  });
+
+  // === 23. Plateau detection logic runs without error ===
   await probe('premium_plateau_logic', async () => {
     const r = await page.evaluate(() => {
       try {
