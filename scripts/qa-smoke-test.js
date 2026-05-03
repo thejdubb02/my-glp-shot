@@ -451,6 +451,33 @@ async function probe(name, fn) {
     if (!ok) throw new Error('PDF export buttons missing');
   });
 
+  // === 22a. Every (i) tooltip opens with non-empty content ===
+  await probe('all_info_tooltips_render', async () => {
+    const keys = await page.evaluate(() => Object.keys(typeof INFO_TOPICS !== 'undefined' ? INFO_TOPICS : {}));
+    if (!keys.length) throw new Error('INFO_TOPICS not exposed on window');
+    const failures = [];
+    for (const k of keys) {
+      const r = await page.evaluate(async (key) => {
+        try {
+          await showInfo(key);
+          const dlg = document.getElementById('info-dialog');
+          const titleEl = document.getElementById('info-dialog-title');
+          const bodyEl = document.getElementById('info-dialog-body');
+          const open = dlg && dlg.open;
+          const t = titleEl && titleEl.textContent.trim();
+          const b = bodyEl && bodyEl.innerHTML.trim();
+          if (dlg && dlg.open) dlg.close();
+          return { open, title: t || '', bodyLen: (b || '').length };
+        } catch (e) { return { open: false, error: e.message }; }
+      }, k);
+      if (!r.open || !r.title || r.bodyLen < 30) {
+        failures.push(`${k}:open=${r.open} title="${r.title}" bodyLen=${r.bodyLen} err=${r.error || ''}`);
+      }
+    }
+    if (failures.length) throw new Error('tooltip failures:\n  ' + failures.join('\n  '));
+    return `${keys.length} tooltips render`;
+  });
+
   // === 22. Daily appetite check-in persists ===
   await probe('log_appetite', async () => {
     await page.evaluate(() => document.querySelector('#bottom-nav .nav-btn[data-nav-tab="home"]').click());

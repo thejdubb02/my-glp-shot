@@ -6,7 +6,7 @@
 const DB_NAME = 'shotclock';
 // v6 bump: 'appetites' store added — daily appetite check-in alongside mood (GLP-1 mechanism is appetite suppression).
 const DB_VERSION = 6;
-const APP_VERSION = '0.35.0';
+const APP_VERSION = '0.36.1';
 
 // Umami event tracker. Aggregates only — no PII (no email, no IDs). Safe to call before umami loads.
 function track(event, props) {
@@ -22,27 +22,52 @@ const STORES = { shots: 'shots', weights: 'weights', settings: 'settings', moods
 const INFO_TOPICS = {
   'next-shot': {
     title: 'Next shot countdown',
-    body: `<p>The big number shows how long until your next scheduled shot.</p>
-      <p>It's based on:</p>
-      <ul>
-        <li>Your most recent logged shot</li>
-        <li>The cadence (days between shots) you set in <strong>Settings</strong></li>
-      </ul>
-      <p>If a shot is overdue, the card turns orange and shows how late it is.</p>
-      <h3>How it's calculated</h3>
-      <div class="formula">next shot = last shot + cadence days</div>`,
+    body: async () => {
+      const shots = await getShotsSorted();
+      const latest = shots.length ? shots[shots.length - 1] : null;
+      const med = settings.medication || 'Tirzepatide';
+      const cadence = settings.cadenceDays || 7;
+      let yourLine = '';
+      if (latest) {
+        const next = new Date(new Date(latest.when).getTime() + cadence * 86400000);
+        const ms = next.getTime() - Date.now();
+        const sign = ms < 0 ? 'overdue by' : 'due in';
+        const days = Math.abs(Math.round(ms / 86400000));
+        yourLine = `<p><strong>For you right now:</strong> last shot was ${escapeHTML(latest.dose + 'mg ' + med)} on ${new Date(latest.when).toLocaleDateString()}, so your next shot is <strong>${sign} ${days} day${days === 1 ? '' : 's'}</strong>.</p>`;
+      } else {
+        yourLine = `<p><strong>For you right now:</strong> no shots logged yet — log your first to start the countdown.</p>`;
+      }
+      return `<p>The big number shows how long until your next scheduled shot.</p>
+        ${yourLine}
+        <h3>How it's calculated</h3>
+        <div class="formula">next shot = last shot + ${cadence} days</div>
+        <p>Change cadence in <strong>Settings → Medication</strong>. If a shot is overdue, the card turns orange.</p>`;
+    },
   },
   'progress-stats': {
     title: 'Your progress',
-    body: `<p>Three quick numbers across the top of the home screen.</p>
-      <h3>Lost so far</h3>
-      <p>Difference between your starting weight and your most recent weight entry.</p>
-      <div class="formula">lost = start_weight − latest_weight</div>
-      <p>Set your starting weight in <strong>Settings → Weight goals</strong>, or it auto-detects from your first weight entry.</p>
-      <h3>Weeks on track</h3>
-      <p>How many weeks since your first logged shot.</p>
-      <h3>Shots taken</h3>
-      <p>Total number of shots logged.</p>`,
+    body: async () => {
+      const weights = await getWeightsSorted();
+      const shots = await getShotsSorted();
+      const start = settings.startWeight ?? (weights[0] && weights[0].value);
+      const latest = weights.length ? weights[weights.length - 1].value : null;
+      const lost = (start != null && latest != null) ? (start - latest).toFixed(1) : null;
+      const firstShot = shots.length ? new Date(shots[0].when) : null;
+      const weeks = firstShot ? Math.floor((Date.now() - firstShot.getTime()) / (7 * 86400000)) : 0;
+      let yourLine = '<p><strong>For you right now:</strong> ';
+      if (start != null && latest != null) yourLine += `you've gone from <strong>${start} lb</strong> to <strong>${latest} lb</strong> = <strong>${lost > 0 ? lost + ' lb lost' : Math.abs(lost) + ' lb gained'}</strong>`;
+      else yourLine += `log your starting weight in Settings + at least one weight entry to see your progress`;
+      yourLine += `, ${weeks} week${weeks === 1 ? '' : 's'} since first shot, ${shots.length} shot${shots.length === 1 ? '' : 's'} logged.</p>`;
+      return `<p>Three numbers across the top of the home screen tell you the big picture.</p>
+        ${yourLine}
+        <h3>Lost so far</h3>
+        <div class="formula">lost = start_weight − latest_weight</div>
+        <p>Set start in Settings → Weight goals, or it auto-detects from your first weight entry.</p>
+        <h3>Weeks on track</h3>
+        <p>How many full weeks since your very first logged shot.</p>
+        <h3>Shots taken</h3>
+        <p>Total number of shots logged across all time.</p>`;
+    },
   },
   'todays-mood': {
     title: 'Daily mood',
@@ -71,11 +96,26 @@ const INFO_TOPICS = {
   },
   'mixing-calc': {
     title: 'Mixing calculator',
-    body: `<p>If you're reconstituting your own peptide (mixing powder with bacteriostatic water), this tells you how many units to draw into a U-100 insulin syringe.</p>
-      <h3>How it's calculated</h3>
-      <div class="formula">concentration = vial_mg / water_mL<br>draw_volume_mL = your_dose_mg / concentration<br>units = draw_volume_mL × 100</div>
-      <p>"Doses in this vial" is just <code>vial_mg ÷ your_dose_mg</code>, rounded down.</p>
-      <p>Always double-check with your prescriber. This is a math helper, not medical advice.</p>`,
+    body: async () => {
+      // Pull the user's current calc inputs so the formula is shown with their numbers.
+      const v = parseFloat(($('#recon-vial') || {}).value) || 0;
+      const w = parseFloat(($('#recon-water') || {}).value) || 0;
+      const d = parseFloat(($('#recon-dose') || {}).value) || 0;
+      let yourLine = '';
+      if (v > 0 && w > 0 && d > 0) {
+        const conc = v / w;
+        const drawMl = d / conc;
+        const units = (drawMl * 100).toFixed(1);
+        const doses = Math.floor(v / d);
+        yourLine = `<p><strong>For your current numbers:</strong> ${v}mg in ${w}mL = <strong>${conc.toFixed(2)} mg/mL</strong>. To get a ${d}mg dose, draw to <strong>${units} units</strong> (${doses} dose${doses === 1 ? '' : 's'} per vial).</p>`;
+      }
+      return `<p>If you're reconstituting your own peptide (mixing powder with bacteriostatic water), this tells you how many units to draw into a U-100 insulin syringe.</p>
+        ${yourLine}
+        <h3>How it's calculated</h3>
+        <div class="formula">concentration = vial_mg ÷ water_mL<br>draw_volume_mL = your_dose_mg ÷ concentration<br>units = draw_volume_mL × 100</div>
+        <p>"Doses in this vial" is <code>vial_mg ÷ your_dose_mg</code>, rounded down.</p>
+        <p>Always double-check with your prescriber. This is a math helper, not medical advice.</p>`;
+    },
   },
   'achievements': {
     title: 'Achievements',
@@ -126,27 +166,53 @@ const INFO_TOPICS = {
   },
   'level-chart': {
     title: 'How much is in your system',
-    body: `<p>Estimates how much medication is still active in your body, based on every shot you've logged and the half-life you set in <strong>Settings → Medication</strong>.</p>
-      <h3>How it's calculated</h3>
-      <p>Each shot decays exponentially. The total is the sum of every past shot's remaining contribution at each point in time.</p>
-      <div class="formula">level(t) = Σ dose × e^(-ln(2) × days_since / half_life)</div>
-      <p>Default half-lives:</p>
-      <ul>
-        <li>Tirzepatide ≈ 5 days</li>
-        <li>Semaglutide ≈ 7 days</li>
-      </ul>
-      <p><strong>Not a clinical measurement</strong> — this is a learning tool to help you visualize the rhythm of your dosing.</p>`,
+    body: async () => {
+      const halfLife = settings.halfLifeDays || 5;
+      const med = settings.medication || 'Tirzepatide';
+      const shots = await getShotsSorted();
+      const decay = Math.log(2) / halfLife;
+      let levelNow = 0;
+      for (const s of shots) {
+        const days = (Date.now() - new Date(s.when).getTime()) / 86400000;
+        if (days >= 0) levelNow += (s.dose || 0) * Math.exp(-decay * days);
+      }
+      const yourLine = shots.length
+        ? `<p><strong>For you right now:</strong> with a ${halfLife}-day half-life setting, your estimated active level is <strong>${levelNow.toFixed(1)} mg-equivalent</strong> across ${shots.length} logged shot${shots.length === 1 ? '' : 's'}.</p>`
+        : `<p><strong>For you right now:</strong> log your first shot to see your active level estimate.</p>`;
+      return `<p>Estimates how much ${escapeHTML(med)} is still active in your body, based on every shot you've logged and the half-life you set in <strong>Settings → Medication</strong>.</p>
+        ${yourLine}
+        <h3>How it's calculated</h3>
+        <p>Each shot decays exponentially. The total is the sum of every past shot's remaining contribution at each point in time.</p>
+        <div class="formula">level(t) = Σ dose × e^(-ln(2) × days_since / half_life)</div>
+        <p>Common half-lives — Tirzepatide ≈ 5 days, Semaglutide ≈ 7 days. Yours is set to <strong>${halfLife} days</strong>.</p>
+        <p><strong>Not a clinical measurement</strong> — this is a learning tool to help you visualize the rhythm of your dosing.</p>`;
+    },
   },
   'plateau': {
     title: 'Plateau detection',
-    body: `<p>Flags when your weight has been mostly flat for 4+ weeks at the same dose.</p>
-      <h3>Triggers when</h3>
-      <ul>
-        <li>You have at least 4 weight entries in the last 28 days</li>
-        <li>Total change is less than 1 lb</li>
-        <li>You haven't increased your dose during that window</li>
-      </ul>
-      <p>Plateaus are normal. The card just gives you a heads-up that it might be time to talk to your provider about a dose adjustment, diet/exercise tweaks, or just patience.</p>`,
+    body: async () => {
+      const weights = await getWeightsSorted();
+      const cutoff = Date.now() - 28 * 86400000;
+      const inWindow = weights.filter(w => new Date(w.date).getTime() >= cutoff);
+      let yourLine = '';
+      if (inWindow.length >= 2) {
+        const first = inWindow[0].value;
+        const last = inWindow[inWindow.length - 1].value;
+        const delta = (last - first).toFixed(1);
+        yourLine = `<p><strong>For you right now:</strong> ${inWindow.length} weight entries in the last 28 days, total change <strong>${delta} lb</strong>. ${Math.abs(delta) < 1 ? '⚠️ This would currently flag as a plateau.' : 'No plateau — keep going.'}</p>`;
+      } else {
+        yourLine = `<p><strong>For you right now:</strong> need at least 4 weight entries in the last 28 days to detect a plateau (you have ${inWindow.length}).</p>`;
+      }
+      return `<p>Flags when your weight has been mostly flat for 4+ weeks at the same dose.</p>
+        ${yourLine}
+        <h3>Triggers when ALL are true</h3>
+        <ul>
+          <li>4+ weight entries in the last 28 days</li>
+          <li>Total change less than 1 lb</li>
+          <li>No dose increase during that window</li>
+        </ul>
+        <p>Plateaus are normal. The card just gives you a heads-up that it might be time to talk to your provider about a dose adjustment, diet/exercise tweaks, or just patience.</p>`;
+    },
   },
   'supplies': {
     title: 'Pens & vials',
@@ -166,10 +232,30 @@ const INFO_TOPICS = {
   },
   'spending': {
     title: 'Spending',
-    body: `<p>Adds up everything you've spent on the program — pens, vials, copays, pharmacy fees, labs, insurance, supplies, shipping.</p>
-      <h3>How "$ per lb lost" is calculated</h3>
-      <div class="formula">$ per lb = total_spent ÷ pounds_lost</div>
-      <p>Includes both supply costs (entered when you add a pen/vial) and ad-hoc expenses (entered with the <strong>+ Add</strong> button on this card).</p>`,
+    body: async () => {
+      let supplies = [], expenses = [];
+      try { supplies = await getSupplies(); } catch (_) {}
+      try { expenses = await getExpenses(); } catch (_) {}
+      const supTotal = supplies.reduce((s, r) => s + (parseFloat(r.cost) || 0), 0);
+      const expTotal = expenses.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
+      const total = supTotal + expTotal;
+      const weights = await getWeightsSorted();
+      const start = settings.startWeight ?? (weights[0] && weights[0].value);
+      const latest = weights.length ? weights[weights.length - 1].value : null;
+      const lost = (start != null && latest != null && latest < start) ? (start - latest) : 0;
+      let yourLine = '';
+      if (total > 0) {
+        const perLb = lost > 0 ? `<strong>$${(total / lost).toFixed(2)} per lb lost</strong>` : '';
+        yourLine = `<p><strong>For you right now:</strong> $${supTotal.toFixed(2)} in supplies + $${expTotal.toFixed(2)} in expenses = <strong>$${total.toFixed(2)} total</strong>. ${perLb}</p>`;
+      } else {
+        yourLine = `<p><strong>For you right now:</strong> no spending tracked yet — add a pen/vial cost or an expense to get started.</p>`;
+      }
+      return `<p>Adds up everything you've spent on the program — pens, vials, copays, pharmacy fees, labs, insurance, supplies, shipping.</p>
+        ${yourLine}
+        <h3>How "$ per lb lost" is calculated</h3>
+        <div class="formula">$ per lb = total_spent ÷ pounds_lost</div>
+        <p>Includes both supply costs (entered when you add a pen/vial) and ad-hoc expenses (entered with the <strong>+ Add</strong> button on this card).</p>`;
+    },
   },
   'theme': {
     title: 'App theme',
@@ -178,8 +264,25 @@ const INFO_TOPICS = {
   },
   'emoji-style': {
     title: 'Mood emoji style',
-    body: `<p>10 different emoji sets for the daily mood picker. Pick whichever fits your vibe.</p>
-      <p>Updates everywhere — picker buttons, today's mood card, mood trend chart.</p>`,
+    body: `<p>5 emoji sets for the daily mood picker:</p>
+      <ul>
+        <li><strong>Classic</strong> — hand-drawn smileys, themed to match your color theme</li>
+        <li><strong>Simple</strong> — plain emoji faces</li>
+        <li><strong>Weather</strong> — storm to sunny</li>
+        <li><strong>Hearts</strong> — broken to whole</li>
+        <li><strong>Energy</strong> — depleted to charged</li>
+      </ul>
+      <p>Updates picker buttons + today's mood card.</p>`,
+  },
+  'appetite-style': {
+    title: 'Appetite emoji style',
+    body: `<p>4 emoji sets for the daily appetite picker:</p>
+      <ul>
+        <li><strong>Classic</strong> — none → ravenous</li>
+        <li><strong>Plates</strong> — empty plate → full meal</li>
+        <li><strong>Faces</strong> — uninterested → drooling</li>
+        <li><strong>Gauge</strong> — green/yellow/orange/red traffic-light style</li>
+      </ul>`,
   },
   'pdf-export': {
     title: 'PDF report for your doctor',
@@ -193,11 +296,16 @@ const INFO_TOPICS = {
   },
 };
 
-function showInfo(key) {
+async function showInfo(key) {
   const topic = INFO_TOPICS[key];
   if (!topic) return;
   document.getElementById('info-dialog-title').textContent = topic.title;
-  document.getElementById('info-dialog-body').innerHTML = topic.body;
+  // body can be a static string or an async function — async lets us pull live values from settings/IDB.
+  let body = topic.body;
+  if (typeof body === 'function') {
+    try { body = await body(); } catch (e) { console.warn('[mgs] info body fn failed:', e); body = topic.fallback || '<p>Could not load details.</p>'; }
+  }
+  document.getElementById('info-dialog-body').innerHTML = body;
   document.getElementById('info-dialog').showModal();
   track('info_opened', { topic: key });
 }
@@ -241,18 +349,22 @@ const THEMES = [
   { id: 'charcoal',    name: 'Charcoal',     light: { primary: '#374151', dark: '#111827', tint: '#f3f4f6', grad2: '#1f2937' }, dark: { primary: '#9ca3af', dark: '#d1d5db', tint: '#030712', grad2: '#1f2937' } },
 ];
 
-// 10 mood emoji style sets (5 mood levels each: terrible / bad / ok / good / great).
+// Mood styles — 5 clear sets with unambiguous low→high progression. (Reduced from 10; ambiguous packs removed.)
+// 'classic' uses the hand-drawn SVG faces (handled separately in applyMoodStyle).
 const MOOD_STYLES = [
-  { id: 'classic', name: 'Classic',  emojis: ['😣', '😕', '😐', '🙂', '😄'] },
-  { id: 'simple',  name: 'Simple',   emojis: ['☹️', '🙁', '😐', '🙂', '😊'] },
-  { id: 'soft',    name: 'Soft',     emojis: ['😞', '😟', '😶', '😌', '🥰'] },
-  { id: 'animals', name: 'Animals',  emojis: ['🐢', '🐌', '🐻', '🐰', '🦋'] },
+  { id: 'classic', name: 'Classic',  emojis: ['😣', '😕', '😐', '🙂', '😄'] }, // SVG faces in app, emojis only used in picker preview
+  { id: 'simple',  name: 'Simple',   emojis: ['😢', '🙁', '😐', '🙂', '😀'] },
   { id: 'weather', name: 'Weather',  emojis: ['⛈️', '🌧️', '☁️', '⛅', '☀️'] },
-  { id: 'plants',  name: 'Plants',   emojis: ['🥀', '🍂', '🌱', '🌿', '🌻'] },
   { id: 'hearts',  name: 'Hearts',   emojis: ['💔', '🤍', '💛', '💚', '❤️'] },
-  { id: 'flames',  name: 'Energy',   emojis: ['❄️', '💧', '🌫️', '⚡', '🔥'] },
-  { id: 'stars',   name: 'Stars',    emojis: ['⭐', '✨', '💫', '🌟', '🎆'] },
-  { id: 'food',    name: 'Food',     emojis: ['🥬', '🍞', '🍎', '🍓', '🍰'] },
+  { id: 'energy',  name: 'Energy',   emojis: ['🪫', '😴', '😶', '😊', '⚡'] },
+];
+
+// Appetite emoji packs — 4 simple sets, unambiguous low→high (suppressed → ravenous).
+const APPETITE_STYLES = [
+  { id: 'classic', name: 'Classic', emojis: ['🚫', '🤏', '🍽️', '😋', '😅'] },
+  { id: 'plates',  name: 'Plates',  emojis: ['🚫', '🥄', '🍽️', '🍔', '🍕'] },
+  { id: 'faces',   name: 'Faces',   emojis: ['😶', '🙂', '😐', '😋', '🤤'] },
+  { id: 'gauge',   name: 'Gauge',   emojis: ['🟢', '🟢', '🟡', '🟠', '🔴'] },
 ];
 const SETTINGS_KEY = 'app';
 const DEFAULT_SETTINGS = {
@@ -275,6 +387,9 @@ const DEFAULT_SETTINGS = {
   syncAutoPush: true,
   syncDirty: false,
   bodySex: 'male',
+  colorTheme: 'teal',
+  moodStyle: 'classic',
+  appetiteStyle: 'classic',
 };
 
 const SIDE_EFFECTS = [
@@ -1055,6 +1170,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupBodyToggle();
   renderThemeGrid();
   renderEmojiStyleGrid();
+  renderAppetiteStyleGrid();
   setupInfoButtons();
   setupShareUI();
 
@@ -1081,9 +1197,11 @@ function applySettingsToInputs() {
   applyTheme();
   applyColorTheme(settings.colorTheme || 'teal');
   applyMoodStyle(settings.moodStyle || 'classic');
+  applyAppetiteStyle(settings.appetiteStyle || 'classic');
   // Refresh the picker grids so their "active" class reflects the current setting (matters after cross-device pull).
   try { if (typeof renderThemeGrid === 'function') renderThemeGrid(); } catch (_) {}
   try { if (typeof renderEmojiStyleGrid === 'function') renderEmojiStyleGrid(); } catch (_) {}
+  try { if (typeof renderAppetiteStyleGrid === 'function') renderAppetiteStyleGrid(); } catch (_) {}
   updateNotifyStatus();
 }
 
@@ -2068,8 +2186,12 @@ async function renderAppetite() {
   if (todayAppetite && !card.dataset.editing) {
     picker.classList.add('hidden');
     logged.classList.remove('hidden');
-    $('#appetite-logged-graphic').innerHTML = `<span class="mood-emoji-big">${APPETITE_EMOJIS[todayAppetite.value] || '🍽️'}</span>`;
-    $('#appetite-logged-graphic').classList.add('mood-emoji-display');
+    const styleId = settings.appetiteStyle || 'classic';
+    const s = APPETITE_STYLES.find(x => x.id === styleId) || APPETITE_STYLES[0];
+    const lg = $('#appetite-logged-graphic');
+    lg.dataset.value = String(todayAppetite.value);
+    lg.innerHTML = `<span class="mood-emoji-big">${s.emojis[todayAppetite.value - 1] || '🍽️'}</span>`;
+    lg.classList.add('mood-emoji-display');
     $('#appetite-logged-label').textContent = APPETITE_LABELS[todayAppetite.value] || 'Logged';
     // Restore the heading text (it was preserved as innerHTML so the (i) button stays).
     if (heading) heading.firstChild && (heading.childNodes[0].textContent = "Today's appetite ");
@@ -2310,7 +2432,6 @@ function renderDoseTimeline(shots) {
   const minT = new Date(sorted[0].when).getTime();
   const maxT = Date.now();
   const span = Math.max(maxT - minT, 86400000);
-  // Build segments per dose run
   const segments = [];
   for (let i = 0; i < sorted.length; i++) {
     const s = sorted[i];
@@ -2321,12 +2442,25 @@ function renderDoseTimeline(shots) {
     else { segments.push({ dose: s.dose, start, end }); }
   }
   const maxDose = Math.max(...segments.map(s => s.dose), 1);
-  wrap.innerHTML = segments.map(seg => {
+  const fmt = (t) => new Date(t).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  const totalDays = Math.round(span / 86400000);
+  const currentDose = sorted[sorted.length - 1].dose;
+  const bars = segments.map(seg => {
     const left = ((seg.start - minT) / span) * 100;
     const width = Math.max(2, ((seg.end - seg.start) / span) * 100);
-    const intensity = 0.4 + 0.6 * (seg.dose / maxDose);
-    return `<div class="dose-segment" style="left:${left}%;width:${width}%;opacity:${intensity}" title="${seg.dose} mg">${seg.dose}</div>`;
-  }).join('') + `<div class="muted small" style="position:absolute;left:0;bottom:-2px;font-size:.7rem">Dose timeline</div>`;
+    const intensity = 0.45 + 0.55 * (seg.dose / maxDose);
+    const days = Math.max(1, Math.round((seg.end - seg.start) / 86400000));
+    return `<div class="dose-segment" style="left:${left}%;width:${width}%;opacity:${intensity}" title="${seg.dose} mg · ${fmt(seg.start)} → ${fmt(seg.end)} (${days}d)">${seg.dose}mg</div>`;
+  }).join('');
+  wrap.innerHTML = `
+    <div class="dose-timeline-head">
+      <strong>Dose history</strong>
+      <span class="muted small">Currently ${currentDose} mg · ${segments.length} dose ${segments.length === 1 ? 'level' : 'changes'} over ${totalDays}d</span>
+    </div>
+    <div class="dose-timeline-track">${bars}</div>
+    <div class="dose-timeline-axis"><span class="muted small">${fmt(minT)}</span><span class="muted small">Today</span></div>
+    <p class="muted small dose-timeline-help">Each bar is a dose level, plotted over the same time range as the weight chart above. Wider bars = longer time at that dose. Darker bars = higher dose. Tap a bar for the date range.</p>
+  `;
 }
 
 // ---------- Side effects ----------
@@ -3294,6 +3428,46 @@ function renderThemeGrid() {
       try { await renderShots(); } catch (_) {}
       markSyncDirty();
       track('theme_changed', { theme: id });
+    });
+  });
+}
+
+function applyAppetiteStyle(styleId) {
+  const s = APPETITE_STYLES.find(x => x.id === styleId) || APPETITE_STYLES[0];
+  document.querySelectorAll('.appetite-btn').forEach(btn => {
+    const v = parseInt(btn.dataset.appetite, 10);
+    if (!Number.isFinite(v)) return;
+    btn.innerHTML = `<span class="appetite-emoji">${s.emojis[v - 1] || '🍽️'}</span>`;
+  });
+  // Logged graphic (parent div, supports HTML children).
+  const loggedEl = document.getElementById('appetite-logged-graphic');
+  if (loggedEl && loggedEl.dataset.value) {
+    const v = parseInt(loggedEl.dataset.value, 10);
+    loggedEl.innerHTML = `<span class="mood-emoji-big">${s.emojis[v - 1] || '🍽️'}</span>`;
+  }
+}
+
+function renderAppetiteStyleGrid() {
+  const grid = $('#appetite-style-grid');
+  if (!grid) return;
+  const current = settings.appetiteStyle || 'classic';
+  grid.innerHTML = APPETITE_STYLES.map(s => `
+    <button type="button" class="emoji-style-swatch ${s.id === current ? 'active' : ''}" data-style-id="${s.id}" aria-label="${s.name}">
+      <span class="emoji-row">${s.emojis.map(e => `<span>${e}</span>`).join('')}</span>
+      <span class="emoji-style-name">${s.name}</span>
+    </button>
+  `).join('');
+  grid.querySelectorAll('.emoji-style-swatch').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (!isPremium() && account.user) { $('#upgrade-dialog').showModal(); return; }
+      const id = btn.dataset.styleId;
+      settings.appetiteStyle = id;
+      await saveSettings();
+      applyAppetiteStyle(id);
+      grid.querySelectorAll('.emoji-style-swatch').forEach(b => b.classList.toggle('active', b === btn));
+      try { renderAppetite(); } catch (_) {}
+      markSyncDirty();
+      track('appetite_style_changed', { style: id });
     });
   });
 }

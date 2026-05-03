@@ -165,8 +165,10 @@ canvas{width:100% !important;height:auto !important;max-height:200px}
 
 /* Appetite picker — same layout as mood, just emoji-based buttons */
 .appetite-emoji{font-size:2rem;line-height:1;display:flex;align-items:center;justify-content:center;width:48px;height:48px}
-.appetite-btn{padding:8px}
-.appetite-btn.selected{background:var(--bronze-lt);box-shadow:0 0 0 2px var(--bronze-dk) inset;border-radius:50%}
+.appetite-btn{padding:8px;background:transparent;border:none;border-radius:0;cursor:pointer;transition:transform .15s ease}
+.appetite-btn:hover{transform:translateY(-2px)}
+.appetite-btn.selected{background:transparent;box-shadow:none;transform:scale(1.18)}
+.appetite-btn.selected .appetite-emoji{filter:drop-shadow(0 0 6px var(--bronze))}
 .appetite-hint{margin-top:8px;text-align:center}
 /* Appetite trend bars use same .mood-bar styling, but with reverse intent (low = good): */
 #appetite-trend-bars .mood-bar.good{background:var(--bronze)}
@@ -275,8 +277,12 @@ canvas{width:100% !important;height:auto !important;max-height:200px}
 .heatmap-legend{display:flex;align-items:center;gap:4px;justify-content:flex-end;margin-top:6px}
 
 /* Dose timeline strip */
-.dose-timeline-wrap{position:relative;height:30px;margin-top:8px;border-top:1px dashed var(--line);padding-top:6px}
-.dose-segment{position:absolute;top:8px;height:14px;background:var(--bronze);opacity:.7;border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:600;color:#fff;letter-spacing:.4px}
+.dose-timeline-wrap{margin-top:14px;border-top:1px dashed var(--line);padding-top:10px}
+.dose-timeline-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:6px;flex-wrap:wrap}
+.dose-timeline-track{position:relative;height:22px;background:var(--surface-alt);border-radius:4px}
+.dose-timeline-axis{display:flex;justify-content:space-between;margin-top:4px}
+.dose-timeline-help{margin-top:8px;line-height:1.4}
+.dose-segment{position:absolute;top:3px;height:16px;background:var(--bronze);opacity:.7;border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;color:#fff;letter-spacing:.3px;overflow:hidden;white-space:nowrap}
 
 /* Side effects */
 .se-grid{display:grid;grid-template-columns:1fr;gap:6px;margin-top:8px}
@@ -359,9 +365,13 @@ canvas{width:100% !important;height:auto !important;max-height:200px}
 }
 
 /* Premium lock pill */
-.lock-pill{display:inline-block;background:linear-gradient(135deg,var(--bronze) 0%,var(--bronze-dk) 100%);color:#fff;font-size:.62rem;padding:2px 8px;border-radius:999px;font-weight:700;letter-spacing:.5px;margin-left:6px;vertical-align:middle;text-transform:uppercase}
-/* Darkened from #10b981 (emerald-500, ~2.54:1 with white text) to #047857 (emerald-700, ~5.0:1) for WCAG AA. */
-.lock-pill.unlocked{background:#047857}
+/* Premium pill — fixed amber/gold gradient so it's always recognizably "premium" regardless of which color theme the user picks.
+   Matches the gold accent on the Premium bottom-nav tab. */
+.lock-pill{display:inline-block;background:linear-gradient(135deg,#d97706 0%,#b45309 100%);color:#fff;font-size:.62rem;padding:2px 8px;border-radius:999px;font-weight:700;letter-spacing:.5px;margin-left:6px;vertical-align:middle;text-transform:uppercase;box-shadow:0 1px 3px rgba(180,83,9,.25)}
+[data-theme="dark"] .lock-pill{background:linear-gradient(135deg,#f59e0b 0%,#b45309 100%);color:#fff}
+/* Unlocked = green so it's clearly distinct from the gold "you need premium" pill. */
+.lock-pill.unlocked{background:#047857;box-shadow:0 1px 3px rgba(4,120,87,.25)}
+[data-theme="dark"] .lock-pill.unlocked{background:#059669}
 .lock-pill.unlocked::before{content:'✓ '}
 
 /* Supply list */

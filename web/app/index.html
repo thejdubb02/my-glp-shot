@@ -17,7 +17,7 @@
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="icon" type="image/png" sizes="512x512" href="icons/icon-512.png">
 <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png">
-<link rel="stylesheet" href="styles.css?v=350">
+<link rel="stylesheet" href="styles.css?v=361">
 <script>
 (function(){
   // Apply saved theme synchronously to avoid flash. Settings live in IndexedDB; theme also mirrored to localStorage for fast read.
@@ -191,11 +191,11 @@
       </div>
     </div>
     <div id="appetite-picker" class="mood-picker">
-      <button data-appetite="1" class="appetite-btn mood-btn" type="button" aria-label="None"><span class="appetite-emoji">🚫</span></button>
-      <button data-appetite="2" class="appetite-btn mood-btn" type="button" aria-label="Low"><span class="appetite-emoji">🤏</span></button>
-      <button data-appetite="3" class="appetite-btn mood-btn" type="button" aria-label="Normal"><span class="appetite-emoji">🍽️</span></button>
-      <button data-appetite="4" class="appetite-btn mood-btn" type="button" aria-label="Hungry"><span class="appetite-emoji">😋</span></button>
-      <button data-appetite="5" class="appetite-btn mood-btn" type="button" aria-label="Ravenous"><span class="appetite-emoji">😅</span></button>
+      <button data-appetite="1" class="appetite-btn" type="button" aria-label="None"><span class="appetite-emoji">🚫</span></button>
+      <button data-appetite="2" class="appetite-btn" type="button" aria-label="Low"><span class="appetite-emoji">🤏</span></button>
+      <button data-appetite="3" class="appetite-btn" type="button" aria-label="Normal"><span class="appetite-emoji">🍽️</span></button>
+      <button data-appetite="4" class="appetite-btn" type="button" aria-label="Hungry"><span class="appetite-emoji">😋</span></button>
+      <button data-appetite="5" class="appetite-btn" type="button" aria-label="Ravenous"><span class="appetite-emoji">😅</span></button>
     </div>
     <p class="muted small appetite-hint">For GLP-1 users, lower numbers usually mean the medication is working.</p>
   </section>
@@ -226,23 +226,9 @@
   <!-- INSIGHTS TAB -->
 
   <section class="card" data-tab="insights">
-    <div class="card-head"><h2>Where you inject <button class="info-btn" type="button" data-info="inject-sites" aria-label="About this">i</button></h2><span id="site-suggest-label" class="muted small"></span></div>
-    <div id="body-diagram-wrap" class="body-diagram-wrap"></div>
-    <div id="site-legend" class="site-legend"></div>
-  </section>
-
-  <section class="card" data-tab="insights">
-    <div class="card-head"><h2>Calendar <button class="info-btn" type="button" data-info="calendar-heatmap" aria-label="About this">i</button></h2><span id="heatmap-summary" class="muted small"></span></div>
-    <div id="heatmap-wrap" class="heatmap-wrap"></div>
-    <div class="heatmap-legend">
-      <span class="muted small">Less</span>
-      <span class="heatmap-cell legend"></span>
-      <span class="heatmap-cell legend l1"></span>
-      <span class="heatmap-cell legend l2"></span>
-      <span class="heatmap-cell legend l3"></span>
-      <span class="heatmap-cell legend l4"></span>
-      <span class="muted small">More</span>
-    </div>
+    <div class="card-head"><h2>How much is in your system <button class="info-btn" type="button" data-info="level-chart" aria-label="About this">i</button></h2></div>
+    <canvas id="level-chart" height="140"></canvas>
+    <p class="muted small">An estimate of how much medication is still active in your body, based on your shots and the half-life you set in Settings (Tirzepatide is about 5 days). The line shows your active level rising after each shot and slowly fading. This is for understanding your cycle only, not a clinical measurement.</p>
   </section>
 
   <section class="card" data-tab="insights">
@@ -262,15 +248,9 @@
   </section>
 
   <section class="card" data-tab="insights">
-    <div class="card-head"><h2>How you've been feeling</h2><span class="muted small">Last 30 days</span></div>
-    <div id="side-effects-summary" class="side-effects-summary"></div>
-    <p id="empty-side-effects" class="empty"><span class="empty-illus">✓</span><br>No symptoms logged. Add them when you log a shot.</p>
-  </section>
-
-  <section id="mood-trend-card" class="card hidden" data-tab="insights">
-    <div class="card-head"><h2>Mood trend <button class="info-btn" type="button" data-info="mood-trend" aria-label="About this">i</button></h2><span id="mood-trend-summary" class="muted small"></span></div>
-    <div id="mood-trend-bars" class="mood-trend-bars"></div>
-    <p class="muted small" id="mood-trend-hint">Each bar is one day. Taller = better. Tap the home tab to log today.</p>
+    <div class="card-head"><h2>Where you inject <button class="info-btn" type="button" data-info="inject-sites" aria-label="About this">i</button></h2><span id="site-suggest-label" class="muted small"></span></div>
+    <div id="body-diagram-wrap" class="body-diagram-wrap"></div>
+    <div id="site-legend" class="site-legend"></div>
   </section>
 
   <section id="appetite-trend-card" class="card hidden" data-tab="insights">
@@ -279,10 +259,30 @@
     <p class="muted small">Each bar is one day. Lower = more suppressed (medication working). Empty = not logged.</p>
   </section>
 
+  <section id="mood-trend-card" class="card hidden" data-tab="insights">
+    <div class="card-head"><h2>Mood trend <button class="info-btn" type="button" data-info="mood-trend" aria-label="About this">i</button></h2><span id="mood-trend-summary" class="muted small"></span></div>
+    <div id="mood-trend-bars" class="mood-trend-bars"></div>
+    <p class="muted small" id="mood-trend-hint">Each bar is one day. Taller = better. Tap the home tab to log today.</p>
+  </section>
+
   <section class="card" data-tab="insights">
-    <div class="card-head"><h2>How much is in your system <button class="info-btn" type="button" data-info="level-chart" aria-label="About this">i</button></h2></div>
-    <canvas id="level-chart" height="140"></canvas>
-    <p class="muted small">An estimate of how much medication is still active in your body, based on your shots and the half-life you set in Settings (Tirzepatide is about 5 days). The line shows your active level rising after each shot and slowly fading. This is for understanding your cycle only, not a clinical measurement.</p>
+    <div class="card-head"><h2>Calendar <button class="info-btn" type="button" data-info="calendar-heatmap" aria-label="About this">i</button></h2><span id="heatmap-summary" class="muted small"></span></div>
+    <div id="heatmap-wrap" class="heatmap-wrap"></div>
+    <div class="heatmap-legend">
+      <span class="muted small">Less</span>
+      <span class="heatmap-cell legend"></span>
+      <span class="heatmap-cell legend l1"></span>
+      <span class="heatmap-cell legend l2"></span>
+      <span class="heatmap-cell legend l3"></span>
+      <span class="heatmap-cell legend l4"></span>
+      <span class="muted small">More</span>
+    </div>
+  </section>
+
+  <section class="card" data-tab="insights">
+    <div class="card-head"><h2>How you've been feeling</h2><span class="muted small">Last 30 days</span></div>
+    <div id="side-effects-summary" class="side-effects-summary"></div>
+    <p id="empty-side-effects" class="empty"><span class="empty-illus">✓</span><br>No symptoms logged. Add them when you log a shot.</p>
   </section>
 
   <section id="plateau-card" class="card hidden" data-tab="insights">
@@ -357,6 +357,14 @@
     </div>
     <p class="muted small">Change how your daily mood emojis look.</p>
     <div id="emoji-style-grid" class="emoji-style-grid"></div>
+  </section>
+
+  <section id="appetite-style-card" class="card" data-tab="more">
+    <div class="card-head">
+      <h2>Appetite emoji style <button class="info-btn" type="button" data-info="appetite-style" aria-label="About this">i</button> <span class="lock-pill" id="appetite-emoji-lock">Premium</span></h2>
+    </div>
+    <p class="muted small">Change how your daily appetite emojis look.</p>
+    <div id="appetite-style-grid" class="emoji-style-grid"></div>
   </section>
 
   <section class="card" data-tab="more">
@@ -808,6 +816,6 @@
 </nav>
 
 <script src="lib/chart.min.js"></script>
-<script src="app.js?v=350"></script>
+<script src="app.js?v=361"></script>
 </body>
 </html>
