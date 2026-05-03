@@ -6,7 +6,7 @@
 const DB_NAME = 'shotclock';
 // v6 bump: 'appetites' store added — daily appetite check-in alongside mood (GLP-1 mechanism is appetite suppression).
 const DB_VERSION = 6;
-const APP_VERSION = '0.39.0';
+const APP_VERSION = '0.39.1';
 
 // Umami event tracker. Aggregates only — no PII (no email, no IDs). Safe to call before umami loads.
 function track(event, props) {
@@ -583,14 +583,52 @@ function parseDateFlexible(d) {
     const t = new Date(yr, +slash[1] - 1, +slash[2]).getTime();
     if (Number.isFinite(t)) return t;
   }
-  // Final fallback — let the engine try.
-  const t = Date.parse(s);
-  return Number.isFinite(t) ? t : NaN;
+  // Final fallback — let the engine try, then re-anchor to local midnight so cutoff
+  // comparisons line up with the user's calendar (an ISO-with-Z parsed in UTC could
+  // otherwise read as the previous day for users west of UTC).
+  const tParsed = Date.parse(s);
+  if (!Number.isFinite(tParsed)) return NaN;
+  const dParsed = new Date(tParsed);
+  return new Date(dParsed.getFullYear(), dParsed.getMonth(), dParsed.getDate()).getTime();
+}
+
+// Convert any flexible date input to a canonical local YYYY-MM-DD string.
+// Returns null if unparseable.
+function toCanonicalDate(d) {
+  const t = parseDateFlexible(d);
+  if (!Number.isFinite(t)) return null;
+  const x = new Date(t);
+  const yyyy = x.getFullYear();
+  const mm = String(x.getMonth() + 1).padStart(2, '0');
+  const dd = String(x.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
 }
 
 async function getWeightsSorted() {
   const all = (await dbAll(STORES.weights)) || [];
   return all.sort((a, b) => parseDateFlexible(a.date) - parseDateFlexible(b.date));
+}
+
+// One-time normalizer: rewrite any weights row whose .date isn't already canonical
+// local YYYY-MM-DD. Idempotent — re-runs on every boot but only writes when needed.
+// This unblocks users who have legacy entries from CSV imports or sync round-trips
+// that left dates in formats Date.parse interpreted as UTC, drifting them across
+// the local-midnight cutoff used by the range filter.
+let _weightDateMigrationDone = false;
+async function migrateWeightDatesToCanonical() {
+  if (_weightDateMigrationDone) return 0;
+  _weightDateMigrationDone = true;
+  const all = (await dbAll(STORES.weights)) || [];
+  let fixed = 0;
+  for (const w of all) {
+    const canon = toCanonicalDate(w.date);
+    if (canon && canon !== w.date) {
+      await dbPut(STORES.weights, { ...w, date: canon });
+      fixed++;
+    }
+  }
+  if (fixed) console.log(`[weight-migration] normalized ${fixed} of ${all.length} weight dates to canonical YYYY-MM-DD`);
+  return fixed;
 }
 
 // ---------- Countdown / next shot ----------
@@ -938,6 +976,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   try { await loadSettings(); } catch (e) { console.error('loadSettings failed:', e); }
   try { applySettingsToInputs(); } catch (e) { console.error(e); }
   try { await renderShots(); } catch (e) { console.error(e); }
+  try { await migrateWeightDatesToCanonical(); } catch (e) { console.error('weight migration failed:', e); }
   try { await renderWeights(); } catch (e) { console.error(e); }
   try { setInterval(async () => renderCountdown(await getShotsSorted()), 60000); } catch (e) {}
 
@@ -1429,7 +1468,8 @@ async function smartImport(e) {
     for (const w of weights) {
       let val = parseFloat(w.value);
       if (w.unit && String(w.unit).toLowerCase() === 'kg') val = val * 2.20462;
-      await dbAdd(STORES.weights, { value: val, date: w.date });
+      const canon = toCanonicalDate(w.date);
+      if (canon) await dbAdd(STORES.weights, { value: val, date: canon });
     }
     await renderShots();
     await renderWeights();
@@ -1582,7 +1622,8 @@ async function importShotsyCSV(text) {
     if (cWeight >= 0) {
       const w = (row[cWeight] || '').trim();
       if (w && !isNaN(parseFloat(w))) {
-        weightsToAdd.push({ value: parseFloat(w), unit: 'lb', date });
+        const canon = toCanonicalDate(date);
+        if (canon) weightsToAdd.push({ value: parseFloat(w), unit: 'lb', date: canon });
       }
     }
   }
@@ -4223,7 +4264,11 @@ async function applyPulledPayload(payload) {
     t.oncomplete = resolve; t.onerror = () => reject(t.error);
   });
   for (const s of (payload.shots || [])) { delete s.id; await dbAdd(STORES.shots, s); }
-  for (const w of (payload.weights || [])) { delete w.id; await dbAdd(STORES.weights, w); }
+  for (const w of (payload.weights || [])) {
+    delete w.id;
+    const canon = toCanonicalDate(w.date);
+    if (canon) await dbAdd(STORES.weights, { ...w, date: canon });
+  }
   for (const m of (payload.moods || [])) await dbPut(STORES.moods, m);
   for (const a of (payload.appetites || [])) await saveAppetite(a.date, a.value);
   for (const s of (payload.supplies || [])) { delete s.id; await saveSupply(s); }
@@ -4238,6 +4283,10 @@ async function applyPulledPayload(payload) {
   }
   settings.syncLastPullAt = new Date().toISOString();
   await saveSettings();
+  // Force-refresh weight-date normalization on every pull (sync payloads may have come
+  // from older app versions or other devices that hadn't been migrated).
+  _weightDateMigrationDone = false;
+  await migrateWeightDatesToCanonical();
   await renderShots();
   await renderWeights();
 }

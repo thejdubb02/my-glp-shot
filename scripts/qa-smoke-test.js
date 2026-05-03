@@ -593,6 +593,63 @@ async function probe(name, fn) {
     return `30=${counts['30']} 90=${counts['90']} 180=${counts['180']} 365=${counts['365']} all=${counts['all']}`;
   });
 
+  // === Weight chart range filter — production-shape data via the sync-pull path ===
+  // This is the path that bit users in real life: a Date object in JS round-trips through
+  // JSON sync to a UTC-Z ISO string, then on pull a naive parse drifts it across the
+  // local-midnight cutoff. After migrateWeightDatesToCanonical, all those entries should
+  // land on the same local YYYY-MM-DD they were originally entered on.
+  await probe('weight_chart_via_sync_pull', async () => {
+    await page.evaluate(() => document.querySelector('#bottom-nav .nav-btn[data-nav-tab="insights"]').click());
+    await new Promise(r => setTimeout(r, 300));
+    await page.evaluate(async () => {
+      // Simulate an applyPulledPayload-style hydration: clear weights then dbAdd
+      // entries whose .date is a full UTC-Z ISO string (what JSON.stringify(new Date) emits).
+      const db = await openDB();
+      await new Promise(res => {
+        const tx = db.transaction('weights', 'readwrite');
+        tx.objectStore('weights').clear();
+        tx.oncomplete = res;
+      });
+      const today = new Date(); today.setHours(12,0,0,0);
+      const isoZ = (off) => { const d = new Date(today); d.setDate(d.getDate()-off); return d.toISOString(); };
+      const incoming = [
+        { value: 200, unit: 'lb', date: isoZ(2)   },  // ~today
+        { value: 199, unit: 'lb', date: isoZ(20)  },
+        { value: 198, unit: 'lb', date: isoZ(50)  },
+        { value: 197, unit: 'lb', date: isoZ(100) },
+        { value: 196, unit: 'lb', date: isoZ(200) },
+      ];
+      for (const w of incoming) {
+        await new Promise((res, rej) => {
+          const tx = db.transaction('weights', 'readwrite');
+          const a = tx.objectStore('weights').add(w);
+          a.onsuccess = () => { tx.oncomplete = res; };
+          a.onerror = () => rej(a.error);
+        });
+      }
+      // Trigger the production migration that runs on boot/pull.
+      _weightDateMigrationDone = false;
+      await migrateWeightDatesToCanonical();
+      if (typeof renderWeights === 'function') await renderWeights();
+    });
+    // Verify all dates were rewritten to canonical YYYY-MM-DD local.
+    const dates = await page.evaluate(async () => {
+      const all = (await dbAll(STORES.weights)) || [];
+      return all.map(w => w.date);
+    });
+    const bad = dates.filter(d => !/^\d{4}-\d{2}-\d{2}$/.test(d));
+    if (bad.length) throw new Error(`${bad.length} weights still have non-canonical dates: ${bad.slice(0,3).join(', ')}`);
+    // Spot-check the 30d filter — should include the 2d and 20d entries (2 points).
+    await page.evaluate(() => {
+      const btn = Array.from(document.querySelectorAll('.range-btn[data-range]')).find(b => b.dataset.range === '30');
+      btn.click();
+    });
+    await new Promise(r => setTimeout(r, 400));
+    const count30 = await page.evaluate(() => weightChart ? weightChart.data.datasets[0].data.length : 0);
+    if (count30 !== 2) throw new Error(`30d expected 2 points, got ${count30}; dates=${JSON.stringify(dates)}`);
+    return `migrated→canonical, 30d=${count30}`;
+  });
+
   // === 23. Plateau detection logic runs without error ===
   await probe('premium_plateau_logic', async () => {
     const r = await page.evaluate(() => {
