@@ -141,7 +141,16 @@ section h2{font-size:2rem;text-align:center;margin:0 0 40px;font-weight:700;lett
 .trust-grid > div{background:var(--surface);padding:22px;border-radius:14px;border:1px solid var(--line);font-size:.95rem;color:var(--ink-2)}
 
 /* Footer */
-.ftr{background:var(--ink);color:#cbd5e1;padding:60px 32px 30px}
+/* Footer is a fixed dark surface in both themes — using var(--ink) inverts in dark mode and turns text invisible. Hardcode dark navy. */
+.ftr{background:#0f172a;color:#cbd5e1;padding:60px 32px 30px}
+[data-theme="dark"] .ftr{background:#020617;border-top:1px solid #1e293b}
+.ftr a{color:#cbd5e1}
+.ftr-cols strong,.ftr a:hover{color:#fff}
+
+/* Tone down the comparison table headers in dark mode — bright pastel teal was eye-piercing. Use a muted teal block instead. */
+[data-theme="dark"] .vs-table th{background:#0f766e;color:#f0fdfa}
+[data-theme="dark"] .vs-table th:nth-child(2),
+[data-theme="dark"] .vs-table td:nth-child(2){background:rgba(20,184,166,.10);color:#e2e8f0}
 .ftr-cols{max-width:1100px;margin:0 auto;display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:32px}
 .ftr-cols strong{color:#fff;display:block;margin-bottom:10px;font-size:.95rem}
 .ftr-cols a{display:block;color:#cbd5e1;text-decoration:none;font-size:.9rem;padding:3px 0}

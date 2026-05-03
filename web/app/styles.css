@@ -80,7 +80,7 @@ h2{font-size:1rem}
 .card-head h2{font-size:.75rem;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;font-weight:600}
 .link{color:var(--bronze-dk);font-size:.85rem;text-decoration:none}
 
-.countdown-card{background:var(--grad);color:#fff;padding:10px 14px;border-radius:var(--radius);box-shadow:var(--shadow);display:grid;grid-template-columns:1fr auto;align-items:center;gap:10px}
+.countdown-card{background:var(--grad);color:#fff;padding:10px 14px;border-radius:var(--radius);box-shadow:var(--shadow);display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:14px}
 .countdown-card.due{background:var(--grad-due)}
 .countdown-info{min-width:0}
 .countdown-label{opacity:.8;font-size:.7rem;text-transform:uppercase;letter-spacing:.8px;line-height:1}
@@ -149,14 +149,24 @@ canvas{width:100% !important;height:auto !important;max-height:200px}
 .sync-status.err{color:var(--danger)}
 .save-status{margin-left:10px;align-self:center;font-size:.85rem}
 .save-status.ok{color:var(--ok)}
+
+/* Expense list (premium spending) */
+.expense-list{list-style:none;padding:0;margin:8px 0 0}
+.expense-list li{padding:10px 12px;border:1px solid var(--line);border-radius:10px;margin:6px 0;cursor:pointer;background:var(--surface)}
+.expense-list li:hover{background:var(--surface-alt)}
+.expense-row{display:flex;justify-content:space-between;align-items:center;font-weight:600}
+.expense-cat{color:var(--text)}
+.expense-amount{color:var(--bronze-dk);font-variant-numeric:tabular-nums}
+.expense-meta{margin-top:2px}
 .passphrase-display{background:var(--surface-alt);border:1px dashed var(--bronze-dk);padding:10px;border-radius:8px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.85rem;word-break:break-all;margin:8px 0;user-select:all}
 .btn-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
 
 /* Countdown ring */
-.countdown-card{position:relative;overflow:hidden}
-.countdown-ring-wrap{position:absolute;inset:0;pointer-events:none;display:flex;align-items:center;justify-content:flex-start;padding-left:6px}
-.countdown-ring{width:60px;height:60px;opacity:.35}
-.countdown-ring-track{fill:none;stroke:#ffffff;stroke-opacity:.25;stroke-width:5}
+.countdown-card{position:relative}
+/* Ring is now an inline grid element (first column) — no longer absolutely positioned over the text. */
+.countdown-ring-wrap{display:flex;align-items:center;justify-content:center;width:56px;height:56px;flex-shrink:0}
+.countdown-ring{width:56px;height:56px;opacity:.85}
+.countdown-ring-track{fill:none;stroke:#ffffff;stroke-opacity:.22;stroke-width:5}
 .countdown-ring-progress{fill:none;stroke:#ffffff;stroke-width:5;stroke-linecap:round;transform:rotate(-90deg);transform-origin:32px 32px;stroke-dasharray:175.93;stroke-dashoffset:175.93;transition:stroke-dashoffset .8s ease}
 .countdown-card.due .countdown-ring{animation:pulse 1.6s ease-in-out infinite;opacity:.55}
 @keyframes pulse{0%,100%{transform:scale(1);opacity:.55}50%{transform:scale(1.06);opacity:.85}}

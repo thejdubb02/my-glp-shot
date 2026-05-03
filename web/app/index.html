@@ -17,7 +17,7 @@
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="icon" type="image/png" sizes="512x512" href="icons/icon-512.png">
 <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png">
-<link rel="stylesheet" href="styles.css?v=28">
+<link rel="stylesheet" href="styles.css?v=29">
 <script>
 (function(){
   // Apply saved theme synchronously to avoid flash. Settings live in IndexedDB; theme also mirrored to localStorage for fast read.
@@ -289,8 +289,13 @@
   </section>
 
   <section id="cost-card" class="card" data-tab="more">
-    <div class="card-head"><h2>Spending <span class="lock-pill" id="cost-lock">Premium</span></h2></div>
+    <div class="card-head">
+      <h2>Spending <span class="lock-pill" id="cost-lock">Premium</span></h2>
+      <button id="add-expense-btn" class="btn-ghost">+ Add</button>
+    </div>
     <div id="cost-summary" class="cost-summary"></div>
+    <ul id="expense-list" class="expense-list"></ul>
+    <p id="expense-empty" class="empty"><span class="empty-illus">💵</span><br>Add medication copays, pharmacy fees, labs, or any other expenses to see total spend and dollars per pound lost.</p>
   </section>
 
   <section class="card" data-tab="more">
@@ -651,6 +656,34 @@
   </form>
 </dialog>
 
+<dialog id="expense-dialog" class="modal">
+  <form id="expense-form" method="dialog">
+    <h2 id="expense-form-title">Add expense</h2>
+    <input type="hidden" id="expense-id" value="">
+    <label>Amount ($) <input id="expense-amount" type="number" step="0.01" min="0" required></label>
+    <label>Category
+      <select id="expense-category">
+        <option value="medication">Medication / Rx</option>
+        <option value="pharmacy">Pharmacy fee</option>
+        <option value="copay">Doctor copay</option>
+        <option value="labs">Lab work</option>
+        <option value="insurance">Insurance</option>
+        <option value="supplies">Supplies (needles, alcohol, etc.)</option>
+        <option value="shipping">Shipping</option>
+        <option value="other">Other</option>
+      </select>
+    </label>
+    <label>Date <input id="expense-date" type="date" required></label>
+    <label>Notes <input id="expense-notes" type="text" placeholder="e.g. May refill, Walgreens"></label>
+    <div class="modal-actions">
+      <button type="button" id="expense-delete" class="btn-danger hidden">Delete</button>
+      <span class="spacer"></span>
+      <button type="button" id="expense-cancel" class="btn-ghost">Cancel</button>
+      <button type="submit" class="btn-primary">Save</button>
+    </div>
+  </form>
+</dialog>
+
 <dialog id="lab-dialog" class="modal">
   <form id="lab-form" method="dialog">
     <h2>Lab result</h2>
@@ -714,6 +747,6 @@
 </nav>
 
 <script src="lib/chart.min.js"></script>
-<script src="app.js?v=28"></script>
+<script src="app.js?v=29"></script>
 </body>
 </html>

@@ -4,10 +4,9 @@
 'use strict';
 
 const DB_NAME = 'shotclock';
-// v4 bump: 'measurements' and 'labs' stores added to onupgradeneeded (previously created lazily by ensureStore — caused VersionError when re-opened at lower version).
-// Same root cause as the v3 supplies bump.
-const DB_VERSION = 4;
-const APP_VERSION = '0.28.0';
+// v5 bump: 'expenses' store added so the Spending card can take ad-hoc cost entries (copays, pharmacy fees, etc.) without needing a supply row.
+const DB_VERSION = 5;
+const APP_VERSION = '0.29.0';
 
 // Umami event tracker. Aggregates only — no PII (no email, no IDs). Safe to call before umami loads.
 function track(event, props) {
@@ -112,6 +111,9 @@ function openDB() {
       }
       if (!db.objectStoreNames.contains('labs')) {
         db.createObjectStore('labs', { keyPath: 'id', autoIncrement: true });
+      }
+      if (!db.objectStoreNames.contains('expenses')) {
+        db.createObjectStore('expenses', { keyPath: 'id', autoIncrement: true });
       }
     };
     req.onsuccess = () => resolve(req.result);
@@ -766,6 +768,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupSupplyUI();
   setupMeasurementUI();
   setupLabUI();
+  setupExpenseUI();
   setupShareUI();
 
   // (Session restore now happens via bootstrapSession() at script load — independent of this pipeline.)
@@ -1549,6 +1552,42 @@ function setupMeasurementUI() {
     $('#measurement-dialog').close();
     await renderMeasurements();
     markSyncDirty();
+  });
+}
+
+function setupExpenseUI() {
+  const btn = $('#add-expense-btn');
+  if (!btn) return;
+  btn.addEventListener('click', () => {
+    if (!isPremium() && account.user) { $('#upgrade-dialog').showModal(); return; }
+    openExpenseDialog(null);
+  });
+  $('#expense-cancel').addEventListener('click', () => $('#expense-dialog').close());
+  $('#expense-delete').addEventListener('click', async () => {
+    const id = parseInt($('#expense-id').value, 10);
+    if (!id) return;
+    if (!confirm('Delete this expense?')) return;
+    await deleteExpense(id);
+    $('#expense-dialog').close();
+    await renderCost(await getWeightsSorted());
+    markSyncDirty();
+    track('expense_deleted');
+  });
+  $('#expense-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const idVal = $('#expense-id').value;
+    const data = {
+      amount: parseFloat($('#expense-amount').value),
+      category: $('#expense-category').value,
+      date: $('#expense-date').value,
+      notes: $('#expense-notes').value.trim() || null,
+    };
+    if (idVal) data.id = parseInt(idVal, 10);
+    await saveExpense(data);
+    $('#expense-dialog').close();
+    await renderCost(await getWeightsSorted());
+    markSyncDirty();
+    track(idVal ? 'expense_edited' : 'expense_logged', { category: data.category });
   });
 }
 
@@ -2717,25 +2756,116 @@ async function renderLabs() {
   }).join('');
 }
 
+// ----- Expenses (premium) -----
+async function getExpenses() {
+  return new Promise((res) => {
+    openDB().then(db => {
+      const t = db.transaction('expenses', 'readonly');
+      const r = t.objectStore('expenses').getAll();
+      r.onsuccess = () => res((r.result || []).sort((a, b) => (b.date || '').localeCompare(a.date || '')));
+      r.onerror = () => res([]);
+    });
+  });
+}
+
+async function saveExpense(e) {
+  const db = await openDB();
+  return new Promise((res, rej) => {
+    const t = db.transaction('expenses', 'readwrite');
+    t.objectStore('expenses').put(e);
+    t.oncomplete = res; t.onerror = () => rej(t.error);
+  });
+}
+
+async function deleteExpense(id) {
+  const db = await openDB();
+  return new Promise((res, rej) => {
+    const t = db.transaction('expenses', 'readwrite');
+    t.objectStore('expenses').delete(id);
+    t.oncomplete = res; t.onerror = () => rej(t.error);
+  });
+}
+
+const EXPENSE_LABELS = {
+  medication: '💊 Medication',
+  pharmacy:   '🏥 Pharmacy fee',
+  copay:      '👨‍⚕️ Doctor copay',
+  labs:       '🧪 Lab work',
+  insurance:  '📋 Insurance',
+  supplies:   '🧴 Supplies',
+  shipping:   '📦 Shipping',
+  other:      '💵 Other',
+};
+
 // ----- Cost tracker (premium) -----
 async function renderCost(weights) {
   const wrap = $('#cost-summary');
+  const list = $('#expense-list');
+  const empty = $('#expense-empty');
   if (!wrap) return;
   const supplies = await getSupplies();
-  const totalCost = supplies.reduce((sum, s) => sum + (parseFloat(s.cost) || 0), 0);
-  const monthsSinceFirst = supplies.length ? Math.max(1, Math.ceil((Date.now() - new Date(supplies[supplies.length - 1].opened_at || Date.now())) / (30 * 86400000))) : 0;
+  const expenses = await getExpenses();
+  const supplyCost = supplies.reduce((sum, s) => sum + (parseFloat(s.cost) || 0), 0);
+  const expenseCost = expenses.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
+  const totalCost = supplyCost + expenseCost;
+  const earliest = [
+    ...supplies.map(s => s.opened_at || s.date).filter(Boolean),
+    ...expenses.map(e => e.date).filter(Boolean),
+  ].sort()[0];
+  const monthsSinceFirst = earliest ? Math.max(1, Math.ceil((Date.now() - new Date(earliest)) / (30 * 86400000))) : 0;
   const wd = weightDelta(weights, settings.startWeight);
   const lostLb = wd && wd.delta < 0 ? Math.abs(wd.delta) : 0;
-  const dollarsPerLb = lostLb > 0 ? (totalCost / lostLb).toFixed(2) : '—';
-  if (!supplies.length || !totalCost) {
-    wrap.innerHTML = '<p class="muted small">Add supplies with cost to track spending and $/lb lost.</p>';
+  const dollarsPerLb = lostLb > 0 ? (totalCost / lostLb).toFixed(2) : null;
+
+  if (!totalCost) {
+    wrap.innerHTML = '';
+    if (list) list.innerHTML = '';
+    if (empty) empty.classList.remove('hidden');
     return;
   }
+  if (empty) empty.classList.add('hidden');
   wrap.innerHTML = `
     <div class="summary-pill"><span class="summary-label">Total spent</span><span class="summary-value">$${totalCost.toFixed(2)}</span></div>
     ${monthsSinceFirst ? `<div class="summary-pill"><span class="summary-label">Per month</span><span class="summary-value">$${(totalCost / monthsSinceFirst).toFixed(2)}</span></div>` : ''}
-    ${lostLb > 0 ? `<div class="summary-pill"><span class="summary-label">$ per lb lost</span><span class="summary-value">$${dollarsPerLb}</span></div>` : ''}
+    ${dollarsPerLb ? `<div class="summary-pill"><span class="summary-label">$ per lb lost</span><span class="summary-value">$${dollarsPerLb}</span></div>` : ''}
   `;
+  if (list) {
+    list.innerHTML = expenses.slice(0, 12).map(e => `
+      <li data-id="${e.id}">
+        <div class="expense-row">
+          <span class="expense-cat">${EXPENSE_LABELS[e.category] || e.category}</span>
+          <span class="expense-amount">$${(parseFloat(e.amount) || 0).toFixed(2)}</span>
+        </div>
+        <div class="expense-meta muted small">${e.date}${e.notes ? ' · ' + escapeHTML(e.notes) : ''}</div>
+      </li>
+    `).join('');
+    list.querySelectorAll('li').forEach(li => {
+      li.addEventListener('click', () => openExpenseDialog(parseInt(li.dataset.id, 10)));
+    });
+  }
+}
+
+function openExpenseDialog(id) {
+  const isEdit = !!id;
+  $('#expense-form-title').textContent = isEdit ? 'Edit expense' : 'Add expense';
+  $('#expense-id').value = id || '';
+  $('#expense-delete').classList.toggle('hidden', !isEdit);
+  if (!isEdit) {
+    $('#expense-amount').value = '';
+    $('#expense-category').value = 'medication';
+    $('#expense-date').value = todayISODate();
+    $('#expense-notes').value = '';
+  } else {
+    getExpenses().then(arr => {
+      const e = arr.find(x => x.id === id);
+      if (!e) return;
+      $('#expense-amount').value = e.amount;
+      $('#expense-category').value = e.category || 'other';
+      $('#expense-date').value = e.date;
+      $('#expense-notes').value = e.notes || '';
+    });
+  }
+  $('#expense-dialog').showModal();
 }
 
 // ----- Plateau detection (premium) -----
