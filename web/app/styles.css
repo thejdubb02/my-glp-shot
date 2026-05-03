@@ -174,6 +174,12 @@ canvas{width:100% !important;height:auto !important;max-height:200px}
 .range-btn.active{background:var(--surface);color:var(--bronze-dk);box-shadow:0 1px 2px rgba(0,0,0,.06)}
 [data-theme="dark"] .range-btn.active{background:var(--bronze-dk);color:#fff}
 
+/* Body type toggle (Male / Female) above injection-site diagram */
+.body-toggle{display:flex;gap:4px;background:var(--surface-alt);padding:3px;border-radius:8px;margin:6px auto 8px;max-width:200px}
+.body-toggle-btn{flex:1;background:transparent;border:0;color:var(--muted);font:inherit;font-size:.78rem;font-weight:600;padding:6px 0;cursor:pointer;border-radius:6px;transition:background .15s,color .15s}
+.body-toggle-btn.active{background:var(--surface);color:var(--bronze-dk);box-shadow:0 1px 2px rgba(0,0,0,.06)}
+[data-theme="dark"] .body-toggle-btn.active{background:var(--bronze-dk);color:#fff}
+
 .expense-list{list-style:none;padding:0;margin:8px 0 0}
 .expense-list li{padding:10px 12px;border:1px solid var(--line);border-radius:10px;margin:6px 0;cursor:pointer;background:var(--surface)}
 .expense-list li:hover{background:var(--surface-alt)}
@@ -260,13 +266,19 @@ canvas{width:100% !important;height:auto !important;max-height:200px}
 .empty-illus{display:inline-block;font-size:1.4rem;opacity:.5;margin-bottom:4px}
 
 /* Badges */
-.badges-list{display:flex;flex-wrap:wrap;gap:8px}
-.badge{background:var(--surface-alt);border:1px solid var(--line);border-radius:14px;padding:6px 10px;font-size:.78rem;display:flex;align-items:center;gap:6px;animation:badge-pop .4s ease-out}
-.badge.unlocked{background:linear-gradient(135deg,var(--bronze-lt),var(--surface));border-color:var(--bronze)}
-.badge .badge-icon{font-size:1rem}
-.badge .badge-label{color:var(--ink);font-weight:600}
-.badge.locked{opacity:.4}
-.badge.locked .badge-label{color:var(--muted);font-weight:400}
+.badges-list{display:flex;flex-wrap:wrap;gap:10px}
+.badge{background:var(--surface);border:1.5px solid var(--line);border-radius:999px;padding:8px 14px 8px 12px;font-size:.82rem;display:flex;align-items:center;gap:8px;animation:badge-pop .4s ease-out;transition:transform .12s,box-shadow .15s}
+.badge.unlocked{background:linear-gradient(135deg,var(--bronze) 0%,var(--bronze-dk) 100%);border-color:transparent;color:#fff;box-shadow:0 2px 6px rgba(15,23,42,.10),0 0 0 1px rgba(255,255,255,.06) inset}
+.badge.unlocked .badge-label,
+.badge.unlocked .badge-icon{color:#fff}
+.badge .badge-icon{font-size:1.2rem;line-height:1;filter:drop-shadow(0 1px 1px rgba(0,0,0,.15))}
+.badge .badge-label{color:var(--ink);font-weight:600;letter-spacing:.1px}
+.badge.locked{background:var(--surface);border-color:var(--line);opacity:.6}
+.badge.locked .badge-icon{filter:grayscale(1);opacity:.55}
+.badge.locked .badge-label{color:var(--muted);font-weight:500}
+.badge.unlocked:hover{transform:translateY(-1px);box-shadow:0 3px 10px rgba(15,23,42,.14)}
+[data-theme="dark"] .badge{background:var(--surface);border-color:var(--line)}
+[data-theme="dark"] .badge.unlocked{box-shadow:0 0 0 1px rgba(255,255,255,.08) inset,0 0 12px rgba(20,184,166,.18)}
 @keyframes badge-pop{0%{transform:scale(.7);opacity:0}100%{transform:scale(1);opacity:1}}
 
 /* Color-coded shot rows by dose */
@@ -320,7 +332,8 @@ canvas{width:100% !important;height:auto !important;max-height:200px}
 
 /* Premium lock pill */
 .lock-pill{display:inline-block;background:linear-gradient(135deg,var(--bronze) 0%,var(--bronze-dk) 100%);color:#fff;font-size:.62rem;padding:2px 8px;border-radius:999px;font-weight:700;letter-spacing:.5px;margin-left:6px;vertical-align:middle;text-transform:uppercase}
-.lock-pill.unlocked{background:#10b981}
+/* Darkened from #10b981 (emerald-500, ~2.54:1 with white text) to #047857 (emerald-700, ~5.0:1) for WCAG AA. */
+.lock-pill.unlocked{background:#047857}
 .lock-pill.unlocked::before{content:'✓ '}
 
 /* Supply list */

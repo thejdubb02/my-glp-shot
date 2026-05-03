@@ -17,7 +17,7 @@
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="icon" type="image/png" sizes="512x512" href="icons/icon-512.png">
 <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png">
-<link rel="stylesheet" href="styles.css?v=31">
+<link rel="stylesheet" href="styles.css?v=32">
 <script>
 (function(){
   // Apply saved theme synchronously to avoid flash. Settings live in IndexedDB; theme also mirrored to localStorage for fast read.
@@ -195,6 +195,10 @@
 
   <section class="card" data-tab="insights">
     <div class="card-head"><h2>Where you inject</h2><span id="site-suggest-label" class="muted small"></span></div>
+    <div class="body-toggle" role="group" aria-label="Body type">
+      <button class="body-toggle-btn" type="button" data-body-sex="male">Male</button>
+      <button class="body-toggle-btn" type="button" data-body-sex="female">Female</button>
+    </div>
     <div id="body-diagram-wrap" class="body-diagram-wrap"></div>
     <div id="site-legend" class="site-legend"></div>
   </section>
@@ -770,6 +774,6 @@
 </nav>
 
 <script src="lib/chart.min.js"></script>
-<script src="app.js?v=31"></script>
+<script src="app.js?v=32"></script>
 </body>
 </html>

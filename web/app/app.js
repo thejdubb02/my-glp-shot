@@ -6,7 +6,7 @@
 const DB_NAME = 'shotclock';
 // v5 bump: 'expenses' store added so the Spending card can take ad-hoc cost entries (copays, pharmacy fees, etc.) without needing a supply row.
 const DB_VERSION = 5;
-const APP_VERSION = '0.31.0';
+const APP_VERSION = '0.32.0';
 
 // Umami event tracker. Aggregates only — no PII (no email, no IDs). Safe to call before umami loads.
 function track(event, props) {
@@ -18,29 +18,31 @@ function track(event, props) {
 }
 const STORES = { shots: 'shots', weights: 'weights', settings: 'settings', moods: 'moods', supplies: 'supplies' };
 
-// 20 color themes — primary + dark + light + gradient. Applied by overriding CSS custom properties on documentElement.
-// Default 'teal' uses the existing palette.
+// 20 color themes. Each defines a light-mode and dark-mode variant so the app stays readable in both.
+// Tokens overridden: --bronze (primary), --bronze-dk (darker primary, used for hover/active text), --bronze-lt (subtle tint background), --grad (hero/countdown gradient).
+// Light mode: primary mid-saturation, dark = darker primary, tint = very pale primary.
+// Dark mode: primary slightly lighter (for contrast on dark bg), dark = even lighter (used as link/highlighted text on dark surfaces), tint = deep dark version of the hue.
 const THEMES = [
-  { id: 'teal',        name: 'Teal',         primary: '#14b8a6', dark: '#0f766e', light: '#ccfbf1', grad2: '#0d9488' },
-  { id: 'bronze',      name: 'Bronze',       primary: '#c7915b', dark: '#83542e', light: '#f5ebe3', grad2: '#a16d3a' },
-  { id: 'purple',      name: 'Royal Purple', primary: '#8b5cf6', dark: '#6d28d9', light: '#ede9fe', grad2: '#7c3aed' },
-  { id: 'pink',        name: 'Hot Pink',     primary: '#ec4899', dark: '#be185d', light: '#fce7f3', grad2: '#db2777' },
-  { id: 'coral',       name: 'Coral',        primary: '#fb7185', dark: '#be123c', light: '#ffe4e6', grad2: '#e11d48' },
-  { id: 'forest',      name: 'Forest',       primary: '#22c55e', dark: '#15803d', light: '#dcfce7', grad2: '#16a34a' },
-  { id: 'sky',         name: 'Sky Blue',     primary: '#0ea5e9', dark: '#0369a1', light: '#e0f2fe', grad2: '#0284c7' },
-  { id: 'lavender',    name: 'Lavender',     primary: '#a78bfa', dark: '#7c3aed', light: '#f3e8ff', grad2: '#9333ea' },
-  { id: 'sunset',      name: 'Sunset',       primary: '#f97316', dark: '#c2410c', light: '#ffedd5', grad2: '#ea580c' },
-  { id: 'cherry',      name: 'Cherry Red',   primary: '#dc2626', dark: '#991b1b', light: '#fee2e2', grad2: '#b91c1c' },
-  { id: 'mint',        name: 'Mint',         primary: '#34d399', dark: '#047857', light: '#d1fae5', grad2: '#10b981' },
-  { id: 'indigo',      name: 'Indigo',       primary: '#6366f1', dark: '#3730a3', light: '#e0e7ff', grad2: '#4f46e5' },
-  { id: 'rose',        name: 'Rose Gold',    primary: '#f43f5e', dark: '#9f1239', light: '#ffe4e6', grad2: '#e11d48' },
-  { id: 'slate',       name: 'Slate',        primary: '#64748b', dark: '#334155', light: '#f1f5f9', grad2: '#475569' },
-  { id: 'emerald',     name: 'Emerald',      primary: '#10b981', dark: '#065f46', light: '#d1fae5', grad2: '#059669' },
-  { id: 'plum',        name: 'Plum',         primary: '#a855f7', dark: '#6b21a8', light: '#f3e8ff', grad2: '#9333ea' },
-  { id: 'sand',        name: 'Sand',         primary: '#d97706', dark: '#78350f', light: '#fef3c7', grad2: '#b45309' },
-  { id: 'ocean',       name: 'Ocean',        primary: '#2563eb', dark: '#1e3a8a', light: '#dbeafe', grad2: '#1d4ed8' },
-  { id: 'terracotta',  name: 'Terracotta',   primary: '#b45309', dark: '#78350f', light: '#fef3c7', grad2: '#92400e' },
-  { id: 'charcoal',    name: 'Charcoal',     primary: '#374151', dark: '#111827', light: '#f3f4f6', grad2: '#1f2937' },
+  { id: 'teal',        name: 'Teal',         light: { primary: '#14b8a6', dark: '#0f766e', tint: '#ccfbf1', grad2: '#0d9488' }, dark: { primary: '#2dd4bf', dark: '#5eead4', tint: '#134e4a', grad2: '#0d9488' } },
+  { id: 'bronze',      name: 'Bronze',       light: { primary: '#c7915b', dark: '#83542e', tint: '#f5ebe3', grad2: '#a16d3a' }, dark: { primary: '#d4a574', dark: '#e7c8a0', tint: '#3d2a18', grad2: '#a16d3a' } },
+  { id: 'purple',      name: 'Royal Purple', light: { primary: '#8b5cf6', dark: '#6d28d9', tint: '#ede9fe', grad2: '#7c3aed' }, dark: { primary: '#a78bfa', dark: '#c4b5fd', tint: '#2e1065', grad2: '#7c3aed' } },
+  { id: 'pink',        name: 'Hot Pink',     light: { primary: '#ec4899', dark: '#be185d', tint: '#fce7f3', grad2: '#db2777' }, dark: { primary: '#f472b6', dark: '#fbcfe8', tint: '#500724', grad2: '#db2777' } },
+  { id: 'coral',       name: 'Coral',        light: { primary: '#fb7185', dark: '#be123c', tint: '#ffe4e6', grad2: '#e11d48' }, dark: { primary: '#fda4af', dark: '#fecdd3', tint: '#4c0519', grad2: '#e11d48' } },
+  { id: 'forest',      name: 'Forest',       light: { primary: '#22c55e', dark: '#15803d', tint: '#dcfce7', grad2: '#16a34a' }, dark: { primary: '#4ade80', dark: '#86efac', tint: '#14532d', grad2: '#16a34a' } },
+  { id: 'sky',         name: 'Sky Blue',     light: { primary: '#0ea5e9', dark: '#0369a1', tint: '#e0f2fe', grad2: '#0284c7' }, dark: { primary: '#38bdf8', dark: '#7dd3fc', tint: '#0c4a6e', grad2: '#0284c7' } },
+  { id: 'lavender',    name: 'Lavender',     light: { primary: '#a78bfa', dark: '#7c3aed', tint: '#f3e8ff', grad2: '#9333ea' }, dark: { primary: '#c4b5fd', dark: '#ddd6fe', tint: '#3b0764', grad2: '#9333ea' } },
+  { id: 'sunset',      name: 'Sunset',       light: { primary: '#f97316', dark: '#c2410c', tint: '#ffedd5', grad2: '#ea580c' }, dark: { primary: '#fb923c', dark: '#fdba74', tint: '#431407', grad2: '#ea580c' } },
+  { id: 'cherry',      name: 'Cherry Red',   light: { primary: '#dc2626', dark: '#991b1b', tint: '#fee2e2', grad2: '#b91c1c' }, dark: { primary: '#ef4444', dark: '#fca5a5', tint: '#450a0a', grad2: '#b91c1c' } },
+  { id: 'mint',        name: 'Mint',         light: { primary: '#34d399', dark: '#047857', tint: '#d1fae5', grad2: '#10b981' }, dark: { primary: '#6ee7b7', dark: '#a7f3d0', tint: '#022c22', grad2: '#10b981' } },
+  { id: 'indigo',      name: 'Indigo',       light: { primary: '#6366f1', dark: '#3730a3', tint: '#e0e7ff', grad2: '#4f46e5' }, dark: { primary: '#818cf8', dark: '#a5b4fc', tint: '#1e1b4b', grad2: '#4f46e5' } },
+  { id: 'rose',        name: 'Rose Gold',    light: { primary: '#f43f5e', dark: '#9f1239', tint: '#ffe4e6', grad2: '#e11d48' }, dark: { primary: '#fb7185', dark: '#fda4af', tint: '#4c0519', grad2: '#e11d48' } },
+  { id: 'slate',       name: 'Slate',        light: { primary: '#64748b', dark: '#334155', tint: '#f1f5f9', grad2: '#475569' }, dark: { primary: '#94a3b8', dark: '#cbd5e1', tint: '#0f172a', grad2: '#475569' } },
+  { id: 'emerald',     name: 'Emerald',      light: { primary: '#10b981', dark: '#065f46', tint: '#d1fae5', grad2: '#059669' }, dark: { primary: '#34d399', dark: '#6ee7b7', tint: '#022c22', grad2: '#059669' } },
+  { id: 'plum',        name: 'Plum',         light: { primary: '#a855f7', dark: '#6b21a8', tint: '#f3e8ff', grad2: '#9333ea' }, dark: { primary: '#c084fc', dark: '#d8b4fe', tint: '#3b0764', grad2: '#9333ea' } },
+  { id: 'sand',        name: 'Sand',         light: { primary: '#d97706', dark: '#78350f', tint: '#fef3c7', grad2: '#b45309' }, dark: { primary: '#f59e0b', dark: '#fcd34d', tint: '#451a03', grad2: '#b45309' } },
+  { id: 'ocean',       name: 'Ocean',        light: { primary: '#2563eb', dark: '#1e3a8a', tint: '#dbeafe', grad2: '#1d4ed8' }, dark: { primary: '#60a5fa', dark: '#93c5fd', tint: '#1e3a8a', grad2: '#1d4ed8' } },
+  { id: 'terracotta',  name: 'Terracotta',   light: { primary: '#b45309', dark: '#78350f', tint: '#fef3c7', grad2: '#92400e' }, dark: { primary: '#d97706', dark: '#fbbf24', tint: '#451a03', grad2: '#92400e' } },
+  { id: 'charcoal',    name: 'Charcoal',     light: { primary: '#374151', dark: '#111827', tint: '#f3f4f6', grad2: '#1f2937' }, dark: { primary: '#9ca3af', dark: '#d1d5db', tint: '#030712', grad2: '#1f2937' } },
 ];
 
 // 10 mood emoji style sets (5 mood levels each: terrible / bad / ok / good / great).
@@ -76,6 +78,7 @@ const DEFAULT_SETTINGS = {
   syncLastUpdatedAt: null,
   syncAutoPush: true,
   syncDirty: false,
+  bodySex: 'male',
 };
 
 const SIDE_EFFECTS = [
@@ -831,6 +834,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupLabUI();
   setupExpenseUI();
   setupWeightRangeButtons();
+  setupBodyToggle();
   renderThemeGrid();
   renderEmojiStyleGrid();
   setupShareUI();
@@ -866,11 +870,8 @@ function applyTheme() {
   if (t === 'system') document.documentElement.removeAttribute('data-theme');
   else document.documentElement.setAttribute('data-theme', t);
   try { localStorage.setItem('theme', t); } catch(e){}
-  const meta = document.querySelector('meta[name="theme-color"]');
-  if (meta) {
-    const dark = t === 'dark' || (t === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
-    meta.setAttribute('content', dark ? '#0b1220' : '#0f766e');
-  }
+  // Re-apply the color theme so its tint flips to the right light/dark variant.
+  if (typeof applyColorTheme === 'function') applyColorTheme(settings.colorTheme || 'teal');
 }
 
 async function getLastWeightUnit() {
@@ -919,6 +920,26 @@ function setupWeightRangeButtons() {
       _weightRangeDays = btn.dataset.range === 'all' ? 'all' : btn.dataset.range;
       track('weight_range_changed', { range: _weightRangeDays });
       await renderWeights();
+    });
+  });
+}
+
+function setupBodyToggle() {
+  // Initialize active state from current settings (default 'male' if unset).
+  const current = (settings.bodySex === 'female') ? 'female' : 'male';
+  document.querySelectorAll('.body-toggle-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.bodySex === current);
+  });
+  document.querySelectorAll('.body-toggle-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const sex = btn.dataset.bodySex === 'female' ? 'female' : 'male';
+      if (settings.bodySex === sex) return;
+      settings.bodySex = sex;
+      document.querySelectorAll('.body-toggle-btn').forEach(b => b.classList.toggle('active', b === btn));
+      await saveSettings();
+      markSyncDirty();
+      track('body_sex_changed', { sex });
+      await renderShots(); // re-renders the body diagram via renderBodyDiagram(shots)
     });
   });
 }
@@ -1900,49 +1921,16 @@ function renderBodyDiagram(shots) {
     </g>`;
   }).join('');
 
+  // Anatomical front silhouettes — single continuous outline per sex.
+  // Both fit viewBox 200x320 so SITE_POSITIONS dots land on the body.
+  // Male: ~80-wide shoulder line, slim 64-wide hips, straight legs.
+  // Female: ~64-wide shoulders, defined ~50-wide waist near y=150, ~76-wide hips, gently curved legs.
+  const MALE_PATH = "M100,6 C88,6 80,15 80,28 C80,38 84,46 90,50 L90,58 L78,62 C62,64 50,72 46,84 L40,108 C38,118 40,124 46,126 C52,126 58,122 60,114 L66,90 L72,80 L76,86 L76,140 C76,150 74,156 70,164 L68,200 L66,210 L62,318 L76,318 L80,220 L86,160 L94,160 L100,210 L106,160 L114,160 L120,220 L124,318 L138,318 L134,210 L132,200 L130,164 C126,156 124,150 124,140 L124,86 L128,80 L134,90 L140,114 C142,122 148,126 154,126 C160,124 162,118 160,108 L154,84 C150,72 138,64 122,62 L110,58 L110,50 C116,46 120,38 120,28 C120,15 112,6 100,6 Z";
+  const FEMALE_PATH = "M100,6 C88,6 80,15 80,28 C80,38 84,46 90,50 L90,58 L80,62 C72,64 66,68 64,74 C60,82 56,90 56,100 C56,106 60,108 62,106 L66,80 L70,72 L72,74 C74,100 75,130 75,150 C76,170 70,185 64,200 L62,210 C56,240 54,280 56,318 L72,318 L80,230 L88,180 L96,160 L100,160 L104,160 L112,180 L120,230 L128,318 L144,318 C146,280 144,240 138,210 L136,200 C130,185 124,170 125,150 C125,130 126,100 128,74 L130,72 L134,80 L138,106 C140,108 144,106 144,100 C144,90 140,82 136,74 C134,68 128,64 120,62 L110,58 L110,50 C116,46 120,38 120,28 C120,15 112,6 100,6 Z";
+  const bodyPath = settings.bodySex === 'female' ? FEMALE_PATH : MALE_PATH;
   wrap.innerHTML = `
     <svg class="body-svg" viewBox="0 0 200 320" xmlns="http://www.w3.org/2000/svg" aria-label="Body diagram showing injection sites">
-      <!-- Single continuous outline for cleaner anatomical proportions: head, shoulders, arms hanging at sides, narrow waist, hips, legs, feet. -->
-      <path class="body-shape" d="
-        M 100 8
-        C 86 8 76 18 76 32
-        C 76 44 84 54 92 56
-        L 92 60
-        L 70 65
-        C 56 70 48 82 46 94
-        L 38 142
-        C 36 156 38 162 44 164
-        C 50 166 56 162 58 154
-        L 64 110
-        L 68 96
-        L 72 130
-        C 70 158 70 184 76 198
-        L 82 220
-        L 76 282
-        C 74 294 76 304 82 308
-        C 90 310 96 306 96 296
-        L 98 220
-        L 100 220
-        L 102 220
-        L 104 296
-        C 104 306 110 310 118 308
-        C 124 304 126 294 124 282
-        L 118 220
-        L 124 198
-        C 130 184 130 158 128 130
-        L 132 96
-        L 136 110
-        L 142 154
-        C 144 162 150 166 156 164
-        C 162 162 164 156 162 142
-        L 154 94
-        C 152 82 144 70 130 65
-        L 108 60
-        L 108 56
-        C 116 54 124 44 124 32
-        C 124 18 114 8 100 8
-        Z
-      "/>
+      <path class="body-shape" d="${bodyPath}"/>
       ${sites}
     </svg>
   `;
@@ -2886,16 +2874,30 @@ async function renderLabs() {
 }
 
 // ----- App theme + emoji style (premium cosmetic settings) -----
+function isDarkModeActive() {
+  const attr = document.documentElement.getAttribute('data-theme');
+  if (attr === 'dark') return true;
+  if (attr === 'light') return false;
+  // 'system' or unset → use OS preference
+  return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+}
+
 function applyColorTheme(themeId) {
   const t = THEMES.find(x => x.id === themeId) || THEMES[0];
+  const variant = isDarkModeActive() ? t.dark : t.light;
   const root = document.documentElement;
-  root.style.setProperty('--bronze', t.primary);
-  root.style.setProperty('--bronze-dk', t.dark);
-  root.style.setProperty('--bronze-lt', t.light);
-  root.style.setProperty('--grad', `linear-gradient(135deg, ${t.primary} 0%, ${t.grad2} 100%)`);
-  // Update the iOS theme-color meta so the address bar matches.
+  root.style.setProperty('--bronze', variant.primary);
+  root.style.setProperty('--bronze-dk', variant.dark);
+  root.style.setProperty('--bronze-lt', variant.tint);
+  root.style.setProperty('--grad', `linear-gradient(135deg, ${variant.primary} 0%, ${variant.grad2} 100%)`);
+  // iOS address-bar tint — always use the light-mode dark color so the bar reads as the brand.
   const meta = document.querySelector('meta[name="theme-color"]');
-  if (meta) meta.content = t.dark;
+  if (meta) meta.content = t.light.dark;
+}
+
+// Re-apply theme whenever light/dark mode flips so tints stay correct.
+function reapplyCurrentColorTheme() {
+  applyColorTheme(settings.colorTheme || 'teal');
 }
 
 function applyMoodStyle(styleId) {

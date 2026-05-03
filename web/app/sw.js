@@ -1,5 +1,5 @@
 // My GLP Shot service worker — network-first for app shell so updates are picked up on every visit; cache fallback for offline.
-const CACHE = 'mglp-v0.31.0';
+const CACHE = 'mglp-v0.32.0';
 const SHELL = [
   './',
   'index.html',
