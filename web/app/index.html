@@ -17,7 +17,7 @@
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="icon" type="image/png" sizes="512x512" href="icons/icon-512.png">
 <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png">
-<link rel="stylesheet" href="styles.css?v=30">
+<link rel="stylesheet" href="styles.css?v=31">
 <script>
 (function(){
   // Apply saved theme synchronously to avoid flash. Settings live in IndexedDB; theme also mirrored to localStorage for fast read.
@@ -215,6 +215,13 @@
 
   <section class="card" data-tab="insights">
     <div class="card-head"><h2>Weight</h2><button id="add-weight-btn" class="btn-ghost">+ Add</button></div>
+    <div class="range-bar" role="group" aria-label="Chart range">
+      <button class="range-btn" type="button" data-range="30">1M</button>
+      <button class="range-btn" type="button" data-range="90">3M</button>
+      <button class="range-btn" type="button" data-range="180">6M</button>
+      <button class="range-btn" type="button" data-range="365">1Y</button>
+      <button class="range-btn active" type="button" data-range="all">All</button>
+    </div>
     <canvas id="weight-chart" height="160"></canvas>
     <p id="empty-weight" class="empty">
       <span class="empty-illus">⚖</span><br>No weight entries yet — tap <strong>+ Add</strong> to log your first one.
@@ -296,6 +303,22 @@
     <div id="cost-summary" class="cost-summary"></div>
     <ul id="expense-list" class="expense-list"></ul>
     <p id="expense-empty" class="empty"><span class="empty-illus">💵</span><br>Add medication copays, pharmacy fees, labs, or any other expenses to see total spend and dollars per pound lost.</p>
+  </section>
+
+  <section id="theme-picker-card" class="card" data-tab="more">
+    <div class="card-head">
+      <h2>App theme <span class="lock-pill" id="theme-lock">Premium</span></h2>
+    </div>
+    <p class="muted small">Pick a color palette — changes the whole app instantly. Light + dark variants included.</p>
+    <div id="theme-grid" class="theme-grid"></div>
+  </section>
+
+  <section id="emoji-style-card" class="card" data-tab="more">
+    <div class="card-head">
+      <h2>Mood emoji style <span class="lock-pill" id="emoji-lock">Premium</span></h2>
+    </div>
+    <p class="muted small">Change how your daily mood emojis look.</p>
+    <div id="emoji-style-grid" class="emoji-style-grid"></div>
   </section>
 
   <section class="card" data-tab="more">
@@ -747,6 +770,6 @@
 </nav>
 
 <script src="lib/chart.min.js"></script>
-<script src="app.js?v=30"></script>
+<script src="app.js?v=31"></script>
 </body>
 </html>

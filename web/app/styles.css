@@ -151,6 +151,29 @@ canvas{width:100% !important;height:auto !important;max-height:200px}
 .save-status.ok{color:var(--ok)}
 
 /* Expense list (premium spending) */
+/* Theme picker grid (premium) */
+.theme-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:10px;margin-top:8px}
+.theme-swatch{background:var(--surface);border:2px solid var(--line);border-radius:12px;padding:10px 8px;display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer;font:inherit;color:var(--text);transition:border-color .15s,transform .1s}
+.theme-swatch:hover{transform:translateY(-1px)}
+.theme-swatch.active{border-color:var(--bronze-dk);box-shadow:0 0 0 3px rgba(20,184,166,.15)}
+.theme-swatch-dot{width:36px;height:36px;border-radius:999px;box-shadow:0 1px 4px rgba(0,0,0,.15)}
+.theme-swatch-name{font-size:.72rem;font-weight:600;color:var(--muted)}
+.theme-swatch.active .theme-swatch-name{color:var(--bronze-dk)}
+
+/* Emoji style picker grid (premium) */
+.emoji-style-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin-top:8px}
+.emoji-style-swatch{background:var(--surface);border:2px solid var(--line);border-radius:12px;padding:8px;display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer;font:inherit;color:var(--text)}
+.emoji-style-swatch.active{border-color:var(--bronze-dk);box-shadow:0 0 0 3px rgba(20,184,166,.15)}
+.emoji-row{display:flex;gap:4px;font-size:1.2rem;line-height:1}
+.emoji-style-name{font-size:.72rem;font-weight:600;color:var(--muted)}
+.emoji-style-swatch.active .emoji-style-name{color:var(--bronze-dk)}
+
+/* Chart range selector (1M / 3M / 6M / 1Y / All) */
+.range-bar{display:flex;gap:4px;background:var(--surface-alt);padding:3px;border-radius:8px;margin:6px 0 10px}
+.range-btn{flex:1;background:transparent;border:0;color:var(--muted);font:inherit;font-size:.78rem;font-weight:600;padding:6px 0;cursor:pointer;border-radius:6px;transition:background .15s,color .15s}
+.range-btn.active{background:var(--surface);color:var(--bronze-dk);box-shadow:0 1px 2px rgba(0,0,0,.06)}
+[data-theme="dark"] .range-btn.active{background:var(--bronze-dk);color:#fff}
+
 .expense-list{list-style:none;padding:0;margin:8px 0 0}
 .expense-list li{padding:10px 12px;border:1px solid var(--line);border-radius:10px;margin:6px 0;cursor:pointer;background:var(--surface)}
 .expense-list li:hover{background:var(--surface-alt)}

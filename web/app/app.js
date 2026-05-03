@@ -6,7 +6,7 @@
 const DB_NAME = 'shotclock';
 // v5 bump: 'expenses' store added so the Spending card can take ad-hoc cost entries (copays, pharmacy fees, etc.) without needing a supply row.
 const DB_VERSION = 5;
-const APP_VERSION = '0.30.0';
+const APP_VERSION = '0.31.0';
 
 // Umami event tracker. Aggregates only — no PII (no email, no IDs). Safe to call before umami loads.
 function track(event, props) {
@@ -17,6 +17,45 @@ function track(event, props) {
   } catch (_) { /* never let analytics break the app */ }
 }
 const STORES = { shots: 'shots', weights: 'weights', settings: 'settings', moods: 'moods', supplies: 'supplies' };
+
+// 20 color themes — primary + dark + light + gradient. Applied by overriding CSS custom properties on documentElement.
+// Default 'teal' uses the existing palette.
+const THEMES = [
+  { id: 'teal',        name: 'Teal',         primary: '#14b8a6', dark: '#0f766e', light: '#ccfbf1', grad2: '#0d9488' },
+  { id: 'bronze',      name: 'Bronze',       primary: '#c7915b', dark: '#83542e', light: '#f5ebe3', grad2: '#a16d3a' },
+  { id: 'purple',      name: 'Royal Purple', primary: '#8b5cf6', dark: '#6d28d9', light: '#ede9fe', grad2: '#7c3aed' },
+  { id: 'pink',        name: 'Hot Pink',     primary: '#ec4899', dark: '#be185d', light: '#fce7f3', grad2: '#db2777' },
+  { id: 'coral',       name: 'Coral',        primary: '#fb7185', dark: '#be123c', light: '#ffe4e6', grad2: '#e11d48' },
+  { id: 'forest',      name: 'Forest',       primary: '#22c55e', dark: '#15803d', light: '#dcfce7', grad2: '#16a34a' },
+  { id: 'sky',         name: 'Sky Blue',     primary: '#0ea5e9', dark: '#0369a1', light: '#e0f2fe', grad2: '#0284c7' },
+  { id: 'lavender',    name: 'Lavender',     primary: '#a78bfa', dark: '#7c3aed', light: '#f3e8ff', grad2: '#9333ea' },
+  { id: 'sunset',      name: 'Sunset',       primary: '#f97316', dark: '#c2410c', light: '#ffedd5', grad2: '#ea580c' },
+  { id: 'cherry',      name: 'Cherry Red',   primary: '#dc2626', dark: '#991b1b', light: '#fee2e2', grad2: '#b91c1c' },
+  { id: 'mint',        name: 'Mint',         primary: '#34d399', dark: '#047857', light: '#d1fae5', grad2: '#10b981' },
+  { id: 'indigo',      name: 'Indigo',       primary: '#6366f1', dark: '#3730a3', light: '#e0e7ff', grad2: '#4f46e5' },
+  { id: 'rose',        name: 'Rose Gold',    primary: '#f43f5e', dark: '#9f1239', light: '#ffe4e6', grad2: '#e11d48' },
+  { id: 'slate',       name: 'Slate',        primary: '#64748b', dark: '#334155', light: '#f1f5f9', grad2: '#475569' },
+  { id: 'emerald',     name: 'Emerald',      primary: '#10b981', dark: '#065f46', light: '#d1fae5', grad2: '#059669' },
+  { id: 'plum',        name: 'Plum',         primary: '#a855f7', dark: '#6b21a8', light: '#f3e8ff', grad2: '#9333ea' },
+  { id: 'sand',        name: 'Sand',         primary: '#d97706', dark: '#78350f', light: '#fef3c7', grad2: '#b45309' },
+  { id: 'ocean',       name: 'Ocean',        primary: '#2563eb', dark: '#1e3a8a', light: '#dbeafe', grad2: '#1d4ed8' },
+  { id: 'terracotta',  name: 'Terracotta',   primary: '#b45309', dark: '#78350f', light: '#fef3c7', grad2: '#92400e' },
+  { id: 'charcoal',    name: 'Charcoal',     primary: '#374151', dark: '#111827', light: '#f3f4f6', grad2: '#1f2937' },
+];
+
+// 10 mood emoji style sets (5 mood levels each: terrible / bad / ok / good / great).
+const MOOD_STYLES = [
+  { id: 'classic', name: 'Classic',  emojis: ['😣', '😕', '😐', '🙂', '😄'] },
+  { id: 'simple',  name: 'Simple',   emojis: ['☹️', '🙁', '😐', '🙂', '😊'] },
+  { id: 'soft',    name: 'Soft',     emojis: ['😞', '😟', '😶', '😌', '🥰'] },
+  { id: 'animals', name: 'Animals',  emojis: ['🐢', '🐌', '🐻', '🐰', '🦋'] },
+  { id: 'weather', name: 'Weather',  emojis: ['⛈️', '🌧️', '☁️', '⛅', '☀️'] },
+  { id: 'plants',  name: 'Plants',   emojis: ['🥀', '🍂', '🌱', '🌿', '🌻'] },
+  { id: 'hearts',  name: 'Hearts',   emojis: ['💔', '🤍', '💛', '💚', '❤️'] },
+  { id: 'flames',  name: 'Energy',   emojis: ['❄️', '💧', '🌫️', '⚡', '🔥'] },
+  { id: 'stars',   name: 'Stars',    emojis: ['⭐', '✨', '💫', '🌟', '🎆'] },
+  { id: 'food',    name: 'Food',     emojis: ['🥬', '🍞', '🍎', '🍓', '🍰'] },
+];
 const SETTINGS_KEY = 'app';
 const DEFAULT_SETTINGS = {
   medication: 'Tirzepatide',
@@ -791,6 +830,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupMeasurementUI();
   setupLabUI();
   setupExpenseUI();
+  setupWeightRangeButtons();
+  renderThemeGrid();
+  renderEmojiStyleGrid();
   setupShareUI();
 
   // (Session restore now happens via bootstrapSession() at script load — independent of this pipeline.)
@@ -814,6 +856,8 @@ function applySettingsToInputs() {
   $('#set-lead').value = String(settings.notifyLeadMinutes ?? 60);
   $('#set-theme').value = settings.theme || 'system';
   applyTheme();
+  applyColorTheme(settings.colorTheme || 'teal');
+  applyMoodStyle(settings.moodStyle || 'classic');
   updateNotifyStatus();
 }
 
@@ -836,17 +880,25 @@ async function getLastWeightUnit() {
 
 // ---------- Charts ----------
 let weightChart, levelChart;
+let _weightRangeDays = 'all'; // 'all' | 30 | 90 | 180 | 365
 async function renderWeights() {
-  const ws = await getWeightsSorted();
+  const wsAll = await getWeightsSorted();
   const shots = await getShotsSorted();
-  await renderHero(shots, ws);
+  await renderHero(shots, wsAll);
   const empty = $('#empty-weight');
   const ctx = $('#weight-chart');
-  if (!ws.length) {
+  if (!wsAll.length) {
     empty.classList.remove('hidden');
     ctx.style.display = 'none';
     if (weightChart) { weightChart.destroy(); weightChart = null; }
     return;
+  }
+  // Apply selected range filter (default = all).
+  let ws = wsAll;
+  if (_weightRangeDays !== 'all') {
+    const cutoff = Date.now() - parseInt(_weightRangeDays, 10) * 86400000;
+    ws = wsAll.filter(w => new Date(w.date).getTime() >= cutoff);
+    if (!ws.length) ws = wsAll.slice(-2); // never blank — show last 2 if range too tight
   }
   empty.classList.add('hidden');
   ctx.style.display = 'block';
@@ -857,6 +909,17 @@ async function renderWeights() {
     type: 'line',
     data: { labels, datasets: [{ data, borderColor: '#0f766e', backgroundColor: 'rgba(20,184,166,.2)', tension: .3, fill: true, pointRadius: 3 }] },
     options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: false } } }
+  });
+}
+
+function setupWeightRangeButtons() {
+  document.querySelectorAll('.range-btn[data-range]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      document.querySelectorAll('.range-btn[data-range]').forEach(b => b.classList.toggle('active', b === btn));
+      _weightRangeDays = btn.dataset.range === 'all' ? 'all' : btn.dataset.range;
+      track('weight_range_changed', { range: _weightRangeDays });
+      await renderWeights();
+    });
   });
 }
 
@@ -1838,21 +1901,48 @@ function renderBodyDiagram(shots) {
   }).join('');
 
   wrap.innerHTML = `
-    <svg class="body-svg" viewBox="0 0 200 320" xmlns="http://www.w3.org/2000/svg">
-      <!-- head -->
-      <ellipse class="body-shape" cx="100" cy="32" rx="22" ry="26" />
-      <!-- neck -->
-      <rect class="body-shape" x="92" y="55" width="16" height="10" rx="3" />
-      <!-- torso -->
-      <path class="body-shape" d="M 70 65 Q 70 60 78 60 L 122 60 Q 130 60 130 65 L 138 130 Q 140 175 130 200 L 70 200 Q 60 175 62 130 Z" />
-      <!-- left arm -->
-      <path class="body-shape" d="M 70 70 L 50 75 Q 42 78 40 90 L 38 145 Q 38 160 46 162 L 56 160 Q 62 155 64 145 L 70 95 Z" />
-      <!-- right arm -->
-      <path class="body-shape" d="M 130 70 L 150 75 Q 158 78 160 90 L 162 145 Q 162 160 154 162 L 144 160 Q 138 155 136 145 L 130 95 Z" />
-      <!-- left leg -->
-      <path class="body-shape" d="M 78 200 L 70 290 Q 70 300 78 302 L 92 302 Q 98 300 98 290 L 95 200 Z" />
-      <!-- right leg -->
-      <path class="body-shape" d="M 122 200 L 130 290 Q 130 300 122 302 L 108 302 Q 102 300 102 290 L 105 200 Z" />
+    <svg class="body-svg" viewBox="0 0 200 320" xmlns="http://www.w3.org/2000/svg" aria-label="Body diagram showing injection sites">
+      <!-- Single continuous outline for cleaner anatomical proportions: head, shoulders, arms hanging at sides, narrow waist, hips, legs, feet. -->
+      <path class="body-shape" d="
+        M 100 8
+        C 86 8 76 18 76 32
+        C 76 44 84 54 92 56
+        L 92 60
+        L 70 65
+        C 56 70 48 82 46 94
+        L 38 142
+        C 36 156 38 162 44 164
+        C 50 166 56 162 58 154
+        L 64 110
+        L 68 96
+        L 72 130
+        C 70 158 70 184 76 198
+        L 82 220
+        L 76 282
+        C 74 294 76 304 82 308
+        C 90 310 96 306 96 296
+        L 98 220
+        L 100 220
+        L 102 220
+        L 104 296
+        C 104 306 110 310 118 308
+        C 124 304 126 294 124 282
+        L 118 220
+        L 124 198
+        C 130 184 130 158 128 130
+        L 132 96
+        L 136 110
+        L 142 154
+        C 144 162 150 166 156 164
+        C 162 162 164 156 162 142
+        L 154 94
+        C 152 82 144 70 130 65
+        L 108 60
+        L 108 56
+        C 116 54 124 44 124 32
+        C 124 18 114 8 100 8
+        Z
+      "/>
       ${sites}
     </svg>
   `;
@@ -2793,6 +2883,80 @@ async function renderLabs() {
       ${vals.length > 1 ? `<span class="summary-trend ${trendCls}">${sign}${Math.abs(delta).toFixed(1)}</span>` : ''}
     </div>`;
   }).join('');
+}
+
+// ----- App theme + emoji style (premium cosmetic settings) -----
+function applyColorTheme(themeId) {
+  const t = THEMES.find(x => x.id === themeId) || THEMES[0];
+  const root = document.documentElement;
+  root.style.setProperty('--bronze', t.primary);
+  root.style.setProperty('--bronze-dk', t.dark);
+  root.style.setProperty('--bronze-lt', t.light);
+  root.style.setProperty('--grad', `linear-gradient(135deg, ${t.primary} 0%, ${t.grad2} 100%)`);
+  // Update the iOS theme-color meta so the address bar matches.
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.content = t.dark;
+}
+
+function applyMoodStyle(styleId) {
+  const s = MOOD_STYLES.find(x => x.id === styleId) || MOOD_STYLES[0];
+  // Mood buttons live in #mood-card with .mood-btn data-mood="1..5". Replace inner text with emoji.
+  document.querySelectorAll('.mood-btn').forEach(btn => {
+    const v = parseInt(btn.dataset.mood, 10);
+    if (!Number.isFinite(v)) return;
+    // Preserve any svg icons by checking — but our buttons just use plain text/emoji content.
+    btn.textContent = s.emojis[v - 1] || '🙂';
+  });
+}
+
+function renderThemeGrid() {
+  const grid = $('#theme-grid');
+  if (!grid) return;
+  const current = settings.colorTheme || 'teal';
+  grid.innerHTML = THEMES.map(t => `
+    <button type="button" class="theme-swatch ${t.id === current ? 'active' : ''}" data-theme-id="${t.id}" aria-label="${t.name}">
+      <span class="theme-swatch-dot" style="background:linear-gradient(135deg,${t.primary} 0%,${t.grad2} 100%)"></span>
+      <span class="theme-swatch-name">${t.name}</span>
+    </button>
+  `).join('');
+  grid.querySelectorAll('.theme-swatch').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (!isPremium() && account.user) { $('#upgrade-dialog').showModal(); return; }
+      const id = btn.dataset.themeId;
+      settings.colorTheme = id;
+      await saveSettings();
+      applyColorTheme(id);
+      grid.querySelectorAll('.theme-swatch').forEach(b => b.classList.toggle('active', b === btn));
+      markSyncDirty();
+      track('theme_changed', { theme: id });
+    });
+  });
+}
+
+function renderEmojiStyleGrid() {
+  const grid = $('#emoji-style-grid');
+  if (!grid) return;
+  const current = settings.moodStyle || 'classic';
+  grid.innerHTML = MOOD_STYLES.map(s => `
+    <button type="button" class="emoji-style-swatch ${s.id === current ? 'active' : ''}" data-style-id="${s.id}" aria-label="${s.name}">
+      <span class="emoji-row">${s.emojis.map(e => `<span>${e}</span>`).join('')}</span>
+      <span class="emoji-style-name">${s.name}</span>
+    </button>
+  `).join('');
+  grid.querySelectorAll('.emoji-style-swatch').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (!isPremium() && account.user) { $('#upgrade-dialog').showModal(); return; }
+      const id = btn.dataset.styleId;
+      settings.moodStyle = id;
+      await saveSettings();
+      applyMoodStyle(id);
+      grid.querySelectorAll('.emoji-style-swatch').forEach(b => b.classList.toggle('active', b === btn));
+      // Re-render mood card so the chosen style shows immediately on home view.
+      try { renderMood(); } catch (_) {}
+      markSyncDirty();
+      track('mood_style_changed', { style: id });
+    });
+  });
 }
 
 // ----- Expenses (premium) -----
