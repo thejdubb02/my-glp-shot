@@ -33,7 +33,7 @@ const THEMES = [
   { id: 'lavender',    name: 'Lavender',     light: { primary: '#a78bfa', dark: '#7c3aed', tint: '#f3e8ff', grad2: '#9333ea' }, dark: { primary: '#c4b5fd', dark: '#ddd6fe', tint: '#3b0764', grad2: '#9333ea' } },
   { id: 'sunset',      name: 'Sunset',       light: { primary: '#f97316', dark: '#c2410c', tint: '#ffedd5', grad2: '#ea580c' }, dark: { primary: '#fb923c', dark: '#fdba74', tint: '#431407', grad2: '#ea580c' } },
   { id: 'cherry',      name: 'Cherry Red',   light: { primary: '#dc2626', dark: '#991b1b', tint: '#fee2e2', grad2: '#b91c1c' }, dark: { primary: '#ef4444', dark: '#fca5a5', tint: '#450a0a', grad2: '#b91c1c' } },
-  { id: 'mint',        name: 'Mint',         light: { primary: '#34d399', dark: '#047857', tint: '#d1fae5', grad2: '#10b981' }, dark: { primary: '#6ee7b7', dark: '#a7f3d0', tint: '#022c22', grad2: '#10b981' } },
+  { id: 'mint',        name: 'Mint',         light: { primary: '#34d399', dark: '#047857', tint: '#d1fae5', grad2: '#059669' }, dark: { primary: '#6ee7b7', dark: '#a7f3d0', tint: '#022c22', grad2: '#059669' } },
   { id: 'indigo',      name: 'Indigo',       light: { primary: '#6366f1', dark: '#3730a3', tint: '#e0e7ff', grad2: '#4f46e5' }, dark: { primary: '#818cf8', dark: '#a5b4fc', tint: '#1e1b4b', grad2: '#4f46e5' } },
   { id: 'rose',        name: 'Rose Gold',    light: { primary: '#f43f5e', dark: '#9f1239', tint: '#ffe4e6', grad2: '#e11d48' }, dark: { primary: '#fb7185', dark: '#fda4af', tint: '#4c0519', grad2: '#e11d48' } },
   { id: 'slate',       name: 'Slate',        light: { primary: '#64748b', dark: '#334155', tint: '#f1f5f9', grad2: '#475569' }, dark: { primary: '#94a3b8', dark: '#cbd5e1', tint: '#0f172a', grad2: '#475569' } },
@@ -2889,7 +2889,9 @@ function applyColorTheme(themeId) {
   root.style.setProperty('--bronze', variant.primary);
   root.style.setProperty('--bronze-dk', variant.dark);
   root.style.setProperty('--bronze-lt', variant.tint);
-  root.style.setProperty('--grad', `linear-gradient(135deg, ${variant.primary} 0%, ${variant.grad2} 100%)`);
+  // Gradient runs from the medium-dark to the dark stop (NOT the bright primary).
+  // White text always sits on the gradient (countdown card etc.); using primary as start drops contrast below 3:1 for many themes.
+  root.style.setProperty('--grad', `linear-gradient(135deg, ${t.light.grad2} 0%, ${t.light.dark} 100%)`);
   // iOS address-bar tint — always use the light-mode dark color so the bar reads as the brand.
   const meta = document.querySelector('meta[name="theme-color"]');
   if (meta) meta.content = t.light.dark;
