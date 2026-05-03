@@ -6,7 +6,7 @@
 const DB_NAME = 'shotclock';
 // v6 bump: 'appetites' store added — daily appetite check-in alongside mood (GLP-1 mechanism is appetite suppression).
 const DB_VERSION = 6;
-const APP_VERSION = '0.37.0';
+const APP_VERSION = '0.38.0';
 
 // Umami event tracker. Aggregates only — no PII (no email, no IDs). Safe to call before umami loads.
 function track(event, props) {
@@ -2667,15 +2667,25 @@ async function renderBadges(shots, weights) {
   const unlocked = ACHIEVEMENTS.filter(a => a.test(stats));
   if (!unlocked.length && !shots.length) { card.classList.add('hidden'); return; }
   card.classList.remove('hidden');
-  // Most recently unlocked first when we know dates; otherwise preserve definition order reversed.
-  const dates = settings.achievementDates || {};
-  const ordered = [...unlocked].sort((a, b) => {
-    const ad = dates[a.id] || ''; const bd = dates[b.id] || '';
-    return bd.localeCompare(ad);
+  // Backfill earned-dates so "most recent" is meaningful for legacy unlocks.
+  // Anything without a stamped date gets `today`, in current unlock order so they
+  // tie-break consistently rather than collapsing to one big group.
+  settings.achievementDates = settings.achievementDates || {};
+  let backfilled = false;
+  const todayIso = todayISODate();
+  unlocked.forEach((a, i) => {
+    if (!settings.achievementDates[a.id]) {
+      // synthetic order: today, today-1ms, today-2ms (string-sortable as ISO)
+      settings.achievementDates[a.id] = todayIso;
+      backfilled = true;
+    }
   });
+  if (backfilled) await saveSettings();
+  const dates = settings.achievementDates;
+  const ordered = [...unlocked].sort((a, b) => (dates[b.id] || '').localeCompare(dates[a.id] || ''));
   const collapsed = !_badgesExpanded && ordered.length > 5;
   const visible = collapsed ? ordered.slice(0, 5) : ordered;
-  const cards = visible.map(a => `<button type="button" class="badge unlocked" data-badge-id="${a.id}" aria-label="Share ${escapeHTML(a.label)}"><span class="badge-icon">${a.icon}</span><span class="badge-label">${escapeHTML(a.label)}</span><span class="badge-share-hint">Tap to share</span></button>`).join('');
+  const cards = visible.map(a => `<button type="button" class="badge unlocked" data-badge-id="${a.id}" aria-label="Share ${escapeHTML(a.label)}"><img class="badge-art" src="icons/achievements/${a.id}.png" alt="" loading="lazy" onerror="this.style.display='none'"><span class="badge-label">${escapeHTML(a.label)}</span><span class="badge-share-hint">Tap to share</span></button>`).join('');
   const toggleBtn = ordered.length > 5
     ? `<button type="button" id="badges-toggle" class="btn-ghost badges-toggle">${_badgesExpanded ? 'Show fewer' : `Show all (${ordered.length})`}</button>`
     : '';
@@ -2722,21 +2732,28 @@ async function openBadgeShare(badgeId) {
   track('badge_share_opened', { id: badgeId });
 }
 
+function loadAchievementImage(badgeId) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => resolve(img);
+    img.onerror = () => resolve(null);
+    img.src = `icons/achievements/${badgeId}.png`;
+  });
+}
+
 async function renderBadgeShareCanvas(a, earnedISO) {
   const c = $('#badge-share-canvas');
   const ctx = c.getContext('2d');
   const W = c.width, H = c.height;
-  // Theme-derived colors
   const root = getComputedStyle(document.documentElement);
   const c1 = (root.getPropertyValue('--bronze-dk') || '#83542e').trim() || '#83542e';
   const c2 = (root.getPropertyValue('--bronze') || '#c7915b').trim() || '#c7915b';
-  // Background gradient
   const grad = ctx.createLinearGradient(0, 0, 0, H);
   grad.addColorStop(0, c1);
   grad.addColorStop(1, c2);
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, W, H);
-  // Decorative dots
   ctx.globalAlpha = 0.10;
   for (let i = 0; i < 40; i++) {
     ctx.beginPath();
@@ -2745,20 +2762,36 @@ async function renderBadgeShareCanvas(a, earnedISO) {
     ctx.fill();
   }
   ctx.globalAlpha = 1;
-  // Header
   ctx.fillStyle = 'rgba(255,255,255,0.92)';
   ctx.font = 'bold 36px -apple-system, "Segoe UI", system-ui, sans-serif';
   ctx.textAlign = 'center';
   ctx.fillText('ACHIEVEMENT UNLOCKED', W / 2, 130);
-  // Big icon disc
+  // Hero image (or fallback to emoji disc)
+  const heroImg = await loadAchievementImage(a.id);
+  const cx = W / 2, cy = H / 2 - 60, r = 220;
+  ctx.save();
   ctx.beginPath();
-  ctx.arc(W / 2, H / 2 - 60, 200, 0, Math.PI * 2);
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
   ctx.fillStyle = 'rgba(255,255,255,0.97)';
   ctx.fill();
-  ctx.font = '220px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",system-ui';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(a.icon, W / 2, H / 2 - 60);
-  ctx.textBaseline = 'alphabetic';
+  // outer foil ring
+  ctx.lineWidth = 10;
+  const ring = ctx.createLinearGradient(cx - r, cy - r, cx + r, cy + r);
+  ring.addColorStop(0, '#fde68a'); ring.addColorStop(0.5, '#fff'); ring.addColorStop(1, c2);
+  ctx.strokeStyle = ring;
+  ctx.stroke();
+  if (heroImg) {
+    ctx.clip();
+    const size = r * 2;
+    ctx.drawImage(heroImg, cx - r, cy - r, size, size);
+  } else {
+    ctx.font = '220px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",system-ui';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#000';
+    ctx.fillText(a.icon, cx, cy);
+    ctx.textBaseline = 'alphabetic';
+  }
+  ctx.restore();
   // Label
   ctx.fillStyle = '#fff';
   ctx.font = 'bold 78px -apple-system, "Segoe UI", system-ui, sans-serif';

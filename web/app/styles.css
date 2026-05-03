@@ -177,9 +177,11 @@ canvas{width:100% !important;height:auto !important;max-height:200px}
 .badge-share-hint{display:block;font-size:.7rem;color:var(--muted);margin-top:2px}
 .badge.unlocked{cursor:pointer;background:none;border:1px solid var(--line);text-align:center;padding:10px;border-radius:10px;transition:transform .15s ease,border-color .15s ease}
 .badge.unlocked:hover{transform:translateY(-2px);border-color:var(--bronze)}
+.badge-art{display:block;width:88px;height:88px;margin:0 auto 6px;border-radius:50%;object-fit:cover;background:linear-gradient(135deg, var(--bronze-lt), var(--bronze));box-shadow:0 2px 8px rgba(0,0,0,.12)}
 .badges-toggle{margin-top:10px;width:100%}
-.badge-share-preview-wrap{margin:10px 0;text-align:center}
-.badge-share-preview-wrap canvas{width:100%;max-width:340px;height:auto;border-radius:12px;box-shadow:0 4px 14px rgba(0,0,0,.15)}
+.badge-share-preview-wrap{margin:10px 0;text-align:center;display:flex;justify-content:center}
+.badge-share-preview-wrap canvas{display:block;width:min(86vw,360px);aspect-ratio:1/1;height:auto;border-radius:14px;box-shadow:0 6px 20px rgba(0,0,0,.18)}
+#badge-share-dialog{max-width:440px;width:92vw}
 /* Appetite trend bars use same .mood-bar styling, but with reverse intent (low = good): */
 #appetite-trend-bars .mood-bar.good{background:var(--bronze)}
 #appetite-trend-bars .mood-bar.mid{background:var(--muted)}
