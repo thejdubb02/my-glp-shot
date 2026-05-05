@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>My GLP Shot — Admin</title>
+  <link rel="stylesheet" href="admin.css?v=1">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">💉 My GLP Shot · Admin</div>
+    <div class="topbar-right">
+      <span id="env-badge" class="badge"></span>
+      <button id="refresh-btn" class="btn btn-ghost" type="button">Refresh</button>
+      <button id="logout-btn" class="btn btn-ghost" type="button">Sign out</button>
+    </div>
+  </header>
+
+  <section id="auth-screen" class="auth">
+    <div class="auth-card">
+      <h1>Admin sign-in</h1>
+      <p class="muted">Paste the admin bearer token from <code>api.env</code> (MGS_ADMIN_TOKEN).</p>
+      <input id="auth-token" type="password" autocomplete="off" placeholder="Admin bearer token">
+      <button id="auth-submit" class="btn btn-primary" type="button">Sign in</button>
+      <p id="auth-error" class="error hidden"></p>
+    </div>
+  </section>
+
+  <main id="app" class="hidden">
+    <section class="metrics">
+      <div class="metric-card"><div class="metric-label">Total users</div><div class="metric-value" id="m-users">—</div></div>
+      <div class="metric-card"><div class="metric-label">Active premium</div><div class="metric-value" id="m-premium">—</div></div>
+      <div class="metric-card"><div class="metric-label">Active trial</div><div class="metric-value" id="m-trial">—</div></div>
+      <div class="metric-card"><div class="metric-label">MRR estimate</div><div class="metric-value" id="m-mrr">—</div><div class="metric-foot">approx, monthly</div></div>
+      <div class="metric-card"><div class="metric-label">Synced accounts</div><div class="metric-value" id="m-synced">—</div></div>
+      <div class="metric-card"><div class="metric-label">Active share links</div><div class="metric-value" id="m-shares">—</div></div>
+    </section>
+
+    <section class="charts">
+      <div class="chart-card">
+        <div class="chart-head"><h2>Signups (last 13 weeks)</h2><span class="muted small" id="signup-summary"></span></div>
+        <div id="signup-chart" class="chart"></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-head"><h2>Stripe events (last 30 days)</h2><span class="muted small" id="events-summary"></span></div>
+        <div id="events-chart" class="chart"></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-head"><h2>Status breakdown</h2></div>
+        <div id="status-chart" class="status-bars"></div>
+      </div>
+    </section>
+
+    <section class="users-section">
+      <div class="users-head">
+        <h2>Users</h2>
+        <div class="users-filters">
+          <input id="filter-q" type="search" placeholder="Search email…">
+          <select id="filter-status">
+            <option value="">All statuses</option>
+            <option value="trial">Trial</option>
+            <option value="premium">Premium</option>
+            <option value="lifetime">Lifetime</option>
+            <option value="free">Free</option>
+          </select>
+        </div>
+      </div>
+      <div class="users-table-wrap">
+        <table class="users-table">
+          <thead>
+            <tr>
+              <th>Email</th><th>Status</th><th>Signed up</th><th>Trial / paid until</th>
+              <th>Last sync</th><th>Sessions</th><th>Stripe</th>
+            </tr>
+          </thead>
+          <tbody id="users-body"><tr><td colspan="7" class="muted center">Loading…</td></tr></tbody>
+        </table>
+      </div>
+      <div id="users-pagination" class="pagination"></div>
+    </section>
+
+    <section class="events-section">
+      <div class="users-head"><h2>Recent Stripe events</h2><span class="muted small" id="events-count"></span></div>
+      <div class="events-table-wrap">
+        <table class="users-table">
+          <thead><tr><th>Event ID</th><th>Type</th><th>Received</th></tr></thead>
+          <tbody id="events-body"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="user-detail-dialog" class="user-dialog">
+    <form method="dialog">
+      <header class="dialog-head">
+        <h2 id="ud-email">User</h2>
+        <button class="btn btn-ghost" value="close">Close</button>
+      </header>
+      <div class="dialog-body" id="ud-body"></div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="admin.js?v=1"></script>
+</body>
+</html>

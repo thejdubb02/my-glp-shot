@@ -5,8 +5,11 @@
 
 const DB_NAME = 'shotclock';
 // v6 bump: 'appetites' store added — daily appetite check-in alongside mood (GLP-1 mechanism is appetite suppression).
-const DB_VERSION = 6;
-const APP_VERSION = '0.41.2';
+// v7 bump: 'foodNoise' store added — 1-10 daily slider for the mental chatter about food, distinct from physical appetite.
+// v8 bump: 'cycles' store added — opt-in menstrual cycle tracking (period start/end, flow, symptoms).
+// v9 bump: 'medChanges' store added — medication switches as discrete events so charts stay readable across drug changes.
+const DB_VERSION = 9;
+const APP_VERSION = '0.46.1';
 
 // Umami event tracker. Aggregates only — no PII (no email, no IDs). Safe to call before umami loads.
 function track(event, props) {
@@ -140,17 +143,31 @@ const INFO_TOPICS = {
       </ul>
       <p>Tap a site to suggest it for your next shot. Rotating sites helps prevent lipohypertrophy (lumps under the skin).</p>`,
   },
-  'calendar-heatmap': {
-    title: 'Shot calendar',
-    body: `<p>One square per day for the past 12 months. Darker = higher dose taken that day.</p>
+  'insights': {
+    title: 'Patterns',
+    body: `<p>Plain-language observations about your data. We compute on-device — your data never leaves your browser to make these.</p>
+      <p>Each pattern is descriptive ("most often", "tended to") rather than statistical, and each card links to the underlying chart so you can verify it yourself. We avoid any "% increase" or causal language because patterns don't equal causes — your prescriber is the right person for medical interpretation.</p>
+      <p>If a pattern doesn't have enough data yet, it shows <em>"Need N more shots to compute"</em>. As you log more, more patterns surface.</p>
+      <p>Some patterns require multiple data types (weight + dose, food noise + cycle position, etc.) and are part of the Premium tier; basic single-data patterns are free for everyone.</p>`,
+  },
+  'cycle-tracking': {
+    title: 'Cycle tracking',
+    body: `<p>Opt-in tracking for menstrual cycle start, end, flow, and symptoms. Useful because GLP-1 medications can change cycle length, flow, and symptom profile.</p>
+      <p>Privacy: tracked locally like everything else, end-to-end encrypted if you sync. Toggling cycle tracking off in Settings <strong>hides the UI but preserves your data</strong> — nothing is deleted unless you tap "Delete all cycle entries."</p>
+      <p>Log a period when it starts; come back and add the end date when it finishes. Symptoms are optional and additive across the cycle.</p>`,
+  },
+  'food-noise': {
+    title: 'Food noise',
+    body: `<p>"Food noise" is the mental chatter about food — intrusive thoughts, obsessing over the next meal, feeling like food is always on your mind. It's distinct from physical hunger.</p>
+      <p>For many GLP-1 users, the food noise going quiet is the single most life-changing effect. It can quiet down even when appetite is normal, and it can come back as the dose wears off across the cycle.</p>
+      <p>Logging it daily helps you spot the pattern: when the noise comes back relative to your shot, and how it tracks with dose changes.</p>
       <ul>
-        <li>Empty = no shot</li>
-        <li>Light = under 5 mg</li>
-        <li>Medium = 5–7.5 mg</li>
-        <li>Dark = 7.5–12.5 mg</li>
-        <li>Darkest = 12.5+ mg</li>
-      </ul>
-      <p>Today is outlined. Hover/tap any square to see the date and dose.</p>`,
+        <li><strong>1-2 (Quiet):</strong> "I forgot to eat."</li>
+        <li><strong>3-4 (Mild):</strong> Aware of food but not preoccupied.</li>
+        <li><strong>5-6 (Moderate):</strong> Some food thoughts; manageable.</li>
+        <li><strong>7-8 (Loud):</strong> Frequent intrusive thoughts about food.</li>
+        <li><strong>9-10 (Constant):</strong> Can't stop thinking about food.</li>
+      </ul>`,
   },
   'weight-chart': {
     title: 'Weight tracking',
@@ -390,33 +407,98 @@ const DEFAULT_SETTINGS = {
   colorTheme: 'teal',
   moodStyle: 'classic',
   appetiteStyle: 'classic',
+  customSites: [],
+  cycleEnabled: false,
+  cycleSeenOptIn: false,
+  maintenanceMode: false,
 };
 
+// Side-effect taxonomy. Each entry: [key, label, group]. Adding new keys is
+// purely additive — existing shot.sideEffects rows untouched.
+// Groups surface as section headers in the picker and as per-category trends.
 const SIDE_EFFECTS = [
-  ['nausea', 'Nausea'],
-  ['heartburn', 'Heartburn'],
-  ['fatigue', 'Fatigue'],
-  ['headache', 'Headache'],
-  ['constipation', 'Constipation'],
-  ['diarrhea', 'Diarrhea'],
-  ['injSiteReaction', 'Injection site reaction'],
-  ['stomachPain', 'Stomach pain'],
-  ['indigestion', 'Indigestion'],
-  ['metallicTaste', 'Metallic taste'],
-  ['moodSwings', 'Mood swings'],
-  ['hairLoss', 'Hair loss'],
+  // Digestive
+  ['nausea',          'Nausea',                   'digestive'],
+  ['heartburn',       'Heartburn',                'digestive'],
+  ['indigestion',     'Indigestion',              'digestive'],
+  ['stomachPain',     'Stomach pain',             'digestive'],
+  ['constipation',    'Constipation',             'digestive'],
+  ['diarrhea',        'Diarrhea',                 'digestive'],
+  ['refluxGerd',      'Reflux / GERD',            'digestive'],
+  ['sulfurBurps',     'Sulfur burps',             'digestive'],
+  ['metallicTaste',   'Metallic taste',           'digestive'],
+  // Energy & temperature
+  ['fatigue',         'Fatigue',                  'energy'],
+  ['chills',          'Chills',                   'energy'],
+  ['hotFlashes',      'Hot flashes',              'energy'],
+  ['nightSweats',     'Night sweats',             'energy'],
+  ['sleepDisrupted',  'Sleep disruption',         'energy'],
+  // Mood
+  ['lowMood',         'Low mood',                 'mood'],
+  ['anxiety',         'Anxiety',                  'mood'],
+  ['irritability',    'Irritability',             'mood'],
+  ['moodSwings',      'Mood swings',              'mood'],
+  // GLP-1 specific / other
+  ['foodNoiseReturned','Food noise returned',     'glp1'],
+  ['headache',        'Headache',                 'other'],
+  ['injSiteReaction', 'Injection site reaction',  'other'],
+  ['hairLoss',        'Hair loss',                'other'],
+];
+const SE_GROUPS = [
+  ['digestive', 'Digestive'],
+  ['energy',    'Energy & temperature'],
+  ['mood',      'Mood'],
+  ['glp1',      'GLP-1 specific'],
+  ['other',     'Other'],
 ];
 const SE_LEVELS = [['', 'None'], ['mild', 'Mild'], ['moderate', 'Moderate'], ['severe', 'Severe']];
 
+// Medication presets — half-life values are pulled from FDA labels and
+// published pharmacokinetics. Half-life remains user-editable; presets just
+// suggest sensible defaults. ER (extended-release) variants like exenatide
+// once-weekly have a much longer effective half-life than the daily IR form.
+const MED_PRESETS = [
+  { id: 'tirzepatide',  name: 'Tirzepatide',  halfLifeDays: 5,    defaultDose: 5,    cadenceDays: 7, brands: ['Mounjaro', 'Zepbound'] },
+  { id: 'semaglutide',  name: 'Semaglutide',  halfLifeDays: 7,    defaultDose: 1,    cadenceDays: 7, brands: ['Ozempic', 'Wegovy'] },
+  { id: 'liraglutide',  name: 'Liraglutide',  halfLifeDays: 0.55, defaultDose: 1.8,  cadenceDays: 1, brands: ['Saxenda', 'Victoza'] },
+  { id: 'dulaglutide',  name: 'Dulaglutide',  halfLifeDays: 5,    defaultDose: 1.5,  cadenceDays: 7, brands: ['Trulicity'] },
+  { id: 'exenatide-er', name: 'Exenatide ER', halfLifeDays: 14,   defaultDose: 2,    cadenceDays: 7, brands: ['Bydureon'] },  // microsphere release ~2 weeks
+  { id: 'exenatide',    name: 'Exenatide',    halfLifeDays: 0.1,  defaultDose: 0.01, cadenceDays: 1, brands: ['Byetta'] },  // ~2.4h half-life
+  { id: 'retatrutide',  name: 'Retatrutide',  halfLifeDays: 6,    defaultDose: 4,    cadenceDays: 7, brands: [] },
+];
+function findMedPreset(name) {
+  if (!name) return null;
+  const n = name.trim().toLowerCase();
+  return MED_PRESETS.find(p =>
+    p.name.toLowerCase() === n ||
+    p.brands.some(b => b.toLowerCase() === n)
+  ) || null;
+}
+
+// Canonical 8-site set (4 abdomen quadrants + 2 thighs + 2 arms) + legacy keys
+// kept so shots logged before the split still anchor to a sensible dot. The
+// dropdown only surfaces the canonical 8 + any custom sites the user adds.
 const SITE_POSITIONS = {
-  // x, y in viewBox 200x320; label
-  'Upper arm — Left':  { x: 60,  y: 90,  short: 'L Arm' },
-  'Upper arm — Right': { x: 140, y: 90,  short: 'R Arm' },
-  'Abdomen — Left':    { x: 84,  y: 145, short: 'L Abd' },
-  'Abdomen — Right':   { x: 116, y: 145, short: 'R Abd' },
-  'Thigh — Left':      { x: 70,  y: 220, short: 'L Thigh' },
-  'Thigh — Right':     { x: 130, y: 220, short: 'R Thigh' },
+  'Upper arm — Left':           { x: 60,  y: 90,  short: 'L Arm' },
+  'Upper arm — Right':          { x: 140, y: 90,  short: 'R Arm' },
+  'Abdomen — Upper Left':       { x: 86,  y: 132, short: 'UL Abd' },
+  'Abdomen — Upper Right':      { x: 114, y: 132, short: 'UR Abd' },
+  'Abdomen — Lower Left':       { x: 86,  y: 162, short: 'LL Abd' },
+  'Abdomen — Lower Right':      { x: 114, y: 162, short: 'LR Abd' },
+  'Thigh — Left':               { x: 70,  y: 220, short: 'L Thigh' },
+  'Thigh — Right':              { x: 130, y: 220, short: 'R Thigh' },
+  // Legacy (pre-quadrant split). Mapped to lower abdomen since most users
+  // injected lower-abdomen by default.
+  'Abdomen — Left':             { x: 86,  y: 162, short: 'L Abd' },
+  'Abdomen — Right':            { x: 114, y: 162, short: 'R Abd' },
 };
+// Sites surfaced in the dropdown (legacy keys hidden).
+const CANONICAL_SITES = [
+  'Abdomen — Upper Left', 'Abdomen — Upper Right',
+  'Abdomen — Lower Left', 'Abdomen — Lower Right',
+  'Thigh — Left', 'Thigh — Right',
+  'Upper arm — Left', 'Upper arm — Right',
+];
 
 const ACHIEVEMENTS = [
   // Shot count milestones — covers the full journey, with early wins to keep momentum
@@ -495,6 +577,15 @@ function openDB() {
       }
       if (!db.objectStoreNames.contains('appetites')) {
         db.createObjectStore('appetites', { keyPath: 'date' });
+      }
+      if (!db.objectStoreNames.contains('foodNoise')) {
+        db.createObjectStore('foodNoise', { keyPath: 'date' });
+      }
+      if (!db.objectStoreNames.contains('cycles')) {
+        db.createObjectStore('cycles', { keyPath: 'id', autoIncrement: true });
+      }
+      if (!db.objectStoreNames.contains('medChanges')) {
+        db.createObjectStore('medChanges', { keyPath: 'id', autoIncrement: true });
       }
     };
     req.onsuccess = () => resolve(req.result);
@@ -682,13 +773,27 @@ function renderCountdown(shots) {
     val.textContent = days > 0 ? `${days}d overdue` : 'Due now';
     sub.textContent = `Last: ${fmtDate(last.when)} · ${last.dose}mg`;
     card.classList.add('due');
+    updateAppBadge(1);
   } else {
     const days = Math.floor(diff / 86400000);
     const hours = Math.floor((diff % 86400000) / 3600000);
     val.textContent = days > 0 ? `${days}d ${hours}h` : `${hours}h`;
     sub.textContent = `Due ${next.toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}`;
     card.classList.remove('due');
+    updateAppBadge(0);
   }
+}
+
+// PWA Badge API — show a "1" on the installed-app icon when a shot is overdue.
+// Silently no-ops on browsers that don't support it (Safari iOS as of 17.x).
+function updateAppBadge(count) {
+  try {
+    if (count > 0 && 'setAppBadge' in navigator) {
+      navigator.setAppBadge(count).catch(() => {});
+    } else if ('clearAppBadge' in navigator) {
+      navigator.clearAppBadge().catch(() => {});
+    }
+  } catch (e) { /* best-effort */ }
 }
 
 // ---------- Shot list rendering ----------
@@ -732,7 +837,6 @@ async function renderShots() {
   renderCountdownRing(shots);
   renderLevelChart(shots);
   renderBodyDiagram(shots);
-  renderHeatmap(shots);
   renderDoseTimeline(shots);
   renderSideEffectsSummary(shots);
   await renderHero(shots, weights);
@@ -740,6 +844,8 @@ async function renderShots() {
   try { await renderSupplies(shots); } catch (e) {}
   try { await renderCost(weights); } catch (e) {}
   try { await renderPlateau(weights, shots); } catch (e) {}
+  try { await renderInsights(); } catch (e) {}
+  try { await evaluateGuidanceTriggers(); } catch (e) {}
   return shots;
 }
 
@@ -759,6 +865,30 @@ function suggestSite(shots) {
 }
 
 // ---------- Shot dialog ----------
+function refreshCustomSiteOptgroup() {
+  const grp = $('#shot-site-custom-group');
+  if (!grp) return;
+  const sel = $('#shot-site');
+  // Strip prior options on re-open.
+  Array.from(grp.querySelectorAll('option')).forEach(o => o.remove());
+  const list = (settings.customSites || []).slice(-10);
+  if (!list.length) { grp.hidden = true; return; }
+  grp.hidden = false;
+  for (const name of list) {
+    const o = document.createElement('option');
+    o.textContent = name;
+    o.value = name;
+    grp.appendChild(o);
+  }
+  sel.appendChild(grp);  // ensure it stays before __custom even if HTML order shifts
+}
+
+function setCustomRowVisible(visible) {
+  const row = $('#shot-site-custom-row');
+  if (!row) return;
+  row.classList.toggle('hidden', !visible);
+}
+
 async function openShotDialog(shot) {
   const isEdit = !!shot;
   $('#shot-form-title').textContent = isEdit ? 'Edit Shot' : 'Log Shot';
@@ -766,7 +896,20 @@ async function openShotDialog(shot) {
   $('#shot-med').value = shot ? shot.med : settings.medication;
   $('#shot-dose-amt').value = shot ? shot.dose : settings.defaultDose;
   $('#shot-when').value = shot ? localISOForInput(new Date(shot.when)) : localISOForInput();
-  $('#shot-site').value = shot ? (shot.site || '') : (window._preferredNextSite || '');
+  refreshCustomSiteOptgroup();
+  const initialSite = shot ? (shot.site || '') : (window._preferredNextSite || '');
+  // If the saved site is neither a canonical option nor a remembered custom one, treat it as a freeform custom name.
+  const sel = $('#shot-site');
+  const knownInDropdown = !!initialSite && Array.from(sel.querySelectorAll('option')).some(o => o.value === initialSite || o.textContent === initialSite);
+  if (initialSite && !knownInDropdown) {
+    sel.value = '__custom';
+    $('#shot-site-custom').value = initialSite;
+    setCustomRowVisible(true);
+  } else {
+    sel.value = initialSite;
+    $('#shot-site-custom').value = '';
+    setCustomRowVisible(false);
+  }
   $('#shot-notes').value = shot ? (shot.notes || '') : '';
   $('#shot-delete').classList.toggle('hidden', !isEdit);
   writeSideEffects(shot ? shot.sideEffects : null);
@@ -776,7 +919,7 @@ async function openShotDialog(shot) {
   if (!isEdit) {
     const suggest = suggestSite(shots);
     $('#site-suggestion').textContent = `Suggested next site: ${suggest}`;
-    if (!$('#shot-site').value) $('#shot-site').value = suggest;
+    if (!sel.value) sel.value = suggest;
   } else {
     $('#site-suggestion').textContent = '';
   }
@@ -1037,6 +1180,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (viewAll) viewAll.addEventListener('click', (e) => { e.preventDefault(); showView('history'); });
 
   $('#shot-cancel').addEventListener('click', () => $('#shot-dialog').close());
+  // Show / hide the custom-site text input based on dropdown selection.
+  $('#shot-site').addEventListener('change', () => {
+    const v = $('#shot-site').value;
+    setCustomRowVisible(v === '__custom');
+    if (v === '__custom') $('#shot-site-custom').focus();
+  });
   $('#shot-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     try {
@@ -1052,13 +1201,37 @@ document.addEventListener('DOMContentLoaded', async () => {
         alert('Please enter a dose in mg (e.g. 5).');
         return;
       }
+      // Resolve site: '__custom' selection means use the freeform input.
+      let resolvedSite = $('#shot-site').value || null;
+      if (resolvedSite === '__custom') {
+        resolvedSite = ($('#shot-site-custom').value || '').trim().slice(0, 60) || null;
+        if (!resolvedSite) {
+          alert('Please enter a name for the custom site (or pick a different site).');
+          return;
+        }
+        // Remember up to 10 most-recent custom names so the user can re-select them next time.
+        const existing = settings.customSites || [];
+        const dedup = existing.filter(n => n !== resolvedSite);
+        dedup.push(resolvedSite);
+        settings.customSites = dedup.slice(-10);
+        await saveSettings();
+      }
+      // Snapshot half-life on new shots only; preserve the original on edits.
+      let snapshotHalfLife = settings.halfLifeDays || null;
+      if (id) {
+        try {
+          const existing = await dbGet(STORES.shots, parseInt(id, 10));
+          if (existing && existing.halfLifeDays) snapshotHalfLife = existing.halfLifeDays;
+        } catch (_) {}
+      }
       const data = {
         med: $('#shot-med').value.trim() || 'Tirzepatide',
         dose,
         when: whenDate.toISOString(),
-        site: $('#shot-site').value || null,
+        site: resolvedSite,
         notes: $('#shot-notes').value.trim() || null,
         sideEffects: readSideEffects(),
+        halfLifeDays: snapshotHalfLife,
       };
       if (id) data.id = parseInt(id, 10);
       await dbPut(STORES.shots, data);
@@ -1105,7 +1278,31 @@ document.addEventListener('DOMContentLoaded', async () => {
     track('weight_logged', { unit: $('#weight-unit').value });
   });
 
-  $('#set-med').addEventListener('change', async (e) => { settings.medication = e.target.value.trim() || 'Tirzepatide'; await saveSettings(); markSyncDirty(); });
+  $('#set-med').addEventListener('change', async (e) => {
+    settings.medication = e.target.value.trim() || 'Tirzepatide';
+    // Keep the preset dropdown in sync if the typed name matches a known preset.
+    const matched = findMedPreset(settings.medication);
+    if (matched) $('#set-med-preset').value = matched.id;
+    else $('#set-med-preset').value = 'custom';
+    await saveSettings(); markSyncDirty();
+  });
+  $('#set-med-preset').addEventListener('change', async (e) => {
+    const id = e.target.value;
+    const preset = MED_PRESETS.find(p => p.id === id);
+    if (!preset) return;  // 'custom' — leave the user's values alone
+    // Apply preset defaults; the user can still override any field.
+    settings.medication = preset.name;
+    settings.halfLifeDays = preset.halfLifeDays;
+    settings.defaultDose = preset.defaultDose;
+    settings.cadenceDays = preset.cadenceDays;
+    $('#set-med').value = preset.name;
+    $('#set-halflife').value = preset.halfLifeDays;
+    $('#set-dose').value = preset.defaultDose;
+    $('#set-cadence').value = preset.cadenceDays;
+    await saveSettings();
+    markSyncDirty();
+    await renderShots();
+  });
   $('#set-dose').addEventListener('change', async (e) => { settings.defaultDose = parseFloat(e.target.value) || 0; await saveSettings(); markSyncDirty(); });
   $('#set-cadence').addEventListener('change', async (e) => { settings.cadenceDays = parseInt(e.target.value, 10) || 7; await saveSettings(); markSyncDirty(); await renderShots(); });
   $('#set-halflife').addEventListener('change', async (e) => { settings.halfLifeDays = parseFloat(e.target.value) || 5; await saveSettings(); markSyncDirty(); await renderShots(); });
@@ -1142,6 +1339,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   $('#set-start-weight').addEventListener('change', async (e) => { settings.startWeight = e.target.value ? parseFloat(e.target.value) : null; await saveSettings(); markSyncDirty(); await renderShots(); });
   $('#set-goal-weight').addEventListener('change', async (e) => { settings.goalWeight = e.target.value ? parseFloat(e.target.value) : null; await saveSettings(); markSyncDirty(); await renderShots(); });
+  $('#set-maintenance')?.addEventListener('change', async (e) => {
+    settings.maintenanceMode = !!e.target.checked;
+    await saveSettings();
+    markSyncDirty();
+    await renderShots();
+  });
 
   // Explicit Save buttons (medication, weight goals, reminders).
   // Auto-save on `change` already runs; these buttons re-read the inputs (in case user typed without blurring),
@@ -1278,6 +1481,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   await renderMood();
   await renderAppetite();
   setupAppetiteUI();
+  await renderFoodNoise();
+  setupFoodNoiseUI();
+  setupCycleUI();
+  await renderCycleCard();
+  setupMedChangeUI();
+  await renderMedChanges();
+  $('#guidance-close')?.addEventListener('click', () => $('#guidance-dialog').close());
+  $('#guidance-done')?.addEventListener('click', () => $('#guidance-dialog').close());
+  await renderInsights();
   applyTimeOfDayGradient();
   setInterval(applyTimeOfDayGradient, 5 * 60 * 1000);
   setupPullToRefresh();
@@ -1288,6 +1500,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupLabUI();
   setupExpenseUI();
   setupWeightRangeButtons();
+  setupBenchmarkSelector();
   setupBodyToggle();
   renderThemeGrid();
   renderEmojiStyleGrid();
@@ -1309,11 +1522,18 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 function applySettingsToInputs() {
   $('#set-med').value = settings.medication;
+  // Sync preset dropdown to current medication name (snap to preset if matched, else 'custom').
+  const presetSel = $('#set-med-preset');
+  if (presetSel) {
+    const matched = findMedPreset(settings.medication);
+    presetSel.value = matched ? matched.id : 'custom';
+  }
   $('#set-dose').value = settings.defaultDose;
   $('#set-cadence').value = settings.cadenceDays;
   $('#set-halflife').value = settings.halfLifeDays;
   if ($('#set-start-weight')) $('#set-start-weight').value = settings.startWeight ?? '';
   if ($('#set-goal-weight'))  $('#set-goal-weight').value = settings.goalWeight ?? '';
+  if ($('#set-maintenance'))  $('#set-maintenance').checked = !!settings.maintenanceMode;
   $('#set-notify').checked = !!settings.notify && (typeof Notification !== 'undefined' && Notification.permission === 'granted');
   $('#set-lead').value = String(settings.notifyLeadMinutes ?? 60);
   $('#set-theme').value = settings.theme || 'system';
@@ -1396,28 +1616,192 @@ async function renderWeights() {
   const pad = Math.max((minSpread - observedSpread) / 2, observedSpread * 0.15);
   const yMin = Math.max(0, Math.floor(minVal - pad));
   const yMax = Math.ceil(maxVal + pad);
+  // Compute event markers — vertical dashed lines on the weight chart for
+  // dose-increase events and medication-switch events. Indexes are the weight
+  // entry whose date is closest to (and ≤) the event date.
+  const eventMarkers = [];
+  try {
+    const allShots = await getShotsSorted();
+    const sortedShotsAsc = [...allShots].sort((a, b) => new Date(a.when) - new Date(b.when));
+    const findClosestIdx = (eventDate) => {
+      const t = new Date(eventDate).getTime();
+      let bestIdx = -1, bestDelta = Infinity;
+      for (let i = 0; i < ws.length; i++) {
+        const wt = parseDateFlexible(ws[i].date);
+        if (!Number.isFinite(wt) || wt > t) continue;
+        const d = t - wt;
+        if (d < bestDelta) { bestDelta = d; bestIdx = i; }
+      }
+      // 30-day window so markers don't drift too far from their event.
+      return bestDelta <= 30 * 86400000 ? bestIdx : -1;
+    };
+    // Dose-increase events
+    for (let i = 1; i < sortedShotsAsc.length; i++) {
+      if (sortedShotsAsc[i].dose > sortedShotsAsc[i - 1].dose) {
+        const idx = findClosestIdx(sortedShotsAsc[i].when);
+        if (idx >= 0) eventMarkers.push({ index: idx, label: `↑${sortedShotsAsc[i].dose}mg`, color: '#10b981' });
+      }
+    }
+    // Medication-switch events
+    const medChanges = await getMedChangesSorted();
+    for (const m of medChanges) {
+      const idx = findClosestIdx(m.when);
+      if (idx >= 0) eventMarkers.push({ index: idx, label: '🔄', color: '#a855f7' });
+    }
+  } catch (e) { console.warn('event markers compute failed', e); }
+
+  // Optional clinical-trial benchmark overlay (premium). Anchored to the user's
+  // first shot date (or first weight entry if no shots) and their starting weight.
+  const datasets = [{ label: `Weight (${unit})`, data, borderColor: getThemeColor('--bronze-dk'), backgroundColor: getThemeColorAlpha('--bronze', .2), tension: .3, fill: true, pointRadius: 3, pointHoverRadius: 6, pointHitRadius: 18 }];
+  if (isPremium() && _benchmarkChoice && TRIAL_CURVES[_benchmarkChoice]) {
+    try {
+      const allShots = await getShotsSorted();
+      const firstShotDate = allShots.length ? new Date([...allShots].sort((a,b) => new Date(a.when)-new Date(b.when))[0].when) : new Date(parseDateFlexible(ws[0].date));
+      const startWeight = data[0];  // user's first visible weight
+      const trial = TRIAL_CURVES[_benchmarkChoice];
+      const benchData = ws.map(w => {
+        const t = parseDateFlexible(w.date);
+        const week = Math.max(0, (t - firstShotDate.getTime()) / (7 * 86400000));
+        const pct = trialPctAtWeek(_benchmarkChoice, week);
+        return pct == null ? null : +(startWeight * (1 + pct / 100)).toFixed(1);
+      });
+      datasets.push({
+        label: trial.name,
+        data: benchData,
+        borderColor: trial.color,
+        borderDash: [5, 4],
+        backgroundColor: 'transparent',
+        tension: .3,
+        fill: false,
+        pointRadius: 0,
+        pointHoverRadius: 4,
+      });
+    } catch (e) { console.warn('benchmark overlay failed', e); }
+  }
   if (weightChart) weightChart.destroy();
   weightChart = new Chart(ctx, {
     type: 'line',
-    data: { labels, datasets: [{ label: `Weight (${unit})`, data, borderColor: getThemeColor('--bronze-dk'), backgroundColor: getThemeColorAlpha('--bronze', .2), tension: .3, fill: true, pointRadius: 3, pointHoverRadius: 6, pointHitRadius: 18 }] },
+    data: { labels, datasets },
     options: {
       responsive: true,
       maintainAspectRatio: false,
+      // Headroom for event-marker labels rendered above the plot area.
+      layout: { padding: { top: eventMarkers.length ? 18 : 0 } },
       interaction: { mode: 'index', intersect: false, axis: 'x' },
       hover: { mode: 'index', intersect: false },
       plugins: {
-        legend: { display: false },
+        legend: { display: datasets.length > 1, position: 'bottom', labels: { boxWidth: 18, font: { size: 11 } } },
         tooltip: {
           mode: 'index', intersect: false,
           callbacks: {
             title: (items) => items.length ? ws[items[0].dataIndex].date : '',
-            label: (ctx2) => `${ctx2.parsed.y} ${unit}`,
+            label: (ctx2) => `${ctx2.dataset.label}: ${ctx2.parsed.y == null ? 'n/a' : ctx2.parsed.y + ' ' + unit}`,
           },
         },
+        eventMarkers: { markers: eventMarkers },
       },
       scales: { y: { beginAtZero: false, suggestedMin: yMin, suggestedMax: yMax } },
     },
   });
+}
+
+// Chart.js plugin — draws dashed vertical markers at given indexes with a
+// short label above the chart. Used on the weight chart to flag dose increases
+// and medication-switch events. Registered once at module load.
+if (typeof Chart !== 'undefined' && !Chart._mgsEventMarkersRegistered) {
+  Chart.register({
+    id: 'eventMarkers',
+    afterDatasetsDraw(chart) {
+      const opts = chart.options.plugins && chart.options.plugins.eventMarkers;
+      if (!opts || !opts.markers || !opts.markers.length) return;
+      const x = chart.scales.x, y = chart.scales.y;
+      if (!x || !y) return;
+      const ctx = chart.ctx;
+      ctx.save();
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([4, 3]);
+      ctx.font = 'bold 10px -apple-system, system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      // De-dup label collisions: if two markers share the same index, stack labels.
+      const seen = {};
+      for (const m of opts.markers) {
+        if (m.index == null || m.index < 0) continue;
+        const px = x.getPixelForValue(m.index);
+        ctx.strokeStyle = m.color || 'rgba(120,120,120,0.6)';
+        ctx.beginPath();
+        ctx.moveTo(px, y.top);
+        ctx.lineTo(px, y.bottom);
+        ctx.stroke();
+        const stack = (seen[m.index] = (seen[m.index] || 0) + 1);
+        ctx.fillStyle = m.color || '#888';
+        ctx.fillText(m.label || '', px, y.top - 2 - (stack - 1) * 11);
+      }
+      ctx.restore();
+    },
+  });
+  Chart._mgsEventMarkersRegistered = true;
+}
+
+// Clinical-trial benchmark curves — approximate published average-completer
+// curves, expressed as % weight loss vs week of treatment. Anchored to the
+// user's first shot date and the unit/scale of their first weight entry.
+// Sources are FDA labels and the trial publications; a small cleanup-week
+// table is interpolated linearly between known points.
+const TRIAL_CURVES = {
+  surmount1: {
+    name: 'SURMOUNT-1 — Tirzepatide 15 mg',
+    color: '#0ea5e9',
+    points: [[0,0],[4,-3],[12,-8],[24,-15],[40,-19],[60,-21.5],[72,-22.5]],
+  },
+  step1: {
+    name: 'STEP-1 — Semaglutide 2.4 mg',
+    color: '#a855f7',
+    points: [[0,0],[4,-2],[12,-5],[24,-9],[40,-12],[60,-14],[68,-14.9]],
+  },
+  scale: {
+    name: 'SCALE — Liraglutide 3 mg',
+    color: '#10b981',
+    points: [[0,0],[12,-4],[24,-6],[40,-7.5],[56,-8]],
+  },
+};
+function trialPctAtWeek(curveId, week) {
+  const c = TRIAL_CURVES[curveId]; if (!c) return null;
+  const pts = c.points;
+  if (week <= pts[0][0]) return pts[0][1];
+  if (week >= pts[pts.length-1][0]) return pts[pts.length-1][1];
+  for (let i = 1; i < pts.length; i++) {
+    if (week <= pts[i][0]) {
+      const [w0, p0] = pts[i-1], [w1, p1] = pts[i];
+      const f = (week - w0) / (w1 - w0);
+      return p0 + (p1 - p0) * f;
+    }
+  }
+  return null;
+}
+let _benchmarkChoice = '';
+
+function setupBenchmarkSelector() {
+  const sel = $('#benchmark-select');
+  const lock = $('#benchmark-lock');
+  if (!sel) return;
+  // Hide the lock pill if user is premium.
+  if (lock) lock.classList.toggle('hidden', isPremium());
+  sel.addEventListener('change', async (e) => {
+    if (!isPremium() && e.target.value) {
+      e.target.value = '';
+      $('#upgrade-dialog').showModal();
+      return;
+    }
+    _benchmarkChoice = e.target.value;
+    settings._benchmarkChoice = _benchmarkChoice;  // soft-persist (not synced)
+    await saveSettings();
+    await renderWeights();
+  });
+  // Restore prior selection if premium.
+  if (isPremium() && settings._benchmarkChoice) {
+    _benchmarkChoice = settings._benchmarkChoice;
+    sel.value = _benchmarkChoice;
+  }
 }
 
 function setupWeightRangeButtons() {
@@ -1440,8 +1824,9 @@ function renderLevelChart(shots) {
     if (levelChart) { levelChart.destroy(); levelChart = null; }
     return;
   }
-  const halfLife = settings.halfLifeDays || 5;
-  const decay = Math.log(2) / halfLife;
+  // Per-shot half-life: shots logged on or after v0.45.2 carry their own
+  // halfLifeDays snapshot. Fallback to settings for older shots.
+  const settingsHL = settings.halfLifeDays || 5;
   const now = new Date();
   const start = new Date(now); start.setDate(start.getDate() - 21);
   const end = new Date(now); end.setDate(end.getDate() + 7);
@@ -1453,6 +1838,8 @@ function renderLevelChart(shots) {
     for (const s of shots) {
       const sd = new Date(s.when);
       if (sd > d) continue;
+      const hl = (s.halfLifeDays && s.halfLifeDays > 0) ? s.halfLifeDays : settingsHL;
+      const decay = Math.log(2) / hl;
       const days = (d - sd) / 86400000;
       level += s.dose * Math.exp(-decay * days);
     }
@@ -2128,6 +2515,23 @@ function setupAccountUI() {
     }
   });
 
+  // PWA shortcut deep-links: ?action=log-shot / ?action=log-weight / ?tab=insights.
+  (function handleShortcutAction() {
+    const sp = new URLSearchParams(window.location.search);
+    const action = sp.get('action');
+    const tab = sp.get('tab');
+    if (action || tab) {
+      sp.delete('action'); sp.delete('tab');
+      const cleanUrl = window.location.pathname + (sp.toString() ? '?' + sp.toString() : '') + window.location.hash;
+      window.history.replaceState({}, '', cleanUrl);
+    }
+    if (tab && ['home', 'insights', 'more', 'settings'].includes(tab)) {
+      try { setTab(tab); } catch (e) {}
+    }
+    if (action === 'log-shot') setTimeout(() => { try { openShotDialog(); } catch (e) {} }, 250);
+    else if (action === 'log-weight') setTimeout(() => { try { $('#add-weight-btn')?.click(); } catch (e) {} }, 250);
+  })();
+
   // Handle Stripe Checkout return.
   (function handleBillingReturn() {
     const sp = new URLSearchParams(window.location.search);
@@ -2496,6 +2900,949 @@ function setupAppetiteUI() {
   });
 }
 
+// ---------- Food noise (1-10 daily) ----------
+// Distinct from appetite: tracks the *mental* chatter about food (intrusive
+// thoughts, food obsession). Many GLP-1 users describe this quieting down
+// independent of physical hunger. Lower = quieter = generally better on GLP-1.
+function foodNoiseDescriptor(v) {
+  if (v <= 2) return 'quiet';
+  if (v <= 4) return 'mild';
+  if (v <= 6) return 'moderate';
+  if (v <= 8) return 'loud';
+  return 'constant';
+}
+async function getFoodNoiseSorted() {
+  return new Promise((res) => {
+    openDB().then(db => {
+      const t = db.transaction('foodNoise', 'readonly');
+      const r = t.objectStore('foodNoise').getAll();
+      r.onsuccess = () => res((r.result || []).sort((a, b) => a.date.localeCompare(b.date)));
+      r.onerror = () => res([]);
+    });
+  });
+}
+async function saveFoodNoise(date, value) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const t = db.transaction('foodNoise', 'readwrite');
+    t.objectStore('foodNoise').put({ date, value });
+    t.oncomplete = resolve; t.onerror = () => reject(t.error);
+  });
+}
+async function renderFoodNoise() {
+  const today = todayISODate();
+  const all = await getFoodNoiseSorted();
+  const todayEntry = all.find(a => a.date === today);
+  const card = $('#foodnoise-card');
+  if (!card) return;
+  const picker = $('#foodnoise-picker');
+  const logged = $('#foodnoise-logged');
+  const saved = $('#foodnoise-saved');
+  const slider = $('#foodnoise-slider');
+  const valEl = $('#foodnoise-value');
+  const descEl = $('#foodnoise-descriptor');
+  if (todayEntry && !card.dataset.editing) {
+    picker.classList.add('hidden');
+    logged.classList.remove('hidden');
+    $('#foodnoise-logged-value').textContent = String(todayEntry.value);
+    $('#foodnoise-logged-label').textContent = `${todayEntry.value}/10 — ${foodNoiseDescriptor(todayEntry.value)}`;
+    if (saved) saved.textContent = '';
+  } else {
+    picker.classList.remove('hidden');
+    logged.classList.add('hidden');
+    if (todayEntry) {
+      slider.value = String(todayEntry.value);
+      valEl.textContent = String(todayEntry.value);
+      descEl.textContent = foodNoiseDescriptor(todayEntry.value);
+    }
+    if (saved) saved.textContent = todayEntry ? '✓ saved' : '';
+  }
+  await renderFoodNoiseTrend(all);
+}
+async function renderFoodNoiseTrend(entries) {
+  const card = $('#foodnoise-trend-card');
+  if (!card) return;
+  if (!entries || entries.length === 0) { card.classList.add('hidden'); return; }
+  card.classList.remove('hidden');
+  const days = 30;
+  const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - (days - 1));
+  const cutoffKey = cutoff.toISOString().slice(0, 10);
+  const inWindow = entries.filter(a => a.date >= cutoffKey);
+  const wrap = $('#foodnoise-trend-bars');
+  if (!wrap) return;
+  const byDate = {};
+  inWindow.forEach(a => { byDate[a.date] = a.value; });
+  const bars = [];
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(); d.setDate(d.getDate() - i);
+    const key = d.toISOString().slice(0, 10);
+    const v = byDate[key];
+    if (v) {
+      // Color by quietness: 1-3 = good (quiet), 4-6 = mid, 7-10 = high (loud)
+      const cls = v <= 3 ? 'good' : v <= 6 ? 'mid' : 'high';
+      bars.push(`<div class="mood-bar ${cls}" style="height:${v * 9}%" title="${key}: ${v}/10 — ${foodNoiseDescriptor(v)}"></div>`);
+    } else {
+      bars.push('<div class="mood-bar empty" title="' + key + ': not logged"></div>');
+    }
+  }
+  wrap.innerHTML = bars.join('');
+  const avg = inWindow.reduce((s, a) => s + a.value, 0) / inWindow.length;
+  const summary = $('#foodnoise-trend-summary');
+  if (summary) summary.textContent = `Avg ${avg.toFixed(1)}/10 · ${inWindow.length}/${days} days logged`;
+}
+function setupFoodNoiseUI() {
+  const slider = $('#foodnoise-slider');
+  const valEl = $('#foodnoise-value');
+  const descEl = $('#foodnoise-descriptor');
+  if (!slider) return;
+  slider.addEventListener('input', () => {
+    const v = parseInt(slider.value, 10);
+    valEl.textContent = String(v);
+    descEl.textContent = foodNoiseDescriptor(v);
+  });
+  $('#foodnoise-save').addEventListener('click', async () => {
+    const v = parseInt(slider.value, 10);
+    if (!Number.isFinite(v) || v < 1 || v > 10) return;
+    await saveFoodNoise(todayISODate(), v);
+    delete $('#foodnoise-card').dataset.editing;
+    await renderFoodNoise();
+    markSyncDirty();
+    track('food_noise_logged', { value: v });
+  });
+  const change = $('#foodnoise-change');
+  if (change) change.addEventListener('click', (e) => {
+    e.preventDefault();
+    $('#foodnoise-card').dataset.editing = '1';
+    renderFoodNoise();
+  });
+}
+
+// ---------- Cycle tracking (opt-in) ----------
+// Privacy posture: data is stored on-device and travels through the same E2EE
+// sync pipeline as everything else. The settings toggle only hides the UI —
+// entries persist so a user who accidentally disables doesn't lose history.
+const CYCLE_SYMPTOMS = [
+  'cramps', 'bloating', 'breastTenderness', 'backPain',
+  'lowMood', 'anxiety', 'irritability', 'fatigue',
+  'headache', 'acne', 'foodCravings', 'sleepDisrupted',
+];
+const CYCLE_SYMPTOM_LABELS = {
+  cramps: 'Cramps', bloating: 'Bloating', breastTenderness: 'Breast tenderness', backPain: 'Back pain',
+  lowMood: 'Low mood', anxiety: 'Anxiety', irritability: 'Irritability', fatigue: 'Fatigue',
+  headache: 'Headache', acne: 'Acne', foodCravings: 'Food cravings', sleepDisrupted: 'Sleep disrupted',
+};
+const CYCLE_FLOW_LABELS = {
+  spotting: 'Spotting', light: 'Light', normal: 'Normal', heavy: 'Heavy', '': 'Not specified',
+};
+async function getCyclesSorted() {
+  const all = (await dbAll('cycles')) || [];
+  return all.sort((a, b) => (b.startDate || '').localeCompare(a.startDate || ''));  // newest first
+}
+async function saveCycle(c) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const t = db.transaction('cycles', 'readwrite');
+    t.objectStore('cycles').put(c);
+    t.oncomplete = () => resolve(); t.onerror = () => reject(t.error);
+  });
+}
+async function deleteCycle(id) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const t = db.transaction('cycles', 'readwrite');
+    t.objectStore('cycles').delete(id);
+    t.oncomplete = resolve; t.onerror = () => reject(t.error);
+  });
+}
+async function clearAllCycles() {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const t = db.transaction('cycles', 'readwrite');
+    t.objectStore('cycles').clear();
+    t.oncomplete = resolve; t.onerror = () => reject(t.error);
+  });
+}
+function renderCycleSymptomsForm(checked) {
+  const wrap = $('#cycle-symptoms');
+  if (!wrap) return;
+  const set = new Set(checked || []);
+  wrap.innerHTML = CYCLE_SYMPTOMS.map(k =>
+    `<label class="check-row small"><input type="checkbox" data-cycle-symptom="${k}" ${set.has(k) ? 'checked' : ''}> ${CYCLE_SYMPTOM_LABELS[k]}</label>`
+  ).join('');
+}
+function readCycleSymptoms() {
+  return Array.from(document.querySelectorAll('#cycle-symptoms input[data-cycle-symptom]:checked'))
+    .map(el => el.getAttribute('data-cycle-symptom'));
+}
+async function openCycleDialog(cycle) {
+  const isEdit = !!cycle;
+  $('#cycle-form-title').textContent = isEdit ? 'Edit period' : 'Log period';
+  $('#cycle-id').value = isEdit ? String(cycle.id) : '';
+  $('#cycle-start').value = cycle && cycle.startDate ? cycle.startDate : todayISODate();
+  $('#cycle-end').value = cycle && cycle.endDate ? cycle.endDate : '';
+  $('#cycle-flow').value = (cycle && cycle.flow) || '';
+  $('#cycle-notes').value = (cycle && cycle.notes) || '';
+  renderCycleSymptomsForm(cycle ? cycle.symptoms : []);
+  $('#cycle-delete').classList.toggle('hidden', !isEdit);
+  $('#cycle-dialog').showModal();
+}
+async function renderCycleCard() {
+  const card = $('#cycle-card');
+  if (!card) return;
+  if (!settings.cycleEnabled) { card.classList.add('hidden'); return; }
+  card.classList.remove('hidden');
+  const cycles = await getCyclesSorted();
+  const list = $('#cycle-list');
+  const empty = $('#cycle-empty');
+  if (!cycles.length) { list.innerHTML = ''; empty.classList.remove('hidden'); return; }
+  empty.classList.add('hidden');
+  list.innerHTML = cycles.map(c => {
+    const dur = c.endDate ? Math.max(1, Math.round((new Date(c.endDate) - new Date(c.startDate)) / 86400000) + 1) : null;
+    const symStr = (c.symptoms || []).map(k => CYCLE_SYMPTOM_LABELS[k] || k).join(' · ') || '<span class="muted small">no symptoms logged</span>';
+    return `<button type="button" class="cycle-row" data-cycle-id="${c.id}">
+      <div class="cycle-row-head">
+        <strong>${escapeHTML(c.startDate)}${c.endDate ? ' → ' + escapeHTML(c.endDate) : ' (ongoing)'}</strong>
+        <span class="muted small">${dur ? dur + 'd' : ''} · ${escapeHTML(CYCLE_FLOW_LABELS[c.flow || ''] || 'Not specified')}</span>
+      </div>
+      <div class="cycle-row-symptoms">${symStr}</div>
+      ${c.notes ? `<div class="cycle-row-notes muted small">${escapeHTML(c.notes)}</div>` : ''}
+    </button>`;
+  }).join('');
+  list.querySelectorAll('.cycle-row[data-cycle-id]').forEach(el => {
+    el.addEventListener('click', async () => {
+      const id = parseInt(el.getAttribute('data-cycle-id'), 10);
+      const target = cycles.find(x => x.id === id);
+      if (target) openCycleDialog(target);
+    });
+  });
+}
+function setupCycleUI() {
+  const enabledCheckbox = $('#set-cycle-enabled');
+  const extras = $('#cycle-settings-extras');
+  if (enabledCheckbox) {
+    enabledCheckbox.checked = !!settings.cycleEnabled;
+    extras.classList.toggle('hidden', !settings.cycleEnabled);
+    enabledCheckbox.addEventListener('change', async (e) => {
+      settings.cycleEnabled = !!e.target.checked;
+      settings.cycleSeenOptIn = true;
+      await saveSettings();
+      markSyncDirty();
+      extras.classList.toggle('hidden', !settings.cycleEnabled);
+      await renderCycleCard();
+    });
+  }
+  $('#cycle-data-clear')?.addEventListener('click', async () => {
+    if (!confirm('Permanently delete ALL cycle entries? This cannot be undone.')) return;
+    await clearAllCycles();
+    markSyncDirty();
+    await renderCycleCard();
+    toast('All cycle entries deleted.');
+  });
+  $('#cycle-add-btn')?.addEventListener('click', () => openCycleDialog());
+  $('#cycle-cancel')?.addEventListener('click', () => $('#cycle-dialog').close());
+  $('#cycle-delete')?.addEventListener('click', async () => {
+    const id = parseInt($('#cycle-id').value, 10);
+    if (!Number.isFinite(id)) return;
+    if (!confirm('Delete this period entry?')) return;
+    await deleteCycle(id);
+    $('#cycle-dialog').close();
+    markSyncDirty();
+    await renderCycleCard();
+  });
+  $('#cycle-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const idStr = $('#cycle-id').value;
+    const startDate = $('#cycle-start').value;
+    const endDate = $('#cycle-end').value || null;
+    if (!startDate) { alert('Please pick a start date.'); return; }
+    if (endDate && endDate < startDate) { alert('End date cannot be before start date.'); return; }
+    const data = {
+      startDate,
+      endDate,
+      flow: $('#cycle-flow').value || null,
+      symptoms: readCycleSymptoms(),
+      notes: ($('#cycle-notes').value || '').trim().slice(0, 1000) || null,
+      updatedAt: new Date().toISOString(),
+    };
+    if (idStr) data.id = parseInt(idStr, 10);
+    await saveCycle(data);
+    $('#cycle-dialog').close();
+    markSyncDirty();
+    await renderCycleCard();
+    track(idStr ? 'cycle_edited' : 'cycle_logged');
+  });
+}
+function toast(msg) {
+  // Best-effort toast — uses an existing element if present, otherwise alert().
+  const el = document.getElementById('app-toast');
+  if (el) {
+    el.textContent = msg;
+    el.classList.add('show');
+    setTimeout(() => el.classList.remove('show'), 2200);
+  } else {
+    alert(msg);
+  }
+}
+
+// ---------- Reference guidance content ----------
+// Plain-language reference snippets surfaced contextually. Hand-written, not
+// AI-generated, not personalized. Every section redirects to the prescriber
+// for any actual decision. Free, never gated.
+//
+// Tone rules (informed by the user's "educational but we are not a medical
+// doctor" stance):
+//   - Inform, don't prescribe. No "you should take X mg."
+//   - Use "some users", "the FDA label", "your prescriber" — not "you must."
+//   - Provide questions to ask the prescriber, not answers.
+const GUIDANCE = {
+  missed_lt48h: {
+    title: 'Missed shot — within ~48 hours',
+    body: `<p>If you're inside roughly 48 hours of when your shot was supposed to happen and your prescriber hasn't told you otherwise, the FDA labels for tirzepatide and semaglutide both note that the dose can be administered as soon as remembered, then the regular weekly schedule resumed.</p>
+      <p>Outside of that window — see the next section. And whenever in doubt, your prescriber is the right person to call.</p>`,
+    actions: [
+      'Take it now if your prescriber\'s plan allows it.',
+      'Set a reminder for next week\'s normal day.',
+      'If unsure, message your prescriber before injecting.',
+    ],
+  },
+  missed_gt48h: {
+    title: 'Missed shot — more than ~48 hours',
+    body: `<p>The FDA labels generally say to skip the missed dose and resume on your next scheduled day if you are <em>more than ~48 hours</em> past your scheduled time, but practice varies. Some prescribers ask you to call before re-starting; some adjust the dose down; some have you wait for the next scheduled week.</p>
+      <p>This is the right time to message your prescriber rather than guess.</p>`,
+    actions: [
+      'Don\'t double up.',
+      'Message your prescriber and describe how many days late you are.',
+      'Ask whether to inject now, skip and resume next week, or step back to a lower dose.',
+    ],
+    questions: [
+      'Is it safe for me to take this dose now, or should I skip to next week?',
+      'If I skip, do I restart at the same dose or step down?',
+      'What side effects should I watch for if I do inject late?',
+    ],
+  },
+  side_effects_high: {
+    title: 'Side effects on the higher side',
+    body: `<p>Severe side effects on multiple consecutive shots — especially nausea, vomiting, or persistent stomach pain — are worth flagging. Some prescribers respond by holding at the current dose; others step down to the previous dose for a cycle or two; some adjust how the medication is taken (timing, food, hydration).</p>
+      <p>This is descriptive, not advice. The right move depends on which symptoms, how severe, and your medical history.</p>`,
+    actions: [
+      'Open the symptoms summary on the Insights tab — share the picture with your prescriber.',
+      'Note any pattern: does it happen day 1 after the shot? Mid-cycle? Always after eating?',
+      'Stop and call urgently for: severe abdominal pain, signs of dehydration, or signs of pancreatitis (severe persistent upper-abdominal pain radiating to the back).',
+    ],
+    questions: [
+      'Should I hold at this dose or step down?',
+      'Are these symptoms expected at this dose, or do they suggest something else?',
+      'Are there OTC options (anti-nausea, fiber, electrolytes) you\'d recommend trying first?',
+    ],
+  },
+  dose_increase: {
+    title: 'Just bumped up the dose',
+    body: `<p>The first 1-3 shots after a dose increase are when most users see a return of side effects — often nausea or fatigue — even if the previous dose felt easy. The FDA labels describe a typical settling period of one or two cycles before the new dose feels routine.</p>
+      <p>What's "expected" varies; severe or persistent symptoms are always worth calling about.</p>`,
+    actions: [
+      'Hydrate more than you think you need to.',
+      'Eat smaller, more frequent meals through the first couple of days.',
+      'Plan meals with protein first, fiber second, fat third.',
+      'Log side effects on each shot so the pattern is visible if it persists.',
+    ],
+    questions: [
+      'How long is normal for side effects to settle at this new dose?',
+      'When should I call you if they don\'t?',
+      'Anything specific about meals, timing, or other meds I should change?',
+    ],
+  },
+  titration_overview: {
+    title: 'Titration — the general picture',
+    body: `<p>Most GLP-1 medications use a step-up titration: the prescriber starts you at a low dose to let the body adjust, then steps up every 4 weeks (the FDA-labeled minimum for tirzepatide and semaglutide) toward a target dose. Many users hold at intermediate doses for longer if it's working or side effects are settling.</p>
+      <p>"Where to land" is a conversation between you and your prescriber, informed by weight progress, side effects, labs, and goals.</p>`,
+    actions: [
+      'Track shots, weight, and side effects so the picture is data-backed.',
+      'Don\'t self-titrate. Step-ups should be discussed with your prescriber.',
+      'If progress stalls, the answer isn\'t always a higher dose — sleep, protein, walking, and patience are usually first.',
+    ],
+  },
+};
+
+function renderGuidance(sectionId) {
+  const g = GUIDANCE[sectionId];
+  if (!g) return '';
+  const actions = g.actions ? `<ul class="guidance-actions">${g.actions.map(a => `<li>${a}</li>`).join('')}</ul>` : '';
+  const questions = g.questions ? `<h4>Questions to ask your prescriber</h4><ul class="guidance-questions">${g.questions.map(q => `<li>${q}</li>`).join('')}</ul>` : '';
+  return `<h3>${g.title}</h3>${g.body}${actions}${questions}<p class="muted small guidance-disclaimer">This is reference information, not medical advice. My GLP Shot is a tracker — your prescriber is the right person for any dosing decision.</p>`;
+}
+
+function openGuidance(sectionId) {
+  const dlg = $('#guidance-dialog');
+  if (!dlg) return;
+  $('#guidance-body').innerHTML = renderGuidance(sectionId);
+  dlg.showModal();
+  track('guidance_opened', { section: sectionId });
+}
+
+// Triggers that surface the right guidance link on the home screen.
+async function evaluateGuidanceTriggers() {
+  const shots = await getShotsSorted();  // newest first
+  const latest = shots[0];
+  const hint = $('#guidance-hint');
+  if (!hint) return;
+  const cadence = settings.cadenceDays || 7;
+  let target = null, label = '';
+  if (latest) {
+    const next = nextShotDate(latest.when);
+    const lateMs = Date.now() - next.getTime();
+    const lateHours = lateMs / 3600000;
+    if (lateHours > 0 && lateHours <= 48) {
+      target = 'missed_lt48h';
+      label = `Inside the 48-hour window — what your prescriber may want you to do`;
+    } else if (lateHours > 48) {
+      target = 'missed_gt48h';
+      label = `Past 48 hours late — questions to ask before injecting again`;
+    } else if (shots.length >= 2 && shots[0].dose > shots[1].dose) {
+      // Most recent shot is a dose increase — show only for ~3 days post-shot.
+      const sinceShotDays = (Date.now() - new Date(shots[0].when).getTime()) / 86400000;
+      if (sinceShotDays <= 3) { target = 'dose_increase'; label = 'Just bumped up — what to expect this cycle'; }
+    } else {
+      // Severe side-effects on >=2 of the last 3 shots?
+      const last3 = shots.slice(0, 3);
+      const severeCount = last3.filter(s => s.sideEffects && Object.values(s.sideEffects).includes('severe')).length;
+      if (severeCount >= 2) { target = 'side_effects_high'; label = 'Side effects looking high — questions to bring to your prescriber'; }
+    }
+  }
+  if (target) {
+    hint.classList.remove('hidden');
+    hint.innerHTML = `<a href="#" data-guidance="${target}">${escapeHTML(label)} →</a>`;
+    hint.querySelector('a').addEventListener('click', (e) => { e.preventDefault(); openGuidance(target); });
+  } else {
+    hint.classList.add('hidden');
+    hint.innerHTML = '';
+  }
+}
+
+// ---------- Medication change log ----------
+// First-class log of "you switched drugs" events so the dose timeline and
+// future per-shot half-life lookups can stay accurate across switches.
+async function getMedChangesSorted() {
+  const all = (await dbAll('medChanges')) || [];
+  return all.sort((a, b) => (a.when || '').localeCompare(b.when || ''));
+}
+async function saveMedChange(entry) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const t = db.transaction('medChanges', 'readwrite');
+    t.objectStore('medChanges').put(entry);
+    t.oncomplete = () => resolve(); t.onerror = () => reject(t.error);
+  });
+}
+async function deleteMedChange(id) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const t = db.transaction('medChanges', 'readwrite');
+    t.objectStore('medChanges').delete(id);
+    t.oncomplete = resolve; t.onerror = () => reject(t.error);
+  });
+}
+async function renderMedChanges() {
+  const wrap = $('#medchanges-list');
+  if (!wrap) return;
+  const list = await getMedChangesSorted();
+  if (!list.length) { wrap.innerHTML = '<p class="muted small">No medication changes logged. Tap "+ Log change" if you switch medications.</p>'; return; }
+  wrap.innerHTML = list.slice().reverse().map(c => `
+    <div class="medchange-row">
+      <div><strong>${escapeHTML(c.medication || '?')}</strong> <span class="muted small">${escapeHTML(c.when ? new Date(c.when).toLocaleDateString() : '')}</span></div>
+      ${c.notes ? `<div class="muted small">${escapeHTML(c.notes)}</div>` : ''}
+      <div class="muted small">half-life ${c.halfLifeDays ?? '—'}d · cadence ${c.cadenceDays ?? '—'}d</div>
+      <button type="button" class="btn-ghost small" data-medchange-del="${c.id}">Delete</button>
+    </div>
+  `).join('');
+  wrap.querySelectorAll('[data-medchange-del]').forEach(b => {
+    b.addEventListener('click', async () => {
+      if (!confirm('Delete this medication-change entry?')) return;
+      await deleteMedChange(parseInt(b.getAttribute('data-medchange-del'), 10));
+      markSyncDirty();
+      await renderMedChanges();
+    });
+  });
+}
+function setupMedChangeUI() {
+  $('#medchange-log-btn')?.addEventListener('click', async () => {
+    const dt = prompt('When did the change happen? (YYYY-MM-DD, blank = today)', '');
+    const when = (dt || todayISODate()) + 'T00:00:00';
+    const entry = {
+      when: new Date(when).toISOString(),
+      medication: settings.medication,
+      halfLifeDays: settings.halfLifeDays,
+      defaultDose: settings.defaultDose,
+      cadenceDays: settings.cadenceDays,
+      notes: prompt('Notes (optional, e.g. "switched from Mounjaro to Zepbound")', '') || null,
+    };
+    await saveMedChange(entry);
+    markSyncDirty();
+    await renderMedChanges();
+    track('med_change_logged');
+  });
+}
+
+// ---------- Insights engine ----------
+// Each insight is a function returning either:
+//   null                                      → not applicable, suppress
+//   { id, title, ready: false, need, premium } → not enough data yet (show grayed card)
+//   { id, title, body, scrollTo, premium }    → ready, render full card
+// Tone rule: descriptive, not statistical. "Most often", "tended to" — not "X% increase".
+//
+// Free insights operate on a single data type (shots alone, or shots+sideEffects, etc.).
+// Premium insights cross multiple data types (weight × dose changes, food noise × dose decay).
+
+function _siteCanonical(s) {
+  return SITE_LEGACY_ALIAS[s] || s;
+}
+function _shotsByMostRecent(shots) {
+  return [...shots].sort((a, b) => new Date(b.when) - new Date(a.when));
+}
+function _daysBetween(a, b) {
+  return Math.floor((new Date(b) - new Date(a)) / 86400000);
+}
+
+// F1: Site rotation imbalance — last 6 shots, surface overdue side.
+function insight_siteRotation(ctx) {
+  const recent = _shotsByMostRecent(ctx.shots).filter(s => s.site).slice(0, 6);
+  if (recent.length < 4) {
+    return { id: 'site-rotation', title: 'Site rotation', ready: false, need: `Need ${4 - recent.length} more shots with sites logged.` };
+  }
+  // Group canonical sites by side.
+  const sides = { Left: 0, Right: 0, Other: 0 };
+  for (const s of recent) {
+    const c = _siteCanonical(s.site);
+    if (/Left/i.test(c)) sides.Left++;
+    else if (/Right/i.test(c)) sides.Right++;
+    else sides.Other++;
+  }
+  const dom = sides.Left > sides.Right ? 'Left' : sides.Right > sides.Left ? 'Right' : null;
+  if (!dom) return null;
+  const overdue = dom === 'Left' ? 'right' : 'left';
+  const ratio = `${sides[dom]}/${recent.length}`;
+  return {
+    id: 'site-rotation',
+    title: 'Site rotation looks one-sided',
+    body: `Your last ${recent.length} shots used the ${dom.toLowerCase()} side ${ratio}. The ${overdue} side may be the freshest pick next.`,
+    scrollTo: '#body-diagram-wrap',
+    premium: false,
+  };
+}
+
+// F2: Nausea timing relative to shot — which day-since-shot has the most nausea.
+function insight_nauseaDay(ctx) {
+  const targetSE = 'nausea';
+  const eligible = ctx.shots.filter(s => s.sideEffects && s.sideEffects[targetSE]);
+  if (eligible.length < 4) {
+    return { id: 'nausea-day', title: 'Nausea timing', ready: false, need: `Need ${4 - eligible.length} more shots with nausea logged to spot a pattern.` };
+  }
+  // Bucket by day-since-shot. Side effects are logged on the shot itself, so
+  // the closest meaning is "day 0 = the shot day". Without per-day side-effect
+  // logs we can only say "shots that had nausea were typically Y days into their
+  // cycle" (i.e. cadence position). For the descriptive output we report which
+  // shot in a sequence (early/mid/late dose cycle) most often had nausea by
+  // looking at the gap to the previous shot — proxy for "days into the cycle".
+  const cadence = settings.cadenceDays || 7;
+  const gaps = [];
+  const sorted = [...ctx.shots].sort((a, b) => new Date(a.when) - new Date(b.when));
+  for (let i = 0; i < sorted.length; i++) {
+    if (!sorted[i].sideEffects || !sorted[i].sideEffects[targetSE]) continue;
+    if (i === 0) continue;
+    const gap = _daysBetween(sorted[i - 1].when, sorted[i].when);
+    if (gap > 0 && gap <= cadence + 3) gaps.push(gap);
+  }
+  if (gaps.length < 3) {
+    return { id: 'nausea-day', title: 'Nausea timing', ready: false, need: `Need ${3 - gaps.length} more shots with nausea logged.` };
+  }
+  const avgGap = gaps.reduce((a, b) => a + b, 0) / gaps.length;
+  const phase = avgGap <= cadence * 0.4 ? 'early in your cycle (shortly after a shot)'
+              : avgGap <= cadence * 0.75 ? 'in the middle of your cycle'
+              : 'late in your cycle (closer to the next shot)';
+  return {
+    id: 'nausea-day',
+    title: 'When nausea tends to show up',
+    body: `Across ${gaps.length} shots where you logged nausea, it most often appeared <strong>${phase}</strong>. (Heuristic based on gaps between shots — about ${avgGap.toFixed(1)} days into the cycle on average.)`,
+    scrollTo: '#side-effects-summary',
+    premium: false,
+  };
+}
+
+// F3: Mood trend by day-since-shot — when do you feel best?
+function insight_moodByDay(ctx) {
+  if (!ctx.moods || ctx.moods.length < 8) {
+    return { id: 'mood-day', title: 'Mood across the dose cycle', ready: false, need: `Need ${Math.max(0, 8 - (ctx.moods?.length || 0))} more days of mood logging.` };
+  }
+  const cadence = settings.cadenceDays || 7;
+  // For each mood entry, find the most recent shot before it; bucket by days-since.
+  const sortedShots = [...ctx.shots].sort((a, b) => new Date(a.when) - new Date(b.when));
+  const buckets = {};  // dayBucket → [moodValues]
+  for (const m of ctx.moods) {
+    const md = new Date(m.date);
+    let lastShot = null;
+    for (const s of sortedShots) {
+      if (new Date(s.when) <= md) lastShot = s; else break;
+    }
+    if (!lastShot) continue;
+    const days = _daysBetween(lastShot.when, m.date);
+    if (days < 0 || days > cadence + 1) continue;
+    const bucket = days <= 1 ? 'early' : days < cadence - 1 ? 'middle' : 'late';
+    (buckets[bucket] = buckets[bucket] || []).push(m.value);
+  }
+  if (Object.keys(buckets).length < 2) {
+    return { id: 'mood-day', title: 'Mood across the dose cycle', ready: false, need: `Need a few more mood entries spanning the dose cycle.` };
+  }
+  const avgs = Object.entries(buckets).map(([k, vs]) => [k, vs.reduce((a, b) => a + b, 0) / vs.length]);
+  avgs.sort((a, b) => b[1] - a[1]);
+  const bestK = avgs[0][0];
+  const phaseLabel = bestK === 'early' ? 'in the first day or two after a shot' : bestK === 'late' ? 'late in your dose cycle' : 'in the middle of your cycle';
+  return {
+    id: 'mood-day',
+    title: 'When you tend to feel best',
+    body: `Looking at ${ctx.moods.length} mood entries, your mood has been highest <strong>${phaseLabel}</strong> on average. This is descriptive — many things affect mood, not just the medication.`,
+    scrollTo: '#mood-trend-card',
+    premium: false,
+  };
+}
+
+// F4: Food noise pattern — when does it return relative to the shot?
+function insight_foodNoiseReturn(ctx) {
+  const fn = ctx.foodNoise || [];
+  if (fn.length < 8) {
+    return { id: 'foodnoise-return', title: 'Food noise return point', ready: false, need: `Need ${Math.max(0, 8 - fn.length)} more food noise entries.` };
+  }
+  const cadence = settings.cadenceDays || 7;
+  const sortedShots = [...ctx.shots].sort((a, b) => new Date(a.when) - new Date(b.when));
+  // For each food noise reading, find day-since-last-shot.
+  const buckets = Array(cadence + 1).fill(null).map(() => []);
+  for (const f of fn) {
+    const fd = new Date(f.date);
+    let lastShot = null;
+    for (const s of sortedShots) {
+      if (new Date(s.when) <= fd) lastShot = s; else break;
+    }
+    if (!lastShot) continue;
+    const days = _daysBetween(lastShot.when, f.date);
+    if (days >= 0 && days <= cadence) buckets[days].push(f.value);
+  }
+  // Find the first day where average crosses the "loud" line (>= 6/10).
+  const avgs = buckets.map(vs => vs.length ? vs.reduce((a, b) => a + b, 0) / vs.length : null);
+  const returnDay = avgs.findIndex((v, i) => i > 0 && v != null && v >= 6);
+  if (returnDay < 0) {
+    return {
+      id: 'foodnoise-return',
+      title: 'Food noise stays quiet across your cycle',
+      body: `Across ${fn.length} food-noise entries, the average has stayed at or below 5/10 throughout the dose cycle — the medication is keeping the noise quiet for the full week.`,
+      scrollTo: '#foodnoise-trend-card',
+      premium: false,
+    };
+  }
+  return {
+    id: 'foodnoise-return',
+    title: 'Food noise tends to return mid-cycle',
+    body: `Your food noise has tended to climb past <strong>5/10 around day ${returnDay}</strong> after a shot. This is the day to watch if it keeps repeating.`,
+    scrollTo: '#foodnoise-trend-card',
+    premium: false,
+  };
+}
+
+// F6: Cadence drift — average gap between recent shots vs scheduled cadence.
+function insight_cadenceDrift(ctx) {
+  if (ctx.shots.length < 4) {
+    return { id: 'cadence-drift', title: 'Cadence drift', ready: false, need: `Need ${4 - ctx.shots.length} more shots.` };
+  }
+  const cadence = settings.cadenceDays || 7;
+  const sorted = [...ctx.shots].sort((a, b) => new Date(a.when) - new Date(b.when));
+  const recent = sorted.slice(-5);  // last 5 chronologically
+  const gaps = [];
+  for (let i = 1; i < recent.length; i++) {
+    const g = (new Date(recent[i].when) - new Date(recent[i - 1].when)) / 86400000;
+    if (g > 0 && g < 60) gaps.push(g);
+  }
+  if (gaps.length < 3) return null;
+  const avg = gaps.reduce((a, b) => a + b, 0) / gaps.length;
+  const drift = avg - cadence;
+  // Flag if drifted more than 1 day in either direction.
+  if (Math.abs(drift) < 1) {
+    return {
+      id: 'cadence-drift',
+      title: 'You\'re right on cadence',
+      body: `Your last ${gaps.length + 1} shots have averaged <strong>${avg.toFixed(1)} days apart</strong> — within a day of your scheduled ${cadence}-day cadence.`,
+      scrollTo: '#dose-timeline-wrap',
+      premium: false,
+    };
+  }
+  const direction = drift > 0 ? 'later' : 'earlier';
+  return {
+    id: 'cadence-drift',
+    title: `Recent shots have drifted ${direction} than scheduled`,
+    body: `Your last ${gaps.length + 1} shots have averaged <strong>${avg.toFixed(1)} days apart</strong> vs your scheduled ${cadence}-day cadence — about <strong>${Math.abs(drift).toFixed(1)} days ${direction}</strong> on average. ${drift > 0 ? 'If this is unintentional, set a stronger reminder.' : 'Going early can stack levels — worth checking with your prescriber.'}`,
+    scrollTo: '#dose-timeline-wrap',
+    premium: false,
+  };
+}
+
+// F5: Dose-hold prompt — last several shots at the same max dose, with side-effects settled.
+function insight_doseHold(ctx) {
+  if (ctx.shots.length < 4) {
+    return { id: 'dose-hold', title: 'Dose pattern', ready: false, need: `Need ${4 - ctx.shots.length} more shots.` };
+  }
+  const recent = _shotsByMostRecent(ctx.shots).slice(0, 4);
+  const doses = recent.map(s => s.dose);
+  const allSame = doses.every(d => d === doses[0]);
+  if (!allSame) return null;
+  // Count side-effect "severe" tags across the 4 recent shots.
+  const severeCount = recent.reduce((acc, s) => acc + (s.sideEffects ? Object.values(s.sideEffects).filter(v => v === 'severe').length : 0), 0);
+  if (severeCount > 0) {
+    return {
+      id: 'dose-hold',
+      title: 'Side effects to discuss before titrating',
+      body: `Your last 4 shots have all been at <strong>${doses[0]} mg</strong>, and you've logged severe side effects in that window. Some users hold or step down; your prescriber is the right person to plan the next move.`,
+      scrollTo: '#side-effects-summary',
+      premium: false,
+    };
+  }
+  return {
+    id: 'dose-hold',
+    title: 'Holding steady at this dose',
+    body: `Your last 4 shots have been at <strong>${doses[0]} mg</strong> with no severe side effects logged. If your weight progress and prescriber agree, you're in a stable patch.`,
+    scrollTo: '#dose-timeline-wrap',
+    premium: false,
+  };
+}
+
+// PREMIUM I1: Weight loss × dose changes — does loss accelerate after dose increases?
+function insight_weightAfterDose(ctx) {
+  const weights = (ctx.weights || []).slice().sort((a, b) => new Date(a.date) - new Date(b.date));
+  const shots = ctx.shots.slice().sort((a, b) => new Date(a.when) - new Date(b.when));
+  if (weights.length < 8 || shots.length < 4) {
+    return { id: 'weight-x-dose', title: 'Weight loss after dose increases', ready: false, need: `Need at least 8 weights and 4 shots.`, premium: true };
+  }
+  // Find dose-increase events.
+  const increases = [];
+  for (let i = 1; i < shots.length; i++) {
+    if (shots[i].dose > shots[i - 1].dose) increases.push(shots[i]);
+  }
+  if (!increases.length) return null;
+  // For each increase, look at average weekly slope before vs after (28d window).
+  const slopeAround = (anchorDate) => {
+    const window = 28 * 86400000;
+    const before = weights.filter(w => {
+      const t = new Date(w.date).getTime();
+      return t >= anchorDate.getTime() - window && t < anchorDate.getTime();
+    });
+    const after = weights.filter(w => {
+      const t = new Date(w.date).getTime();
+      return t > anchorDate.getTime() && t <= anchorDate.getTime() + window;
+    });
+    const slope = (rows) => {
+      if (rows.length < 2) return null;
+      const first = rows[0], last = rows[rows.length - 1];
+      const days = (new Date(last.date) - new Date(first.date)) / 86400000;
+      if (days < 7) return null;
+      return (last.value - first.value) / (days / 7);  // lb per week
+    };
+    return { before: slope(before), after: slope(after) };
+  };
+  const slopes = increases.map(s => slopeAround(new Date(s.when))).filter(s => s.before != null && s.after != null);
+  if (slopes.length < 2) {
+    return { id: 'weight-x-dose', title: 'Weight loss after dose increases', ready: false, need: `Need more weight entries around dose-increase events.`, premium: true };
+  }
+  const avgBefore = slopes.reduce((a, b) => a + b.before, 0) / slopes.length;
+  const avgAfter = slopes.reduce((a, b) => a + b.after, 0) / slopes.length;
+  const direction = avgAfter < avgBefore ? 'faster' : avgAfter > avgBefore ? 'slower' : 'similar';
+  if (direction === 'similar') return null;
+  return {
+    id: 'weight-x-dose',
+    title: 'Weight loss tends to be ' + direction + ' after dose increases',
+    body: `Across ${slopes.length} dose increases, your weight trend in the 4 weeks after has been <strong>${direction}</strong> than the 4 weeks before, on average. Past patterns ≠ future, and many factors affect weight — this is descriptive, not predictive.`,
+    scrollTo: '#weight-chart',
+    premium: true,
+  };
+}
+
+// PREMIUM I2: Cycle × side effects — symptom prevalence on cycle days 1-3 vs other days.
+function insight_cycleSideEffects(ctx) {
+  if (!settings.cycleEnabled) return null;
+  const cycles = ctx.cycles || [];
+  if (cycles.length < 3) {
+    return { id: 'cycle-x-se', title: 'Cycle × side effects', ready: false, need: `Need ${3 - cycles.length} more logged cycles.`, premium: true };
+  }
+  // Days that fall within cycle days 1-3 (inclusive of start date).
+  const inEarlyCycle = (when) => {
+    const d = new Date(when);
+    return cycles.some(c => {
+      const start = new Date(c.startDate);
+      const diff = Math.floor((d - start) / 86400000);
+      return diff >= 0 && diff <= 2;
+    });
+  };
+  // For each side-effect tag, count occurrence inside vs outside cycle days 1-3.
+  const totals = {};
+  let earlyDays = 0, otherDays = 0;
+  for (const s of ctx.shots) {
+    const inEarly = inEarlyCycle(s.when);
+    if (inEarly) earlyDays++; else otherDays++;
+    if (!s.sideEffects) continue;
+    for (const [k] of Object.entries(s.sideEffects)) {
+      totals[k] = totals[k] || { early: 0, other: 0 };
+      if (inEarly) totals[k].early++; else totals[k].other++;
+    }
+  }
+  if (earlyDays < 2 || otherDays < 4) {
+    return { id: 'cycle-x-se', title: 'Cycle × side effects', ready: false, need: `Need more shots logged across both cycle phases.`, premium: true };
+  }
+  // Find the symptom with the largest relative bump on cycle days 1-3.
+  let bestK = null, bestRatio = 1;
+  for (const [k, c] of Object.entries(totals)) {
+    if (c.early < 1) continue;
+    const earlyRate = c.early / earlyDays;
+    const otherRate = c.other / Math.max(1, otherDays);
+    const ratio = earlyRate / Math.max(0.01, otherRate);
+    if (ratio > bestRatio) { bestRatio = ratio; bestK = k; }
+  }
+  if (!bestK || bestRatio < 1.4) {
+    return {
+      id: 'cycle-x-se',
+      title: 'No clear cycle pattern in side effects yet',
+      body: `Across ${cycles.length} logged cycles, side-effect rates on cycle days 1-3 look similar to other days. We'll keep watching as you log more.`,
+      scrollTo: '#cycle-card',
+      premium: true,
+    };
+  }
+  const label = (SIDE_EFFECTS.find(s => s[0] === bestK) || [bestK, bestK])[1];
+  return {
+    id: 'cycle-x-se',
+    title: `${label} has shown up more on cycle days 1-3`,
+    body: `In your last ${cycles.length} cycles, <strong>${label}</strong> was logged more often on cycle days 1-3 than on other days. Worth raising with your prescriber if it's bothering you.`,
+    scrollTo: '#cycle-card',
+    premium: true,
+  };
+}
+
+// PREMIUM I3: Food noise return × dose decay — does food noise return as the level drops below 50%?
+function insight_foodNoiseDecay(ctx) {
+  const fn = ctx.foodNoise || [];
+  if (fn.length < 12 || ctx.shots.length < 4) {
+    return { id: 'foodnoise-decay', title: 'Food noise vs dose decay', ready: false, need: `Need at least 12 food noise entries and 4 shots.`, premium: true };
+  }
+  const halfLife = settings.halfLifeDays || 5;
+  const sortedShots = [...ctx.shots].sort((a, b) => new Date(a.when) - new Date(b.when));
+  const samples = [];
+  for (const f of fn) {
+    const fd = new Date(f.date);
+    let lastShot = null;
+    for (const s of sortedShots) {
+      if (new Date(s.when) <= fd) lastShot = s; else break;
+    }
+    if (!lastShot) continue;
+    const days = _daysBetween(lastShot.when, f.date);
+    if (days < 0 || days > 14) continue;
+    const fraction = Math.pow(0.5, days / halfLife);  // remaining fraction of last dose
+    samples.push({ frac: fraction, noise: f.value });
+  }
+  if (samples.length < 8) {
+    return { id: 'foodnoise-decay', title: 'Food noise vs dose decay', ready: false, need: `Need more overlapping food-noise + shot entries.`, premium: true };
+  }
+  // Compare avg noise above vs below the 50% level mark.
+  const above = samples.filter(s => s.frac >= 0.5);
+  const below = samples.filter(s => s.frac < 0.5);
+  if (above.length < 3 || below.length < 3) return null;
+  const avgAbove = above.reduce((a, b) => a + b.noise, 0) / above.length;
+  const avgBelow = below.reduce((a, b) => a + b.noise, 0) / below.length;
+  const diff = avgBelow - avgAbove;
+  if (Math.abs(diff) < 1) {
+    return {
+      id: 'foodnoise-decay',
+      title: 'Food noise is steady across the dose cycle',
+      body: `Whether the medication is at peak (≥50% of last dose) or fading (<50%), your food noise scores have averaged about the same. The medication appears to keep noise quiet for the full week.`,
+      scrollTo: '#level-chart',
+      premium: true,
+    };
+  }
+  if (diff > 0) {
+    return {
+      id: 'foodnoise-decay',
+      title: 'Food noise rises as the medication fades',
+      body: `When the active medication is above ~50% of your last dose, food noise has averaged <strong>${avgAbove.toFixed(1)}/10</strong>. Once it drops below 50%, the average is <strong>${avgBelow.toFixed(1)}/10</strong>. That gap (~${diff.toFixed(1)} points) is consistent with the dose's pharmacokinetic decay.`,
+      scrollTo: '#level-chart',
+      premium: true,
+    };
+  }
+  return null;
+}
+
+const FREE_INSIGHTS = [insight_siteRotation, insight_cadenceDrift, insight_nauseaDay, insight_moodByDay, insight_foodNoiseReturn, insight_doseHold];
+const PREMIUM_INSIGHTS = [insight_weightAfterDose, insight_cycleSideEffects, insight_foodNoiseDecay];
+
+async function computeInsights() {
+  const shots = await getShotsSorted();
+  const moods = await getMoodsSorted();
+  const appetites = await getAppetitesSorted();
+  const foodNoise = await getFoodNoiseSorted();
+  const weights = await getWeightsSorted();
+  const cycles = await getCyclesSorted();
+  const ctx = { shots, moods, appetites, foodNoise, weights, cycles };
+  const free = FREE_INSIGHTS.map(fn => { try { return fn(ctx); } catch (e) { console.warn('insight error', e); return null; } }).filter(Boolean);
+  const premium = PREMIUM_INSIGHTS.map(fn => { try { return fn(ctx); } catch (e) { console.warn('insight error', e); return null; } }).filter(Boolean);
+  return { free, premium };
+}
+
+async function renderInsights() {
+  const list = $('#insights-list');
+  const empty = $('#insights-empty');
+  const summary = $('#insights-summary');
+  if (!list) return;
+  const { free, premium } = await computeInsights();
+  const all = [...free, ...premium];
+  if (!all.length) { list.innerHTML = ''; empty.classList.remove('hidden'); summary.textContent = ''; return; }
+  empty.classList.add('hidden');
+  const ready = all.filter(i => !('ready' in i) || i.ready !== false).length;
+  summary.textContent = `${ready}/${all.length} ready`;
+  const renderCard = (i) => {
+    const isPremiumCard = !!i.premium;
+    const locked = isPremiumCard && !isPremium();
+    if ('ready' in i && i.ready === false) {
+      return `<div class="insight-card pending${isPremiumCard ? ' is-premium' : ''}">
+        <div class="insight-head"><strong>${escapeHTML(i.title)}</strong>${isPremiumCard ? '<span class="lock-pill">Premium</span>' : ''}</div>
+        <p class="muted small">${escapeHTML(i.need || 'Not enough data yet.')}</p>
+      </div>`;
+    }
+    if (locked) {
+      // Use a stable generic title — the dynamic title can leak the finding
+      // itself ("Food noise rises as the medication fades"), defeating the gate.
+      const LOCKED_TITLES = {
+        'weight-x-dose': 'Weight loss after dose increases',
+        'cycle-x-se':    'Cycle × side effects',
+        'foodnoise-decay': 'Food noise vs dose decay',
+      };
+      const lockedTitle = LOCKED_TITLES[i.id] || 'Premium pattern';
+      return `<button type="button" class="insight-card locked is-premium" data-insight-locked="1">
+        <div class="insight-head"><strong>${escapeHTML(lockedTitle)}</strong><span class="lock-pill">Premium</span></div>
+        <p class="muted small">A pattern was detected in your data. Unlock cross-data patterns (weight × dose, food noise × dose decay, cycle × side effects) with Premium.</p>
+      </button>`;
+    }
+    const scrollAttr = i.scrollTo ? ` data-insight-scroll="${escapeHTML(i.scrollTo)}"` : '';
+    return `<button type="button" class="insight-card${isPremiumCard ? ' is-premium' : ''}"${scrollAttr}>
+      <div class="insight-head"><strong>${escapeHTML(i.title)}</strong>${isPremiumCard ? '<span class="lock-pill">Premium</span>' : ''}</div>
+      <p>${i.body}</p>
+    </button>`;
+  };
+  list.innerHTML = all.map(renderCard).join('');
+  // Wire interactions.
+  list.querySelectorAll('[data-insight-scroll]').forEach(el => {
+    el.addEventListener('click', () => {
+      const target = document.querySelector(el.getAttribute('data-insight-scroll'));
+      if (target) target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+  });
+  list.querySelectorAll('[data-insight-locked]').forEach(el => {
+    el.addEventListener('click', () => {
+      const dlg = document.getElementById('upgrade-dialog');
+      if (dlg) dlg.showModal();
+    });
+  });
+}
+
 // ---------- Stats helpers ----------
 function computeStreak(shots, cadenceDays) {
   // Count consecutive cadence cycles from latest backwards. A "cycle" = a shot
@@ -2539,9 +3886,17 @@ async function renderHero(shots, weights) {
   $('#hero-streak').textContent = streak || '0';
   $('#hero-shots').textContent = shots.length;
 
-  // Goal progress
+  // Goal progress (or maintenance window if mode is on)
   const goal = parseFloat(settings.goalWeight);
-  if (wd && goal && goal < wd.start) {
+  if (settings.maintenanceMode && wd) {
+    // In maintenance, show stability around current rather than progress to goal.
+    const drift = wd.current - (goal || wd.start);
+    $('#hero-goal-fill').style.width = '100%';
+    $('#hero-goal-text').textContent = goal
+      ? `🎯 Maintenance · ${wd.current.toFixed(1)} lb (${drift >= 0 ? '+' : ''}${drift.toFixed(1)} from ${goal} lb goal)`
+      : `🎯 Maintenance · staying at ${wd.current.toFixed(1)} lb`;
+    $('#hero-goal-wrap').classList.remove('hidden');
+  } else if (wd && goal && goal < wd.start) {
     const total = wd.start - goal;
     const done = wd.start - wd.current;
     const pct = Math.max(0, Math.min(100, (done / total) * 100));
@@ -2569,14 +3924,27 @@ function renderCountdownRing(shots) {
 }
 
 // ---------- Body diagram ----------
+// Legacy site names get folded onto the matching canonical lower-abdomen dot
+// so shots logged before the 4-quadrant split still color the diagram.
+const SITE_LEGACY_ALIAS = {
+  'Abdomen — Left':  'Abdomen — Lower Left',
+  'Abdomen — Right': 'Abdomen — Lower Right',
+};
 function renderBodyDiagram(shots) {
   const wrap = $('#body-diagram-wrap');
   if (!wrap) return;
   const recencyMs = {};
+  const customRecency = {};
   for (const s of shots) {
     if (!s.site) continue;
     const t = new Date(s.when).getTime();
-    if (!(s.site in recencyMs) || recencyMs[s.site] < t) recencyMs[s.site] = t;
+    const canonical = SITE_LEGACY_ALIAS[s.site] || s.site;
+    if (CANONICAL_SITES.includes(canonical)) {
+      if (!(canonical in recencyMs) || recencyMs[canonical] < t) recencyMs[canonical] = t;
+    } else {
+      // Custom site — track separately for the chip strip below.
+      if (!(s.site in customRecency) || customRecency[s.site] < t) customRecency[s.site] = t;
+    }
   }
   const now = Date.now();
   function colorFor(site) {
@@ -2586,8 +3954,9 @@ function renderBodyDiagram(shots) {
     if (days < 14) return { fill: '#0d9488', stroke: '#0f766e', label: 'medium' };
     return { fill: '#5eead4', stroke: '#14b8a6', label: 'fresh' };
   }
-  // Build SVG: simplified front silhouette, viewBox 200x320
-  const sites = Object.entries(SITE_POSITIONS).map(([name, pos]) => {
+  // Render only the 8 canonical sites as dots (legacy keys fold into new ones).
+  const sites = CANONICAL_SITES.map(name => {
+    const pos = SITE_POSITIONS[name];
     const c = colorFor(name);
     const days = recencyMs[name] ? Math.floor((now - recencyMs[name]) / 86400000) : null;
     const tip = days == null ? `${name} · unused` : `${name} · ${days}d ago`;
@@ -2602,12 +3971,32 @@ function renderBodyDiagram(shots) {
   // Male: broad shoulders (~108 wide at y=70), straight torso, narrow hips, straight legs.
   // Hand-authored male anatomical silhouette (CC0). Female version removed 2026-05-03 pending a better draft.
   const bodyPath = "M 100 8 C 110 8 118 17 118 30 C 118 40 114 47 108 50 L 108 58 C 124 60 138 64 146 72 C 152 78 156 86 156 96 L 156 160 C 156 164 152 166 148 164 C 144 162 142 158 142 154 L 142 96 C 142 88 138 82 132 78 C 128 76 124 76 122 80 L 122 158 C 122 168 124 178 126 188 L 130 250 L 132 316 C 132 318 128 318 124 318 L 118 318 C 116 318 114 316 114 314 L 110 250 L 106 200 L 104 188 L 100 188 L 96 188 L 94 200 L 90 250 L 86 314 C 86 316 84 318 82 318 L 76 318 C 72 318 68 318 68 316 L 70 250 L 74 188 C 76 178 78 168 78 158 L 78 80 C 76 76 72 76 68 78 C 62 82 58 88 58 96 L 58 154 C 58 158 56 162 52 164 C 48 166 44 164 44 160 L 44 96 C 44 86 48 78 54 72 C 62 64 76 60 92 58 L 92 50 C 86 47 82 40 82 30 C 82 17 90 8 100 8 Z";
+  // Custom-site chips below the diagram (the body-silhouette can't host them positionally).
+  const customNames = Object.keys(customRecency);
+  const customChips = customNames.length
+    ? `<div class="body-custom-chips" aria-label="Custom injection sites used">${
+        customNames.map(name => {
+          const days = Math.floor((now - customRecency[name]) / 86400000);
+          const cls = days < 7 ? 'recent' : days < 14 ? 'medium' : 'fresh';
+          return `<button type="button" class="body-custom-chip ${cls}" data-site="${escapeHTML(name)}" title="${escapeHTML(name)} · ${days}d ago">${escapeHTML(name)}</button>`;
+        }).join('')
+      }</div>`
+    : '';
   wrap.innerHTML = `
     <svg class="body-svg" viewBox="0 0 200 320" xmlns="http://www.w3.org/2000/svg" aria-label="Body diagram showing injection sites">
       <path class="body-shape" d="${bodyPath}"/>
       ${sites}
     </svg>
+    ${customChips}
   `;
+  // Custom-site chip click → mirror the dot click behavior.
+  wrap.querySelectorAll('.body-custom-chip').forEach(b => {
+    b.addEventListener('click', () => {
+      const name = b.getAttribute('data-site');
+      $('#site-suggest-label').textContent = `Tap "+ Log" to start a shot at ${name}`;
+      window._preferredNextSite = name;
+    });
+  });
   // Site click → suggest as next shot site if user opens dialog
   wrap.querySelectorAll('.body-site').forEach(g => {
     g.addEventListener('click', () => {
@@ -2623,46 +4012,6 @@ function renderBodyDiagram(shots) {
     <span><span class="swatch medium"></span>1–2 weeks</span>
     <span><span class="swatch recent"></span>This week</span>
   `;
-}
-
-// ---------- Calendar heatmap ----------
-function renderHeatmap(shots) {
-  const wrap = $('#heatmap-wrap');
-  if (!wrap) return;
-  // Build day → max dose map for last 365 days
-  const byDay = {};
-  for (const s of shots) {
-    const d = new Date(s.when);
-    const tz = d.getTimezoneOffset() * 60000;
-    const key = new Date(d - tz).toISOString().slice(0, 10);
-    byDay[key] = Math.max(byDay[key] || 0, s.dose || 0);
-  }
-  const today = new Date();
-  const todayKey = todayISODate();
-  // Start 53 weeks back, anchor to Sunday
-  const startDay = new Date(today);
-  startDay.setDate(startDay.getDate() - 365);
-  // Adjust to nearest prior Sunday
-  startDay.setDate(startDay.getDate() - startDay.getDay());
-  const cells = [];
-  const cur = new Date(startDay);
-  let totalShots = 0;
-  while (cur <= today) {
-    const tz = cur.getTimezoneOffset() * 60000;
-    const key = new Date(cur - tz).toISOString().slice(0, 10);
-    const dose = byDay[key] || 0;
-    let lvl = '';
-    if (dose > 0) totalShots++;
-    if (dose >= 12.5) lvl = 'l4';
-    else if (dose >= 7.5) lvl = 'l3';
-    else if (dose >= 5)   lvl = 'l2';
-    else if (dose > 0)    lvl = 'l1';
-    const today_attr = key === todayKey ? ' today' : '';
-    cells.push(`<div class="heatmap-cell ${lvl}${today_attr}" title="${key}${dose ? ' · ' + dose + ' mg' : ''}"></div>`);
-    cur.setDate(cur.getDate() + 1);
-  }
-  wrap.innerHTML = `<div class="heatmap-grid">${cells.join('')}</div>`;
-  $('#heatmap-summary').textContent = `${totalShots} shots in 12 months`;
 }
 
 // ---------- Dose timeline strip ----------
@@ -2716,10 +4065,16 @@ function renderDoseTimeline(shots) {
 function renderSideEffectsForm() {
   const wrap = $('#shot-side-effects');
   if (!wrap) return;
-  wrap.innerHTML = SIDE_EFFECTS.map(([key, label]) =>
-    `<div class="se-row"><label for="se-${key}">${label}</label>
-       <select id="se-${key}" data-se="${key}">${SE_LEVELS.map(([v, t]) => `<option value="${v}">${t}</option>`).join('')}</select></div>`
-  ).join('');
+  // Render rows grouped by category with a small section heading before each group.
+  const html = SE_GROUPS.map(([gid, gname]) => {
+    const rows = SIDE_EFFECTS.filter(([, , g]) => g === gid).map(([key, label]) =>
+      `<div class="se-row"><label for="se-${key}">${label}</label>
+         <select id="se-${key}" data-se="${key}">${SE_LEVELS.map(([v, t]) => `<option value="${v}">${t}</option>`).join('')}</select></div>`
+    ).join('');
+    if (!rows) return '';
+    return `<div class="se-group"><h4 class="se-group-title">${gname}</h4>${rows}</div>`;
+  }).join('');
+  wrap.innerHTML = html;
 }
 function readSideEffects() {
   const obj = {};
@@ -2746,20 +4101,30 @@ function renderSideEffectsSummary(shots) {
       if (counts[k][lvl] != null) counts[k][lvl]++;
     }
   }
-  const entries = Object.entries(counts).sort((a, b) => {
-    const ts = (c) => c.severe * 4 + c.moderate * 2 + c.mild;
-    return ts(b[1]) - ts(a[1]);
-  });
   const labelOf = (k) => (SIDE_EFFECTS.find(s => s[0] === k) || [k, k])[1];
+  const groupOf = (k) => (SIDE_EFFECTS.find(s => s[0] === k) || [k, k, 'other'])[2];
+  // Bucket counts by group so each category has its own row of pills.
+  const byGroup = {};
+  for (const [k, c] of Object.entries(counts)) {
+    const g = groupOf(k);
+    (byGroup[g] = byGroup[g] || []).push([k, c]);
+  }
   const wrap = $('#side-effects-summary');
   const empty = $('#empty-side-effects');
-  if (!entries.length) { wrap.innerHTML = ''; empty.classList.remove('hidden'); return; }
+  if (!Object.keys(byGroup).length) { wrap.innerHTML = ''; empty.classList.remove('hidden'); return; }
   empty.classList.add('hidden');
-  wrap.innerHTML = entries.map(([k, c]) => {
-    const total = c.mild + c.moderate + c.severe;
-    const cls = c.severe > 0 ? 'severe' : '';
-    const dots = '●'.repeat(Math.min(3, c.severe)) + '◐'.repeat(Math.min(3, c.moderate)) + '○'.repeat(Math.min(3, c.mild));
-    return `<span class="se-pill ${cls}"><span class="se-count">${total}</span>${labelOf(k)} <span class="muted small">${dots}</span></span>`;
+  const sortPills = (a, b) => {
+    const ts = (c) => c.severe * 4 + c.moderate * 2 + c.mild;
+    return ts(b[1]) - ts(a[1]);
+  };
+  wrap.innerHTML = SE_GROUPS.filter(([gid]) => byGroup[gid]).map(([gid, gname]) => {
+    const pills = byGroup[gid].sort(sortPills).map(([k, c]) => {
+      const total = c.mild + c.moderate + c.severe;
+      const cls = c.severe > 0 ? 'severe' : '';
+      const dots = '●'.repeat(Math.min(3, c.severe)) + '◐'.repeat(Math.min(3, c.moderate)) + '○'.repeat(Math.min(3, c.mild));
+      return `<span class="se-pill ${cls}"><span class="se-count">${total}</span>${labelOf(k)} <span class="muted small">${dots}</span></span>`;
+    }).join('');
+    return `<div class="se-group-row"><h4 class="se-group-title">${gname}</h4><div class="se-pills">${pills}</div></div>`;
   }).join('');
 }
 
@@ -2905,7 +4270,14 @@ async function renderBadges(shots, weights) {
   });
   if (backfilled) await saveSettings();
   const dates = settings.achievementDates;
-  const ordered = [...unlocked].sort((a, b) => (dates[b.id] || '').localeCompare(dates[a.id] || ''));
+  // Sort newest-first by earned date; on ties (e.g. legacy backfills that all share today),
+  // fall back to reverse-canonical order so higher-tier / later-defined achievements appear first.
+  const idx = new Map(ACHIEVEMENTS.map((a, i) => [a.id, i]));
+  const ordered = [...unlocked].sort((a, b) => {
+    const cmp = (dates[b.id] || '').localeCompare(dates[a.id] || '');
+    if (cmp !== 0) return cmp;
+    return (idx.get(b.id) ?? 0) - (idx.get(a.id) ?? 0);
+  });
   const collapsed = !_badgesExpanded && ordered.length > 6;
   const visible = collapsed ? ordered.slice(0, 6) : ordered;
   const cards = visible.map(a => `<button type="button" class="badge-tile" data-badge-id="${a.id}" aria-label="Share ${escapeHTML(a.label)}"><img class="badge-tile-art" src="icons/achievements/${a.id}.webp" alt="" loading="lazy" onerror="this.style.display='none'"><span class="badge-tile-label">${escapeHTML(a.label)}</span></button>`).join('');
@@ -3015,11 +4387,33 @@ async function renderBadgeShareCanvas(a, earnedISO) {
   const heroSize = 600;
   const cx = W / 2, cy = H * 0.42;
   if (heroImg) {
+    // Circular clip hides the dark square frame baked into the WebP source.
+    // Step 1: draw a solid disk with shadow so the badge still has lift.
     ctx.save();
     ctx.shadowColor = 'rgba(0,0,0,0.55)';
     ctx.shadowBlur = 50;
     ctx.shadowOffsetY = 14;
+    ctx.fillStyle = '#0a0f24';
+    ctx.beginPath();
+    ctx.arc(cx, cy, heroSize / 2, 0, Math.PI * 2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+    // Step 2: clip to the disk and draw the hero on top — corners of the WebP are masked off.
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, cy, heroSize / 2, 0, Math.PI * 2);
+    ctx.closePath();
+    ctx.clip();
     ctx.drawImage(heroImg, cx - heroSize/2, cy - heroSize/2, heroSize, heroSize);
+    ctx.restore();
+    // Step 3: gilt ring around the circular badge.
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, cy, heroSize / 2 - 2, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(253,224,138,0.55)';
+    ctx.lineWidth = 3;
+    ctx.stroke();
     ctx.restore();
   } else {
     ctx.font = '320px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",system-ui';
@@ -3942,15 +5336,17 @@ function reapplyCurrentColorTheme() {
 
 function applyMoodStyle(styleId) {
   const s = MOOD_STYLES.find(x => x.id === styleId) || MOOD_STYLES[0];
+  const MOOD_LABELS = ['Awful', 'Low', 'Okay', 'Good', 'Great'];
   // Replace each mood picker button's inner SVG with a big emoji.
   // Default 'classic' keeps the hand-drawn smileys (which are SVG-based for theming) by NOT replacing — restore SVGs from MOOD_SVG.
   document.querySelectorAll('.mood-btn').forEach(btn => {
     const v = parseInt(btn.dataset.mood, 10);
     if (!Number.isFinite(v)) return;
+    const label = MOOD_LABELS[v - 1] || '';
     if (styleId === 'classic') {
-      btn.innerHTML = `<svg viewBox="0 0 32 32" class="mood-svg">${MOOD_SVG[v] || ''}</svg>`;
+      btn.innerHTML = `<svg viewBox="0 0 32 32" class="mood-svg">${MOOD_SVG[v] || ''}</svg><span class="mood-label">${label}</span>`;
     } else {
-      btn.innerHTML = `<span class="mood-emoji">${s.emojis[v - 1] || '🙂'}</span>`;
+      btn.innerHTML = `<span class="mood-emoji">${s.emojis[v - 1] || '🙂'}</span><span class="mood-label">${label}</span>`;
     }
   });
   // Logged-state mood display (parent div, not raw <svg>, so HTML children render).
@@ -3997,10 +5393,12 @@ function renderThemeGrid() {
 
 function applyAppetiteStyle(styleId) {
   const s = APPETITE_STYLES.find(x => x.id === styleId) || APPETITE_STYLES[0];
+  const APPETITE_LABELS = ['None', 'Low', 'Normal', 'Hungry', 'Ravenous'];
   document.querySelectorAll('.appetite-btn').forEach(btn => {
     const v = parseInt(btn.dataset.appetite, 10);
     if (!Number.isFinite(v)) return;
-    btn.innerHTML = `<span class="appetite-emoji">${s.emojis[v - 1] || '🍽️'}</span>`;
+    const label = APPETITE_LABELS[v - 1] || '';
+    btn.innerHTML = `<span class="appetite-emoji">${s.emojis[v - 1] || '🍽️'}</span><span class="mood-label">${label}</span>`;
   });
   // Logged graphic (parent div, supports HTML children).
   const loggedEl = document.getElementById('appetite-logged-graphic');
@@ -4201,11 +5599,17 @@ async function renderPlateau(weights, shots) {
   if (!isPremium()) { card.classList.add('hidden'); return; }
   const p = detectPlateau(weights, shots);
   if (!p) { card.classList.add('hidden'); return; }
-  body.innerHTML = `<p>Weight has stayed within 1 lb for ~${p.weeks} weeks at ${p.dose}mg.</p>
-    <p class="muted small">This is normal — most people experience plateaus during titration. Consider:
-    discussing a dose increase with your prescriber, reviewing protein intake (aim for 1g per lb of goal weight),
-    walking 8-10K steps/day, and ensuring you're eating in a sustainable deficit.</p>
-    <p class="muted small">Educational only. Not medical advice.</p>`;
+  // Maintenance mode reframes the same data as a stability win, not a problem to solve.
+  if (settings.maintenanceMode) {
+    body.innerHTML = `<p>Weight has stayed within 1 lb for ~${p.weeks} weeks at ${p.dose}mg — exactly what maintenance looks like. Holding steady is the goal here, not a plateau to break.</p>
+      <p class="muted small">If you ever want to switch back to weight-loss mode, toggle Maintenance off in Settings.</p>`;
+  } else {
+    body.innerHTML = `<p>Weight has stayed within 1 lb for ~${p.weeks} weeks at ${p.dose}mg.</p>
+      <p class="muted small">This is normal — most people experience plateaus during titration. Consider:
+      discussing a dose increase with your prescriber, reviewing protein intake (aim for 1g per lb of goal weight),
+      walking 8-10K steps/day, and ensuring you're eating in a sustainable deficit.</p>
+      <p class="muted small">Educational only. Not medical advice.</p>`;
+  }
   card.classList.remove('hidden');
 }
 
@@ -4238,6 +5642,8 @@ async function runPdfExport(opts) {
   const labs = inc('labs') ? (await getLabs()).filter(l => new Date(l.date) >= since) : [];
   const moodsAll = inc('moods') ? (await dbAll(STORES.moods) || []).filter(m => new Date(m.date) >= since).sort((a,b) => new Date(b.date)-new Date(a.date)) : [];
   const appetitesAll = inc('appetites') ? (await getAppetitesSorted()).filter(a => new Date(a.date) >= since) : [];
+  const foodNoiseAll = inc('foodNoise') ? (await getFoodNoiseSorted()).filter(f => new Date(f.date) >= since) : [];
+  const cyclesAll = (inc('cycles') && settings.cycleEnabled) ? (await getCyclesSorted()).filter(c => new Date(c.startDate) >= since) : [];
   const wd = weightDelta(weightsAll, settings.startWeight);
   const rShots = inc('shots') ? shotsAll.filter(s => new Date(s.when) >= since) : [];
   const rWeights = inc('weights') ? weightsAll.filter(w2 => new Date(w2.date) >= since) : [];
@@ -4303,6 +5709,17 @@ async function runPdfExport(opts) {
 
     ${inc('appetites') && appetitesAll.length ? `<h2>Appetite log</h2><table><thead><tr><th>Date</th><th>Appetite</th></tr></thead><tbody>
     ${appetitesAll.map(a => `<tr><td>${a.date}</td><td>${APP_TXT[a.value] || a.value}</td></tr>`).join('')}
+    </tbody></table>` : ''}
+
+    ${inc('foodNoise') && foodNoiseAll.length ? `<h2>Food noise log</h2><p class="meta">Daily 1-10 self-rating of mental food chatter (1 = quiet, 10 = constant).</p><table><thead><tr><th>Date</th><th>Score</th><th>Descriptor</th></tr></thead><tbody>
+    ${foodNoiseAll.map(f => `<tr><td>${f.date}</td><td>${f.value}/10</td><td>${foodNoiseDescriptor(f.value)}</td></tr>`).join('')}
+    </tbody></table>` : ''}
+
+    ${cyclesAll.length ? `<h2>Cycle log</h2><table><thead><tr><th>Start</th><th>End</th><th>Days</th><th>Flow</th><th>Symptoms</th></tr></thead><tbody>
+    ${cyclesAll.map(c => {
+      const dur = c.endDate ? Math.max(1, Math.round((new Date(c.endDate) - new Date(c.startDate)) / 86400000) + 1) : '—';
+      return `<tr><td>${escapeHTML(c.startDate)}</td><td>${escapeHTML(c.endDate || 'ongoing')}</td><td>${dur}</td><td>${escapeHTML(CYCLE_FLOW_LABELS[c.flow || ''] || '')}</td><td>${escapeHTML((c.symptoms || []).map(k => CYCLE_SYMPTOM_LABELS[k] || k).join(', '))}</td></tr>`;
+    }).join('')}
     </tbody></table>` : ''}
 
     ${inc('sideEffects') && sideEffectCounts.length ? `<h2>Side-effect summary</h2><table><thead><tr><th>Symptom</th><th>Total</th><th>Mild</th><th>Moderate</th><th>Severe</th></tr></thead><tbody>
@@ -4396,18 +5813,24 @@ async function buildPayload(opts) {
   const shots = inc('shots') ? filterByWhen((await dbAll(STORES.shots)) || []) : [];
   const weights = inc('weights') ? filterByWhen((await dbAll(STORES.weights)) || []) : [];
   const moods = inc('moods') ? filterByWhen((await dbAll(STORES.moods)) || []) : [];
-  let supplies = [], measurements = [], labs = [], expenses = [], appetites = [];
+  let supplies = [], measurements = [], labs = [], expenses = [], appetites = [], foodNoise = [], cycles = [];
   if (inc('supplies')) { try { supplies = await getSupplies(); } catch (e) {} }
   if (inc('measurements')) { try { measurements = filterByWhen(await getMeasurements()); } catch (e) {} }
   if (inc('labs')) { try { labs = filterByWhen(await getLabs()); } catch (e) {} }
   if (inc('expenses')) { try { expenses = filterByWhen(await getExpenses()); } catch (e) {} }
   if (inc('appetites')) { try { appetites = filterByWhen(await getAppetitesSorted()); } catch (e) {} }
+  if (inc('foodNoise')) { try { foodNoise = filterByWhen(await getFoodNoiseSorted()); } catch (e) {} }
+  // Cycles always sync if the user has any entries — toggling visibility off in
+  // settings doesn't drop the data from the encrypted blob.
+  if (inc('cycles')) { try { cycles = (await dbAll('cycles')) || []; } catch (e) {} }
+  let medChanges = [];
+  if (inc('medChanges')) { try { medChanges = (await dbAll('medChanges')) || []; } catch (e) {} }
   return {
-    version: 4,
+    version: 7,
     exportedAt: new Date().toISOString(),
     range: opts && opts.range ? opts.range : 'all',
     settings,
-    shots, weights, moods, appetites,
+    shots, weights, moods, appetites, foodNoise, cycles, medChanges,
     supplies, measurements, labs, expenses,
   };
 }
@@ -4451,13 +5874,20 @@ async function syncCloudExists(creds) {
 }
 
 async function applyPulledPayload(payload) {
+  // Refuse newer payloads we can't safely interpret — avoids silent data loss
+  // if a stale client pulls a blob written by a future schema.
+  const SUPPORTED_PAYLOAD_VERSION = 7;
+  const pv = Number(payload && payload.version) || 1;
+  if (pv > SUPPORTED_PAYLOAD_VERSION) {
+    throw new Error(`This cloud backup was written by a newer version of the app (payload v${pv}). Please update before restoring.`);
+  }
   // Ensure premium stores exist before clearing
   // openDB() already creates all stores in v5 onupgradeneeded — no separate ensureStore needed.
   await openDB();
   // Replace local data with cloud copy. Settings merge (preserve local sync creds).
   const db = await openDB();
   await new Promise((resolve, reject) => {
-    const stores = [STORES.shots, STORES.weights, STORES.moods, 'supplies', 'measurements', 'labs', 'expenses', 'appetites'];
+    const stores = [STORES.shots, STORES.weights, STORES.moods, 'supplies', 'measurements', 'labs', 'expenses', 'appetites', 'foodNoise', 'cycles', 'medChanges'];
     const t = db.transaction(stores, 'readwrite');
     stores.forEach(s => t.objectStore(s).clear());
     t.oncomplete = resolve; t.onerror = () => reject(t.error);
@@ -4470,6 +5900,9 @@ async function applyPulledPayload(payload) {
   }
   for (const m of (payload.moods || [])) await dbPut(STORES.moods, m);
   for (const a of (payload.appetites || [])) await saveAppetite(a.date, a.value);
+  for (const f of (payload.foodNoise || [])) await saveFoodNoise(f.date, f.value);
+  for (const c of (payload.cycles || [])) { delete c.id; await saveCycle(c); }
+  for (const m of (payload.medChanges || [])) { delete m.id; await saveMedChange(m); }
   for (const s of (payload.supplies || [])) { delete s.id; await saveSupply(s); }
   for (const m of (payload.measurements || [])) { delete m.id; await saveMeasurement(m); }
   for (const l of (payload.labs || [])) { delete l.id; await saveLab(l); }

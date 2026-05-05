@@ -165,10 +165,12 @@ canvas{width:100% !important;height:auto !important;max-height:200px}
 
 /* Appetite picker — same layout as mood, just emoji-based buttons */
 .appetite-emoji{font-size:2rem;line-height:1;display:flex;align-items:center;justify-content:center;width:48px;height:48px}
-.appetite-btn{padding:8px;background:transparent;border:none;border-radius:0;cursor:pointer;transition:transform .15s ease}
+.appetite-btn{padding:8px 4px;background:transparent;border:none;border-radius:0;cursor:pointer;transition:transform .15s ease;display:flex;flex-direction:column;align-items:center;gap:4px}
 .appetite-btn:hover{transform:translateY(-2px)}
 .appetite-btn.selected{background:transparent;box-shadow:none;transform:scale(1.18)}
 .appetite-btn.selected .appetite-emoji{filter:drop-shadow(0 0 6px var(--bronze))}
+.appetite-btn.selected .mood-label{color:var(--bronze-dk);font-weight:700}
+.mood-label{font-size:.68rem;font-weight:600;line-height:1;color:var(--muted);text-align:center;letter-spacing:.02em;display:block}
 .appetite-hint{margin-top:8px;text-align:center}
 .data-picker{border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin:10px 0;display:grid;grid-template-columns:1fr 1fr;gap:6px 14px}
 .data-picker legend{padding:0 6px;font-size:.85rem;color:var(--muted);font-weight:600}
@@ -257,10 +259,73 @@ canvas{width:100% !important;height:auto !important;max-height:200px}
 /* Mood */
 .mood-card .card-head h2{margin:0}
 .mood-picker{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-top:8px}
-.mood-btn{font-size:1.6rem;background:var(--surface-alt);border:1px solid transparent;border-radius:10px;padding:8px 0;cursor:pointer;transition:transform .15s ease,border-color .15s ease}
+.mood-btn{font-size:1.6rem;background:transparent;border:none;border-radius:0;padding:8px 4px;cursor:pointer;transition:transform .15s ease;display:flex;flex-direction:column;align-items:center;gap:4px}
 .mood-btn:hover{transform:translateY(-2px)}
-.mood-btn.selected{border-color:var(--bronze-dk);background:var(--bronze-lt);transform:scale(1.06)}
+.mood-btn.selected{background:transparent;transform:scale(1.12)}
+.mood-btn.selected .mood-emoji,.mood-btn.selected .mood-svg{filter:drop-shadow(0 0 6px var(--bronze))}
+.mood-btn.selected .mood-label{color:var(--bronze-dk);font-weight:700}
 .mood-saved{font-style:italic}
+
+/* Food noise (1-10 slider) */
+.foodnoise-picker{display:flex;flex-direction:column;gap:10px;margin-top:8px}
+.foodnoise-slider-row{display:flex;align-items:center;gap:10px}
+.foodnoise-slider-row input[type=range]{flex:1;accent-color:var(--bronze)}
+.foodnoise-end-label{flex-shrink:0}
+.foodnoise-readout{text-align:center;font-size:1.4rem;font-weight:700;color:var(--bronze-dk);font-variant-numeric:tabular-nums}
+.foodnoise-readout .muted{font-weight:400}
+.foodnoise-save{align-self:center;padding:8px 22px}
+.foodnoise-hint{margin-top:4px;text-align:center}
+.foodnoise-logged-graphic{font-size:2.2rem;font-weight:700;color:var(--bronze-dk);font-variant-numeric:tabular-nums;display:flex;align-items:baseline;gap:2px}
+.foodnoise-logged-suffix{font-size:1rem;color:var(--muted);font-weight:500}
+
+/* Guidance (titration & missed-dose reference) */
+.guidance-hint{margin:8px 14px 0;padding:10px 14px;background:rgba(199,145,91,.1);border:1px solid var(--bronze-dk);border-radius:10px;font-size:.9rem}
+.guidance-hint a{color:var(--bronze-dk);font-weight:600;text-decoration:none}
+.guidance-hint a:hover{text-decoration:underline}
+.guidance-modal{padding:20px 22px;max-width:560px}
+.guidance-modal h3{margin:0 0 8px;font-size:1.2rem}
+.guidance-modal h4{margin:14px 0 4px;font-size:.95rem}
+.guidance-modal p{line-height:1.55;font-size:.95rem}
+.guidance-actions,.guidance-questions{margin:6px 0 8px;padding-left:22px;line-height:1.55}
+.guidance-actions li,.guidance-questions li{margin-bottom:4px}
+.guidance-disclaimer{margin-top:14px;padding-top:8px;border-top:1px dashed var(--line)}
+.guidance-close{position:absolute;top:8px;right:10px;font-size:1.4rem;line-height:1;padding:4px 10px}
+
+/* Medication history */
+.medchange-head{display:flex;justify-content:space-between;align-items:center;margin:8px 0 4px}
+.medchanges-list{display:flex;flex-direction:column;gap:6px;margin-top:6px}
+.medchange-row{background:var(--surface-alt);border:1px solid var(--line);border-radius:8px;padding:8px 10px;display:flex;flex-direction:column;gap:2px}
+.medchange-row .btn-ghost{align-self:flex-end;font-size:.78rem;padding:2px 8px}
+
+/* Trial benchmark selector on weight chart */
+.benchmark-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:6px 0 4px}
+.benchmark-row select{margin:0;padding:4px 6px;font-size:.82rem;width:auto;max-width:60%}
+.lock-pill.hidden{display:none}
+
+/* Insights / Patterns */
+.insights-list{display:flex;flex-direction:column;gap:8px;margin-top:8px}
+.insight-card{display:block;width:100%;text-align:left;background:var(--surface-alt);border:1px solid var(--line);border-radius:10px;padding:12px 14px;cursor:pointer;font:inherit;color:var(--text);transition:transform .12s,border-color .15s,background .15s}
+.insight-card:not(.pending):hover{transform:translateY(-1px);border-color:var(--bronze)}
+.insight-card.pending{cursor:default;opacity:.78}
+.insight-card.locked{cursor:pointer}
+.insight-card.locked:hover{border-color:var(--bronze-dk);background:rgba(199,145,91,.05)}
+.insight-card.is-premium{border-left:3px solid var(--bronze-dk)}
+.insight-head{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:4px}
+.insight-head strong{font-size:.95rem}
+.insight-card p{margin:0;font-size:.88rem;line-height:1.5}
+
+/* Cycle tracking */
+.lock-pill.optional{background:var(--surface-alt);color:var(--muted);font-weight:600;font-size:.65rem;text-transform:uppercase;letter-spacing:.06em;padding:2px 8px;border-radius:999px;margin-left:6px;vertical-align:1px}
+.btn-danger.small,.btn-primary.small{padding:6px 12px;font-size:.85rem}
+.cycle-list{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+.cycle-row{text-align:left;width:100%;background:var(--surface-alt);border:1px solid var(--line);border-radius:10px;padding:10px 12px;cursor:pointer;font:inherit;color:var(--text);transition:border-color .15s,transform .1s}
+.cycle-row:hover{border-color:var(--bronze);transform:translateY(-1px)}
+.cycle-row-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:4px;font-size:.92rem}
+.cycle-row-symptoms{font-size:.82rem;color:var(--text)}
+.cycle-row-notes{margin-top:4px}
+.cycle-symptoms{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:4px 10px;margin-top:6px}
+.check-row{display:flex;align-items:center;gap:8px;cursor:pointer;font-size:.9rem}
+.check-row.small{font-size:.82rem}
 
 /* Body diagram */
 .body-diagram-wrap{display:flex;justify-content:center;padding:6px 0}
@@ -276,19 +341,16 @@ canvas{width:100% !important;height:auto !important;max-height:200px}
 .swatch.medium{background:#0d9488}
 .swatch.fresh{background:#5eead4}
 .swatch.unused{background:transparent;border:1.5px solid var(--bronze-dk)}
-
-/* Heatmap */
-.heatmap-wrap{overflow-x:auto;padding:4px 0;-webkit-overflow-scrolling:touch}
-.heatmap-grid{display:grid;grid-template-rows:repeat(7,12px);grid-auto-flow:column;grid-auto-columns:12px;gap:2px;direction:ltr;min-width:max-content}
-.heatmap-cell{width:12px;height:12px;border-radius:3px;background:var(--surface-alt);transition:background .25s ease}
-/* Heatmap tiers now derive from the active theme primary using color-mix so it themes automatically. */
-.heatmap-cell.l1{background:color-mix(in srgb, var(--bronze) 35%, var(--surface-alt))}
-.heatmap-cell.l2{background:color-mix(in srgb, var(--bronze) 65%, var(--surface-alt))}
-.heatmap-cell.l3{background:var(--bronze)}
-.heatmap-cell.l4{background:var(--bronze-dk)}
-.heatmap-cell.legend{display:inline-block;margin:0 2px}
-.heatmap-cell.today{outline:2px solid var(--accent);outline-offset:1px}
-.heatmap-legend{display:flex;align-items:center;gap:4px;justify-content:flex-end;margin-top:6px}
+.body-diagram-wrap{flex-direction:column;align-items:center}
+.body-custom-chips{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-top:8px;padding:0 8px;max-width:340px}
+.body-custom-chip{font:inherit;font-size:.78rem;font-weight:600;padding:4px 10px;border-radius:999px;border:1.5px solid var(--bronze-dk);background:transparent;color:var(--text);cursor:pointer;transition:transform .15s,background .15s}
+.body-custom-chip:hover{transform:translateY(-1px);background:var(--surface-alt)}
+.body-custom-chip.recent{border-color:#c2410c;background:rgba(251,146,60,.18);color:#9a3412}
+.body-custom-chip.medium{border-color:#0f766e;background:rgba(13,148,136,.18);color:#0f766e}
+.body-custom-chip.fresh{border-color:#14b8a6;background:rgba(94,234,212,.18);color:#0f766e}
+[data-theme="dark"] .body-custom-chip{color:var(--text)}
+[data-theme="dark"] .body-custom-chip.recent{color:#fcd34d}
+[data-theme="dark"] .body-custom-chip.medium,[data-theme="dark"] .body-custom-chip.fresh{color:#5eead4}
 
 /* Dose timeline strip */
 .dose-timeline-wrap{margin-top:14px;border-top:1px dashed var(--line);padding-top:10px}
@@ -303,12 +365,17 @@ canvas{width:100% !important;height:auto !important;max-height:200px}
 .dose-arrow.down{color:#dc2626}
 
 /* Side effects */
-.se-grid{display:grid;grid-template-columns:1fr;gap:6px;margin-top:8px}
+.se-grid{display:grid;grid-template-columns:1fr;gap:10px;margin-top:8px}
+.se-group{display:flex;flex-direction:column;gap:4px}
+.se-group-title{margin:6px 0 2px;font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
 .se-row{display:flex;align-items:center;justify-content:space-between;padding:4px 8px;border-radius:8px;background:var(--surface-alt)}
 .se-row label{margin:0;flex:1;color:var(--ink);font-size:.85rem}
 .se-row select{margin-top:0;padding:4px 6px;font-size:.8rem;width:auto;min-width:90px}
+.se-group-row{margin-bottom:8px}
+.se-group-row .se-group-title{margin:0 0 4px}
+.se-pills{display:flex;flex-wrap:wrap;gap:6px}
 .se-details summary{cursor:pointer;color:var(--bronze-dk);font-weight:600;padding:6px 0}
-.side-effects-summary{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
+.side-effects-summary{display:flex;flex-direction:column;gap:8px;margin-top:4px}
 .se-pill{background:var(--surface-alt);border:1px solid var(--line);border-radius:999px;padding:4px 10px;font-size:.78rem;display:flex;align-items:center;gap:6px}
 .se-pill .se-count{font-weight:700;color:var(--bronze-dk)}
 .se-pill.severe{border-color:var(--accent);background:rgba(249,115,22,.1)}

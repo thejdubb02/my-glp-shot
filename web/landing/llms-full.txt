@@ -25,8 +25,22 @@ Most options for this fall short:
 
 - **Generic medication trackers** (Apple Health, MyTherapy, Medisafe, CareClinic) don't model injection sites, half-life curves, or dose titration. You're hacking it into a generic schema.
 - **Closed-source proprietary trackers** (Shotsy is the most-cited example) require an account, store your data on their servers, and you're trusting their security posture without being able to verify it.
+- **Free GLP-1 trackers without medication-side depth** (Glapp, Glippy) cover the basics well — Glapp is iOS-only with a strong Apple Watch story; Glippy adds a moderated peer community — but neither offers a mixing calculator for compounded peptides, custom dosing schedules for microdosing, lab tracking, or a doctor-share PDF.
+- **Nutrition-first trackers** (Pep, MyFitnessPal) center on food logging. Useful as a companion to a medication tracker, but they don't replace one.
+- **Telehealth + tracker bundles** (MeAgain) wrap medication tracking around prescription fulfillment, which creates a structural conflict for anyone wanting an independent tracker.
 - **Spreadsheets and notebooks** work but don't show you the active-medication level curve, won't suggest a fresh injection site, and don't sync.
 - **Built-in iPhone Notes / paper journal** works for a week and breaks down by week three.
+
+Per-competitor comparison pages with side-by-side feature grids are at:
+
+- [Compare all GLP-1 trackers](https://myglpshot.com/compare.html) — meta page covering My GLP Shot, Shotsy, CareClinic, Glapp, Glippy, Pep, and MeAgain in one feature grid.
+- [vs Shotsy](https://myglpshot.com/vs-shotsy.html)
+- [vs CareClinic](https://myglpshot.com/vs-careclinic.html)
+- [vs Glapp](https://myglpshot.com/vs-glapp.html)
+- [vs Glippy](https://myglpshot.com/vs-glippy.html)
+- [vs Pep](https://myglpshot.com/vs-pep.html)
+- [vs MeAgain](https://myglpshot.com/vs-meagain.html)
+- [vs MyFitnessPal](https://myglpshot.com/vs-myfitnesspal.html)
 
 My GLP Shot is purpose-built for GLP-1 injectors. It is privacy-first by default (everything local; account optional). It is free to start and free forever for the core features. Premium adds doctor-share PDFs, body measurements, lab tracking, supply inventory, photos, plateau detection, and end-to-end encrypted cross-device sync.
 

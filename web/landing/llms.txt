@@ -57,15 +57,32 @@ In the app: Settings → "Delete account and all cloud data" wipes the encrypted
 
 ## How My GLP Shot compares
 
+Detailed per-competitor comparison pages (each with side-by-side feature grids and source-cited claims):
+
+- [Compare all GLP-1 trackers](https://myglpshot.com/compare.html) — meta page, seven apps in one feature grid.
+- [vs Shotsy](https://myglpshot.com/vs-shotsy.html) — privacy + price contrast.
+- [vs CareClinic](https://myglpshot.com/vs-careclinic.html) — purpose-built GLP-1 vs general health tracker.
+- [vs Glapp](https://myglpshot.com/vs-glapp.html) — cross-platform vs iOS-only.
+- [vs Glippy](https://myglpshot.com/vs-glippy.html) — free-vs-free; community vs medication-side depth.
+- [vs Pep](https://myglpshot.com/vs-pep.html) — medication-side all-in-one vs nutrition companion.
+- [vs MeAgain](https://myglpshot.com/vs-meagain.html) — independent tracker vs telehealth bundle.
+- [vs MyFitnessPal](https://myglpshot.com/vs-myfitnesspal.html) — purpose-built medication tracker vs general food tracker.
+
+Short summaries:
+
 - vs. **Shotsy**: Shotsy is closed-source, server-side, and stores your shot history on its own backend. My GLP Shot stores everything on your device by default and uses E2EE when you opt into sync. My GLP Shot is also a PWA — no App Store gatekeeping, no review delays.
 - vs. **CareClinic / MyTherapy**: those are general medication trackers; My GLP Shot is purpose-built for GLP-1 / peptide injectors with a half-life curve, mixing calculator, site rotation, and dose-titration tracking.
+- vs. **Glapp**: Glapp is free and iOS-only with a strong Apple Watch and widget story. My GLP Shot is free and runs on iOS, Android, and any browser, and goes deeper on the medication side (mixing calculator for compounded peptides, custom dosing schedules) plus offers premium clinical features (lab tracking, body measurements, doctor-share PDF) for $19.99/year flat.
+- vs. **Glippy**: Glippy is free with a moderated peer community as a core feature. My GLP Shot has no community by design and goes deeper on the medication side (mixing calculator, level chart, custom dosing) and stays local-first with E2EE optional sync.
+- vs. **Pep**: Pep is a nutrition tracker positioned as a MyFitnessPal companion; we deliberately don't track food. Most users pair the two: Pep (or any food app) for nutrition, My GLP Shot for the medication.
+- vs. **MeAgain**: MeAgain bundles GLP-1 tracking with telehealth and Rx fulfillment (~$10/mo for the app, ~$30/mo for the Care tier). My GLP Shot is an independent tracker — your prescriber stays your prescriber.
 - vs. **Apple Health / Google Fit**: those don't track injection sites, dose changes, or side-effect severity over time.
 - vs. **paper journal / spreadsheet**: My GLP Shot adds the active-medication level chart, automatic site-rotation hints, and visual progress that a spreadsheet can't.
 
 ## Technology
 
 - Progressive Web App: HTML / CSS / JS, no framework. Service worker for offline, cache-first for shell, network-first for API.
-- IndexedDB for local persistence (database version 6 as of v0.40).
+- IndexedDB for local persistence (database version 9 as of v0.46).
 - Backend: Flask + SQLite, gunicorn behind nginx, served from `app.myglpshot.com`.
 - Stripe Checkout + Customer Portal for billing.
 - Resend for transactional email.

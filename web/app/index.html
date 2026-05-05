@@ -195,11 +195,11 @@
       </div>
     </div>
     <div id="mood-picker" class="mood-picker">
-      <button data-mood="1" class="mood-btn" type="button" aria-label="Awful"><svg viewBox="0 0 32 32" class="mood-svg"><circle cx="16" cy="16" r="14" class="mood-bg"/><circle cx="11" cy="13" r="1.5" class="mood-eye"/><circle cx="21" cy="13" r="1.5" class="mood-eye"/><path d="M10 22 Q16 17 22 22" fill="none" class="mood-mouth"/></svg></button>
-      <button data-mood="2" class="mood-btn" type="button" aria-label="Low"><svg viewBox="0 0 32 32" class="mood-svg"><circle cx="16" cy="16" r="14" class="mood-bg"/><circle cx="11" cy="13" r="1.5" class="mood-eye"/><circle cx="21" cy="13" r="1.5" class="mood-eye"/><path d="M11 21 Q16 18 21 21" fill="none" class="mood-mouth"/></svg></button>
-      <button data-mood="3" class="mood-btn" type="button" aria-label="Okay"><svg viewBox="0 0 32 32" class="mood-svg"><circle cx="16" cy="16" r="14" class="mood-bg"/><circle cx="11" cy="13" r="1.5" class="mood-eye"/><circle cx="21" cy="13" r="1.5" class="mood-eye"/><line x1="11" y1="20" x2="21" y2="20" class="mood-mouth"/></svg></button>
-      <button data-mood="4" class="mood-btn" type="button" aria-label="Good"><svg viewBox="0 0 32 32" class="mood-svg"><circle cx="16" cy="16" r="14" class="mood-bg"/><circle cx="11" cy="13" r="1.5" class="mood-eye"/><circle cx="21" cy="13" r="1.5" class="mood-eye"/><path d="M10 19 Q16 24 22 19" fill="none" class="mood-mouth"/></svg></button>
-      <button data-mood="5" class="mood-btn" type="button" aria-label="Great"><svg viewBox="0 0 32 32" class="mood-svg"><circle cx="16" cy="16" r="14" class="mood-bg"/><path d="M9 12 Q11 11 13 12" fill="none" class="mood-eye-arc"/><path d="M19 12 Q21 11 23 12" fill="none" class="mood-eye-arc"/><path d="M9 18 Q16 26 23 18 Z" class="mood-mouth-fill"/></svg></button>
+      <button data-mood="1" class="mood-btn" type="button" aria-label="Awful"><svg viewBox="0 0 32 32" class="mood-svg"><circle cx="16" cy="16" r="14" class="mood-bg"/><circle cx="11" cy="13" r="1.5" class="mood-eye"/><circle cx="21" cy="13" r="1.5" class="mood-eye"/><path d="M10 22 Q16 17 22 22" fill="none" class="mood-mouth"/></svg><span class="mood-label">Awful</span></button>
+      <button data-mood="2" class="mood-btn" type="button" aria-label="Low"><svg viewBox="0 0 32 32" class="mood-svg"><circle cx="16" cy="16" r="14" class="mood-bg"/><circle cx="11" cy="13" r="1.5" class="mood-eye"/><circle cx="21" cy="13" r="1.5" class="mood-eye"/><path d="M11 21 Q16 18 21 21" fill="none" class="mood-mouth"/></svg><span class="mood-label">Low</span></button>
+      <button data-mood="3" class="mood-btn" type="button" aria-label="Okay"><svg viewBox="0 0 32 32" class="mood-svg"><circle cx="16" cy="16" r="14" class="mood-bg"/><circle cx="11" cy="13" r="1.5" class="mood-eye"/><circle cx="21" cy="13" r="1.5" class="mood-eye"/><line x1="11" y1="20" x2="21" y2="20" class="mood-mouth"/></svg><span class="mood-label">Okay</span></button>
+      <button data-mood="4" class="mood-btn" type="button" aria-label="Good"><svg viewBox="0 0 32 32" class="mood-svg"><circle cx="16" cy="16" r="14" class="mood-bg"/><circle cx="11" cy="13" r="1.5" class="mood-eye"/><circle cx="21" cy="13" r="1.5" class="mood-eye"/><path d="M10 19 Q16 24 22 19" fill="none" class="mood-mouth"/></svg><span class="mood-label">Good</span></button>
+      <button data-mood="5" class="mood-btn" type="button" aria-label="Great"><svg viewBox="0 0 32 32" class="mood-svg"><circle cx="16" cy="16" r="14" class="mood-bg"/><path d="M9 12 Q11 11 13 12" fill="none" class="mood-eye-arc"/><path d="M19 12 Q21 11 23 12" fill="none" class="mood-eye-arc"/><path d="M9 18 Q16 26 23 18 Z" class="mood-mouth-fill"/></svg><span class="mood-label">Great</span></button>
     </div>
   </section>
 
@@ -215,13 +215,38 @@
       </div>
     </div>
     <div id="appetite-picker" class="mood-picker">
-      <button data-appetite="1" class="appetite-btn" type="button" aria-label="None"><span class="appetite-emoji">🚫</span></button>
-      <button data-appetite="2" class="appetite-btn" type="button" aria-label="Low"><span class="appetite-emoji">🤏</span></button>
-      <button data-appetite="3" class="appetite-btn" type="button" aria-label="Normal"><span class="appetite-emoji">🍽️</span></button>
-      <button data-appetite="4" class="appetite-btn" type="button" aria-label="Hungry"><span class="appetite-emoji">😋</span></button>
-      <button data-appetite="5" class="appetite-btn" type="button" aria-label="Ravenous"><span class="appetite-emoji">😅</span></button>
+      <button data-appetite="1" class="appetite-btn" type="button" aria-label="None"><span class="appetite-emoji">🚫</span><span class="mood-label">None</span></button>
+      <button data-appetite="2" class="appetite-btn" type="button" aria-label="Low"><span class="appetite-emoji">🤏</span><span class="mood-label">Low</span></button>
+      <button data-appetite="3" class="appetite-btn" type="button" aria-label="Normal"><span class="appetite-emoji">🍽️</span><span class="mood-label">Normal</span></button>
+      <button data-appetite="4" class="appetite-btn" type="button" aria-label="Hungry"><span class="appetite-emoji">😋</span><span class="mood-label">Hungry</span></button>
+      <button data-appetite="5" class="appetite-btn" type="button" aria-label="Ravenous"><span class="appetite-emoji">😅</span><span class="mood-label">Ravenous</span></button>
     </div>
     <p class="muted small appetite-hint">For GLP-1 users, lower numbers usually mean the medication is working.</p>
+  </section>
+
+  <p id="guidance-hint" class="guidance-hint hidden" data-tab="home"></p>
+
+  <section class="card foodnoise-card" data-tab="home" id="foodnoise-card">
+    <div class="card-head"><h2 id="foodnoise-heading">How loud is the food noise today? <button class="info-btn" type="button" data-info="food-noise" aria-label="About this">i</button></h2><span id="foodnoise-saved" class="mood-saved muted small"></span></div>
+    <div id="foodnoise-logged" class="mood-logged hidden">
+      <div class="mood-logged-row">
+        <div class="mood-logged-graphic foodnoise-logged-graphic"><span id="foodnoise-logged-value">—</span><span class="foodnoise-logged-suffix">/10</span></div>
+        <div class="mood-logged-text">
+          <strong id="foodnoise-logged-label">Logged</strong>
+          <span class="muted small">Logged today · <a href="#" id="foodnoise-change" class="link">change</a></span>
+        </div>
+      </div>
+    </div>
+    <div id="foodnoise-picker" class="foodnoise-picker">
+      <div class="foodnoise-slider-row">
+        <span class="foodnoise-end-label muted small">Quiet</span>
+        <input id="foodnoise-slider" type="range" min="1" max="10" step="1" value="5" aria-label="Food noise intensity, 1 = quiet, 10 = constant chatter">
+        <span class="foodnoise-end-label muted small">Loud</span>
+      </div>
+      <div class="foodnoise-readout"><span id="foodnoise-value">5</span><span class="muted small">/10</span> · <span id="foodnoise-descriptor" class="muted small">moderate</span></div>
+      <button type="button" id="foodnoise-save" class="btn-primary foodnoise-save">Save today</button>
+    </div>
+    <p class="muted small foodnoise-hint">"Food noise" = the mental chatter about food (intrusive thoughts, food obsession). Distinct from physical hunger/appetite.</p>
   </section>
 
   <section class="card" data-tab="home">
@@ -287,8 +312,23 @@
     <p class="muted small">An estimate of how much medication is still active in your body, based on your shots and the half-life you set in Settings (Tirzepatide is about 5 days). The line shows your active level rising after each shot and slowly fading. This is for understanding your cycle only, not a clinical measurement.</p>
   </section>
 
+  <section id="insights-card" class="card" data-tab="insights">
+    <div class="card-head"><h2>Patterns <button class="info-btn" type="button" data-info="insights" aria-label="About this">i</button></h2><span class="muted small" id="insights-summary"></span></div>
+    <div id="insights-list" class="insights-list"></div>
+    <p id="insights-empty" class="muted small hidden">Patterns appear here as you log more data — usually after 4-8 shots.</p>
+  </section>
+
   <section class="card" data-tab="insights">
     <div class="card-head"><h2>Weight <button class="info-btn" type="button" data-info="weight-chart" aria-label="About this">i</button></h2><button id="add-weight-btn" class="btn-ghost">+ Add</button></div>
+    <label class="benchmark-row muted small">
+      <span>Trial benchmark <span class="lock-pill" id="benchmark-lock">Premium</span></span>
+      <select id="benchmark-select">
+        <option value="">— off —</option>
+        <option value="surmount1">SURMOUNT-1 (Tirzepatide 15mg)</option>
+        <option value="step1">STEP-1 (Semaglutide 2.4mg)</option>
+        <option value="scale">SCALE (Liraglutide 3mg)</option>
+      </select>
+    </label>
     <div class="range-bar" role="group" aria-label="Chart range">
       <button class="range-btn" type="button" data-range="30">1M</button>
       <button class="range-btn" type="button" data-range="90">3M</button>
@@ -315,27 +355,65 @@
     <p class="muted small">Each bar is one day. Lower = more suppressed (medication working). Empty = not logged.</p>
   </section>
 
+  <section id="foodnoise-trend-card" class="card hidden" data-tab="insights">
+    <div class="card-head"><h2>Food noise trend <button class="info-btn" type="button" data-info="food-noise" aria-label="About this">i</button></h2><span id="foodnoise-trend-summary" class="muted small"></span></div>
+    <div id="foodnoise-trend-bars" class="mood-trend-bars"></div>
+    <p class="muted small">Each bar is one day. Lower = quieter (mental food chatter is calmer). Empty = not logged.</p>
+  </section>
+
+  <section id="cycle-card" class="card hidden" data-tab="insights">
+    <div class="card-head"><h2>Cycle <button class="info-btn" type="button" data-info="cycle-tracking" aria-label="About this">i</button></h2><button type="button" id="cycle-add-btn" class="btn-primary small">+ Log period</button></div>
+    <div id="cycle-list" class="cycle-list"></div>
+    <p id="cycle-empty" class="empty hidden"><span class="empty-illus">🌸</span><br>No cycle entries yet. Tap <strong>+ Log period</strong> to add one.</p>
+  </section>
+
+  <dialog id="guidance-dialog" class="modal">
+    <div class="guidance-modal">
+      <button id="guidance-close" type="button" class="btn-ghost guidance-close" aria-label="Close">×</button>
+      <div id="guidance-body"></div>
+      <div class="modal-actions">
+        <span class="spacer"></span>
+        <button type="button" id="guidance-done" class="btn-primary">Got it</button>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="cycle-dialog">
+    <form id="cycle-form" class="modal-form">
+      <h3 id="cycle-form-title">Log period</h3>
+      <input type="hidden" id="cycle-id">
+      <label>Start date <input id="cycle-start" type="date" required></label>
+      <label>End date (optional, leave blank if ongoing) <input id="cycle-end" type="date"></label>
+      <label>Flow
+        <select id="cycle-flow">
+          <option value="">— not specified —</option>
+          <option value="spotting">Spotting</option>
+          <option value="light">Light</option>
+          <option value="normal">Normal</option>
+          <option value="heavy">Heavy</option>
+        </select>
+      </label>
+      <fieldset class="se-group">
+        <legend class="se-group-title">Symptoms</legend>
+        <div id="cycle-symptoms" class="cycle-symptoms"></div>
+      </fieldset>
+      <label>Notes <textarea id="cycle-notes" rows="2" maxlength="1000"></textarea></label>
+      <div class="modal-actions">
+        <button type="button" id="cycle-delete" class="btn-danger hidden">Delete</button>
+        <span class="spacer"></span>
+        <button type="button" id="cycle-cancel" class="btn-ghost">Cancel</button>
+        <button type="submit" class="btn-primary">Save</button>
+      </div>
+    </form>
+  </dialog>
+
   <section id="mood-trend-card" class="card hidden" data-tab="insights">
     <div class="card-head"><h2>Mood trend <button class="info-btn" type="button" data-info="mood-trend" aria-label="About this">i</button></h2><span id="mood-trend-summary" class="muted small"></span></div>
     <div id="mood-trend-bars" class="mood-trend-bars"></div>
     <p class="muted small" id="mood-trend-hint">Each bar is one day. Taller = better. Tap the home tab to log today.</p>
   </section>
 
-  <section class="card" data-tab="insights">
-    <div class="card-head"><h2>Calendar <button class="info-btn" type="button" data-info="calendar-heatmap" aria-label="About this">i</button></h2><span id="heatmap-summary" class="muted small"></span></div>
-    <div id="heatmap-wrap" class="heatmap-wrap"></div>
-    <div class="heatmap-legend">
-      <span class="muted small">Less</span>
-      <span class="heatmap-cell legend"></span>
-      <span class="heatmap-cell legend l1"></span>
-      <span class="heatmap-cell legend l2"></span>
-      <span class="heatmap-cell legend l3"></span>
-      <span class="heatmap-cell legend l4"></span>
-      <span class="muted small">More</span>
-    </div>
-  </section>
-
-  <section class="card" data-tab="insights">
+<section class="card" data-tab="insights">
     <div class="card-head"><h2>How you've been feeling</h2><span class="muted small">Last 30 days</span></div>
     <div id="side-effects-summary" class="side-effects-summary"></div>
     <p id="empty-side-effects" class="empty"><span class="empty-illus">✓</span><br>No symptoms logged. Add them when you log a shot.</p>
@@ -476,6 +554,19 @@
 
   <section class="card">
     <h2>Medication</h2>
+    <label>Preset
+      <select id="set-med-preset">
+        <option value="tirzepatide">Tirzepatide (Mounjaro / Zepbound)</option>
+        <option value="semaglutide">Semaglutide (Ozempic / Wegovy)</option>
+        <option value="liraglutide">Liraglutide (Saxenda / Victoza)</option>
+        <option value="dulaglutide">Dulaglutide (Trulicity)</option>
+        <option value="exenatide-er">Exenatide ER (Bydureon)</option>
+        <option value="exenatide">Exenatide (Byetta)</option>
+        <option value="retatrutide">Retatrutide (research)</option>
+        <option value="custom">Custom</option>
+      </select>
+    </label>
+    <p class="muted small" id="set-med-preset-hint">Picking a preset suggests sensible defaults; you can still override any field below.</p>
     <label>Name <input id="set-med" type="text" placeholder="Tirzepatide"></label>
     <label>Default dose (mg) <input id="set-dose" type="number" step="0.1" min="0"></label>
     <label>Cadence (days between shots) <input id="set-cadence" type="number" min="1" max="30"></label>
@@ -484,12 +575,31 @@
       <button id="save-medication" class="btn-primary" type="button" data-save-group="medication">Save</button>
       <span class="save-status muted small" data-save-status="medication"></span>
     </div>
+    <hr style="margin:14px 0;border:0;border-top:1px solid var(--line)">
+    <div class="medchange-head">
+      <strong>Medication history</strong>
+      <button type="button" id="medchange-log-btn" class="btn-ghost small">+ Log change</button>
+    </div>
+    <p class="muted small">If you switch medications (e.g. Ozempic → Mounjaro), log the change here so your charts stay readable across the transition. Each entry snapshots the drug + half-life + cadence at that moment.</p>
+    <div id="medchanges-list" class="medchanges-list"></div>
+  </section>
+
+  <section class="card" id="cycle-settings-card">
+    <h2>Menstrual cycle tracking <span class="lock-pill optional">Optional</span></h2>
+    <p class="muted small">GLP-1 medications can affect cycle length, flow, and symptoms. Tracking is fully opt-in — local-first like everything else, end-to-end encrypted if you sync. Toggling off later <strong>preserves</strong> your existing entries; they re-appear if you turn it back on. To erase cycle data permanently, use "Delete all cycle entries" below.</p>
+    <label class="check-row"><input id="set-cycle-enabled" type="checkbox"> Show cycle tracking (period log + symptoms)</label>
+    <div id="cycle-settings-extras" class="hidden">
+      <p class="muted small" style="margin-top:10px">When enabled, a "Cycle" card appears on the Insights tab where you can log period start, end, flow, and symptoms.</p>
+      <button id="cycle-data-clear" type="button" class="btn-danger small">Delete all cycle entries</button>
+    </div>
   </section>
 
   <section class="card">
     <h2>Weight goals</h2>
     <label>Starting weight (lb) <input id="set-start-weight" type="number" step="0.1" min="0" placeholder="auto-detected from first entry"></label>
     <label>Goal weight (lb) <input id="set-goal-weight" type="number" step="0.1" min="0"></label>
+    <label class="check-row" style="margin-top:8px"><input id="set-maintenance" type="checkbox"> Maintenance mode</label>
+    <p class="muted small">When on, the home screen reframes your goal bar as a stability indicator and plateau alerts read as "holding steady" rather than "needs to be solved." Use after you've hit your target.</p>
     <div class="btn-row">
       <button id="save-weight-goals" class="btn-primary" type="button" data-save-group="weight">Save</button>
       <span class="save-status muted small" data-save-status="weight"></span>
@@ -618,13 +728,26 @@
     <label>Injection site
       <select id="shot-site">
         <option value="">— select —</option>
-        <option>Abdomen — Left</option>
-        <option>Abdomen — Right</option>
-        <option>Thigh — Left</option>
-        <option>Thigh — Right</option>
-        <option>Upper arm — Left</option>
-        <option>Upper arm — Right</option>
+        <optgroup label="Abdomen (4 quadrants)">
+          <option>Abdomen — Upper Left</option>
+          <option>Abdomen — Upper Right</option>
+          <option>Abdomen — Lower Left</option>
+          <option>Abdomen — Lower Right</option>
+        </optgroup>
+        <optgroup label="Thigh">
+          <option>Thigh — Left</option>
+          <option>Thigh — Right</option>
+        </optgroup>
+        <optgroup label="Upper arm">
+          <option>Upper arm — Left</option>
+          <option>Upper arm — Right</option>
+        </optgroup>
+        <optgroup id="shot-site-custom-group" label="Your custom sites" hidden></optgroup>
+        <option value="__custom">Custom site…</option>
       </select>
+    </label>
+    <label id="shot-site-custom-row" class="hidden">Custom site name
+      <input id="shot-site-custom" type="text" maxlength="60" placeholder="e.g. Left flank, Glute, Outer thigh">
     </label>
     <p id="site-suggestion" class="muted small"></p>
     <label>Notes <textarea id="shot-notes" rows="2"></textarea></label>
