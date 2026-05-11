@@ -9,7 +9,7 @@ const DB_NAME = 'shotclock';
 // v8 bump: 'cycles' store added — opt-in menstrual cycle tracking (period start/end, flow, symptoms).
 // v9 bump: 'medChanges' store added — medication switches as discrete events so charts stay readable across drug changes.
 const DB_VERSION = 9;
-const APP_VERSION = '0.47.0';
+const APP_VERSION = '0.47.1';
 
 // Umami event tracker. Aggregates only — no PII (no email, no IDs). Safe to call before umami loads.
 function track(event, props) {

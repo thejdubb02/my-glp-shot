@@ -477,14 +477,6 @@
     <p id="expense-empty" class="empty"><span class="empty-illus">💵</span><br>Add medication copays, pharmacy fees, labs, or any other expenses to see total spend and dollars per pound lost.</p>
   </section>
 
-  <section id="admin-card" class="card hidden" data-tab="more">
-    <div class="card-head"><h2>Admin</h2></div>
-    <p class="muted small">User management, metrics, Stripe events. Signed in with your account.</p>
-    <div class="btn-row">
-      <button id="open-admin" class="btn-primary" type="button">Open admin</button>
-    </div>
-  </section>
-
   <section id="theme-picker-card" class="card" data-tab="more">
     <div class="card-head">
       <h2>App theme <button class="info-btn" type="button" data-info="theme" aria-label="About this">i</button> <span class="lock-pill" id="theme-lock">Premium</span></h2>
@@ -742,6 +734,14 @@
     <button id="wipe-btn" class="btn-danger">Erase all data on this device</button>
     <p class="muted small" style="margin-top:12px">Deleting your account permanently removes your encrypted cloud copy, share links, and any active subscription. Local data on each device stays unless you also tap "Erase all data" above.</p>
     <button id="delete-account-btn" class="btn-danger">Delete my account</button>
+  </section>
+
+  <section id="admin-card" class="card hidden">
+    <div class="card-head"><h2>Admin</h2></div>
+    <p class="muted small">User management, metrics, Stripe events. Signed in with your account.</p>
+    <div class="btn-row">
+      <button id="open-admin" class="btn-primary" type="button">Open admin</button>
+    </div>
   </section>
 
   <p class="muted small center">My GLP Shot <span id="app-version-footer"></span> · <a href="privacy.html">Privacy</a> · <a href="terms.html">Terms</a> · <a href="https://github.com/thejdubb02/my-glp-shot" target="_blank" rel="noopener">source</a></p>
