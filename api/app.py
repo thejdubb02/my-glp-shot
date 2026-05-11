@@ -925,14 +925,16 @@ def admin_users():
         offset = max(0, int(request.args.get('offset', 0)))
     except ValueError:
         limit, offset = 100, 0
-    where, params = [], []
+    # Always exclude admin/staff accounts so the user table reflects real
+    # customers only. Admins manage themselves out-of-band (DB / promote script).
+    where, params = ['COALESCE(u.is_admin, 0) = 0'], []
     if q:
-        where.append('LOWER(email) LIKE ?')
+        where.append('LOWER(u.email) LIKE ?')
         params.append(f'%{q}%')
     if status:
-        where.append('subscription_status = ?')
+        where.append('u.subscription_status = ?')
         params.append(status)
-    where_sql = ('WHERE ' + ' AND '.join(where)) if where else ''
+    where_sql = 'WHERE ' + ' AND '.join(where)
     rows = db.execute(
         f"""SELECT u.id, u.email, u.created_at, u.subscription_status,
                    u.trial_ends_at, u.premium_until, u.stripe_customer_id,
@@ -1107,7 +1109,9 @@ def admin_metrics():
     db = get_db()
     now = now_ts()
     day = 86400
-    rows = db.execute('SELECT subscription_status, premium_until, trial_ends_at FROM users').fetchall()
+    # Admin accounts (owner / staff) are excluded from every count and curve
+    # so the dashboard reflects REAL users only. Toggle in DB via is_admin=1.
+    rows = db.execute('SELECT subscription_status, premium_until, trial_ends_at FROM users WHERE COALESCE(is_admin, 0) = 0').fetchall()
     by_status = {'trial': 0, 'premium': 0, 'lifetime': 0, 'free': 0, 'other': 0}
     active_premium = 0
     active_trial = 0
@@ -1126,7 +1130,7 @@ def admin_metrics():
         start = now - (i + 1) * 7 * day
         end = now - i * 7 * day
         c = db.execute(
-            'SELECT COUNT(*) AS c FROM users WHERE created_at >= ? AND created_at < ?',
+            'SELECT COUNT(*) AS c FROM users WHERE created_at >= ? AND created_at < ? AND COALESCE(is_admin, 0) = 0',
             (start, end),
         ).fetchone()['c']
         signup_curve.append({'weekStart': start, 'count': c})
@@ -1144,9 +1148,17 @@ def admin_metrics():
     # We don't track plan per-user, so approximate by counting active premium and using yearly avg
     # ($19.99 / 12 = $1.666). This is a rough estimate; the dashboard labels it as such.
     mrr_estimate_cents = active_premium * 166  # cents/mo
-    sync_stats = db.execute('SELECT COUNT(*) AS c, COALESCE(SUM(size), 0) AS bytes FROM sync_blobs').fetchone()
+    # Sync + share stats also exclude admin-owned rows so totals stay honest.
+    sync_stats = db.execute(
+        '''SELECT COUNT(*) AS c, COALESCE(SUM(size), 0) AS bytes
+           FROM sync_blobs sb
+           WHERE sb.user_id IN (SELECT id FROM users WHERE COALESCE(is_admin, 0) = 0)'''
+    ).fetchone()
     share_stats = db.execute(
-        'SELECT COUNT(*) AS active FROM share_links WHERE expires_at > ?', (now,)
+        '''SELECT COUNT(*) AS active FROM share_links sl
+           WHERE sl.expires_at > ?
+             AND sl.user_id IN (SELECT id FROM users WHERE COALESCE(is_admin, 0) = 0)''',
+        (now,)
     ).fetchone()
     return jsonify(
         totals={
