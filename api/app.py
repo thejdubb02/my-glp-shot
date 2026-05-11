@@ -43,6 +43,13 @@ STRIPE_PRICE_YEARLY_TEST = os.environ.get('STRIPE_PRICE_YEARLY_TEST', '')
 # Admin bearer token. If unset, admin endpoints are disabled.
 MGS_ADMIN_TOKEN = os.environ.get('MGS_ADMIN_TOKEN', '')
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '')
+# Umami analytics — used by the admin Traffic card. Optional; if unset the
+# /api/admin/traffic endpoint returns an empty-state payload instead of erroring.
+UMAMI_URL = os.environ.get('UMAMI_URL', '').rstrip('/')
+UMAMI_USERNAME = os.environ.get('UMAMI_USERNAME', '')
+UMAMI_PASSWORD = os.environ.get('UMAMI_PASSWORD', '')
+UMAMI_WEBSITE_ID_LANDING = os.environ.get('UMAMI_WEBSITE_ID_LANDING', '')
+UMAMI_WEBSITE_ID_PWA = os.environ.get('UMAMI_WEBSITE_ID_PWA', '')
 if STRIPE_API_KEY:
     stripe.api_key = STRIPE_API_KEY
 
@@ -1158,6 +1165,136 @@ def admin_metrics():
         stripeLiveEnabled=_stripe_ready(),
         ts=now,
     )
+
+
+# ---------- Umami traffic proxy (admin only) ----------
+# Cached login token so we don't hammer Umami's /auth/login on every request.
+_umami_state = {'token': '', 'expires_at': 0}
+
+
+def _umami_login():
+    """Return a Bearer token for Umami's API, cached for ~50 minutes."""
+    if not (UMAMI_URL and UMAMI_USERNAME and UMAMI_PASSWORD):
+        return ''
+    now = now_ts()
+    if _umami_state['token'] and _umami_state['expires_at'] > now + 60:
+        return _umami_state['token']
+    try:
+        import requests as _r
+        resp = _r.post(
+            f'{UMAMI_URL}/api/auth/login',
+            json={'username': UMAMI_USERNAME, 'password': UMAMI_PASSWORD},
+            timeout=8,
+        )
+        if resp.status_code != 200:
+            app.logger.warning('umami login failed: %s %s', resp.status_code, resp.text[:200])
+            return ''
+        tok = resp.json().get('token', '')
+        _umami_state['token'] = tok
+        _umami_state['expires_at'] = now + 50 * 60  # 50 min
+        return tok
+    except Exception as e:
+        app.logger.warning('umami login error: %s', e)
+        return ''
+
+
+def _umami_get(path, params=None):
+    tok = _umami_login()
+    if not tok:
+        return None
+    try:
+        import requests as _r
+        resp = _r.get(
+            f'{UMAMI_URL}{path}',
+            headers={'Authorization': f'Bearer {tok}'},
+            params=params or {},
+            timeout=10,
+        )
+        if resp.status_code == 401:
+            # Token expired despite our cache window — wipe and retry once.
+            _umami_state['token'] = ''
+            _umami_state['expires_at'] = 0
+            tok = _umami_login()
+            if not tok:
+                return None
+            resp = _r.get(
+                f'{UMAMI_URL}{path}',
+                headers={'Authorization': f'Bearer {tok}'},
+                params=params or {},
+                timeout=10,
+            )
+        if resp.status_code != 200:
+            return None
+        return resp.json()
+    except Exception as e:
+        app.logger.warning('umami GET %s failed: %s', path, e)
+        return None
+
+
+def _umami_website_payload(website_id, label):
+    """Fetch the stats + top pages + top referrers for one Umami website."""
+    if not website_id:
+        return None
+    now_ms = int(time.time() * 1000)
+    starts = {
+        '24h': now_ms - 24 * 3600 * 1000,
+        '7d':  now_ms - 7 * 86400 * 1000,
+        '30d': now_ms - 30 * 86400 * 1000,
+    }
+    ranges = {}
+    for label_key, start_ms in starts.items():
+        stats = _umami_get(f'/api/websites/{website_id}/stats', {'startAt': start_ms, 'endAt': now_ms})
+        if stats is None:
+            stats = {}
+        # Umami returns ints OR {'value', 'change'} dicts depending on the
+        # comparison flag. Normalize to ints.
+        def _as_int(v):
+            if isinstance(v, dict):
+                return int(v.get('value', 0) or 0)
+            try:
+                return int(v or 0)
+            except (TypeError, ValueError):
+                return 0
+        ranges[label_key] = {
+            'pageviews': _as_int(stats.get('pageviews')),
+            'visitors':  _as_int(stats.get('visitors')),
+            'visits':    _as_int(stats.get('visits')),
+            'bounces':   _as_int(stats.get('bounces')),
+        }
+    # Top pages (7d window)
+    pages_raw = _umami_get(
+        f'/api/websites/{website_id}/metrics',
+        {'type': 'url', 'startAt': starts['7d'], 'endAt': now_ms, 'limit': 8},
+    ) or []
+    top_pages = [{'url': p.get('x', '') or '', 'views': int(p.get('y', 0) or 0)} for p in pages_raw][:8]
+    # Top referrers (7d)
+    refs_raw = _umami_get(
+        f'/api/websites/{website_id}/metrics',
+        {'type': 'referrer', 'startAt': starts['7d'], 'endAt': now_ms, 'limit': 8},
+    ) or []
+    top_referrers = [{'source': p.get('x', '') or 'Direct', 'visits': int(p.get('y', 0) or 0)} for p in refs_raw][:8]
+    return {
+        'label': label,
+        'websiteId': website_id,
+        'ranges': ranges,
+        'topPages': top_pages,
+        'topReferrers': top_referrers,
+    }
+
+
+@app.route('/api/admin/traffic')
+def admin_traffic():
+    blocked = admin_gate()
+    if blocked:
+        return blocked
+    if not UMAMI_URL:
+        return jsonify(configured=False, message='Umami not configured. Set UMAMI_URL/UMAMI_USERNAME/UMAMI_PASSWORD/UMAMI_WEBSITE_ID_* in api.env.'), 200
+    landing = _umami_website_payload(UMAMI_WEBSITE_ID_LANDING, 'Marketing (myglpshot.com)')
+    pwa = _umami_website_payload(UMAMI_WEBSITE_ID_PWA, 'PWA (app.myglpshot.com)')
+    sites = [s for s in (landing, pwa) if s]
+    if not sites:
+        return jsonify(configured=True, ok=False, message='Could not reach Umami or no website IDs configured.'), 200
+    return jsonify(configured=True, ok=True, sites=sites, ts=now_ts())
 
 
 @app.route('/api/admin/stripe-events')

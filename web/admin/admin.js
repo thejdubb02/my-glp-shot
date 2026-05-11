@@ -255,6 +255,74 @@
     $('#events-count').textContent = `${data.events.length} most recent`;
   }
 
+  async function loadTraffic() {
+    const root = $('#traffic-cards');
+    const summary = $('#traffic-summary');
+    if (!root) return;
+    let data;
+    try { data = await api('/api/admin/traffic'); }
+    catch (e) { root.innerHTML = `<p class="muted">${escapeHtml(e.message)}</p>`; return; }
+    if (!data.configured) {
+      root.innerHTML = `<p class="muted">${escapeHtml(data.message || 'Analytics not configured.')}</p>`;
+      return;
+    }
+    if (!data.ok) {
+      root.innerHTML = `<p class="muted">${escapeHtml(data.message || 'Could not reach analytics.')}</p>`;
+      return;
+    }
+    summary.textContent = `Updated ${fmtRelative(data.ts)}`;
+    root.innerHTML = data.sites.map(renderTrafficCard).join('');
+  }
+
+  function renderTrafficCard(s) {
+    const r24 = s.ranges['24h'] || {};
+    const r7  = s.ranges['7d']  || {};
+    const r30 = s.ranges['30d'] || {};
+    const cell = (label, n) => `<div class="t-metric"><div class="t-label">${label}</div><div class="t-value">${n}</div></div>`;
+    const pageRow = (p) => {
+      const path = (p.url || '/').slice(0, 48);
+      return `<div class="t-row"><span class="t-row-key">${escapeHtml(path)}</span><span class="t-row-val">${p.views}</span></div>`;
+    };
+    const refRow = (r) => {
+      const src = (r.source || 'Direct').slice(0, 48);
+      return `<div class="t-row"><span class="t-row-key">${escapeHtml(src)}</span><span class="t-row-val">${r.visits}</span></div>`;
+    };
+    const pages = s.topPages.length
+      ? s.topPages.map(pageRow).join('')
+      : '<div class="t-empty">No pageviews yet</div>';
+    const refs = s.topReferrers.length
+      ? s.topReferrers.map(refRow).join('')
+      : '<div class="t-empty">No referrers yet (direct/bookmark traffic)</div>';
+    return `
+      <div class="t-card">
+        <div class="t-card-head"><strong>${escapeHtml(s.label)}</strong></div>
+        <div class="t-ranges">
+          <div class="t-range">
+            <div class="t-range-label">Last 24h</div>
+            <div class="t-metric-row">${cell('Visitors', r24.visitors || 0)}${cell('Views', r24.pageviews || 0)}</div>
+          </div>
+          <div class="t-range">
+            <div class="t-range-label">Last 7 days</div>
+            <div class="t-metric-row">${cell('Visitors', r7.visitors || 0)}${cell('Views', r7.pageviews || 0)}</div>
+          </div>
+          <div class="t-range">
+            <div class="t-range-label">Last 30 days</div>
+            <div class="t-metric-row">${cell('Visitors', r30.visitors || 0)}${cell('Views', r30.pageviews || 0)}</div>
+          </div>
+        </div>
+        <div class="t-cols">
+          <div class="t-col">
+            <div class="t-col-head">Top pages (7d)</div>
+            ${pages}
+          </div>
+          <div class="t-col">
+            <div class="t-col-head">Top referrers (7d)</div>
+            ${refs}
+          </div>
+        </div>
+      </div>`;
+  }
+
   // ---------- User detail dialog ----------
   async function openUserDetail(uid) {
     const dlg = $('#user-detail-dialog');
@@ -373,6 +441,7 @@
   // ---------- Wire up ----------
   function loadAll() {
     loadMetrics().catch(e => toast(e.message, 'error'));
+    loadTraffic().catch(e => toast(e.message, 'error'));
     loadUsers().catch(e => toast(e.message, 'error'));
     loadEvents().catch(e => toast(e.message, 'error'));
   }

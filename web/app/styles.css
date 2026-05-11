@@ -633,3 +633,6 @@ body.tab-more #view-home > [data-tab]:not([data-tab="more"]){display:none}
 #view-admin{max-width:none;padding:0}
 #view-admin .sub-header{padding:10px 12px;max-width:560px;margin:0 auto;width:100%;box-sizing:border-box}
 #admin-frame{flex:1;width:100%;border:0;background:var(--bg,#fff);min-height:calc(100vh - 60px)}
+#view-admin .sub-header{display:flex;align-items:center;gap:8px}
+#view-admin .sub-header h1{flex:1;margin:0}
+#admin-refresh{font-size:1.1rem;line-height:1;padding:6px 10px;border-radius:8px}

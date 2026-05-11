@@ -9,7 +9,7 @@ const DB_NAME = 'shotclock';
 // v8 bump: 'cycles' store added — opt-in menstrual cycle tracking (period start/end, flow, symptoms).
 // v9 bump: 'medChanges' store added — medication switches as discrete events so charts stay readable across drug changes.
 const DB_VERSION = 9;
-const APP_VERSION = '0.47.1';
+const APP_VERSION = '0.47.2';
 
 // Umami event tracker. Aggregates only — no PII (no email, no IDs). Safe to call before umami loads.
 function track(event, props) {
@@ -1273,11 +1273,35 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Admin: lazy-load iframe on first open. Same-origin → session cookie
   // travels automatically; admin SPA detects the session and skips its own
   // sign-in. Reload on each open so changes from prior session aren't stale.
+  // Belt-and-suspenders gate: even if a non-admin somehow reaches the button,
+  // hit /api/me first; the server will not return isAdmin=true for them.
+  // (The card is hidden client-side too; this is defense in depth.)
   const openAdmin = $('#open-admin');
-  if (openAdmin) openAdmin.addEventListener('click', () => {
+  if (openAdmin) openAdmin.addEventListener('click', async () => {
+    let allowed = !!(account && account.user && account.user.isAdmin);
+    if (!allowed) {
+      try {
+        const me = await accountMe();
+        allowed = !!(me && me.isAdmin);
+        if (me) account.user = me;
+      } catch (_) {}
+    }
+    if (!allowed) {
+      alert('Admin access is required to open this section.');
+      const card = $('#admin-card'); if (card) card.classList.add('hidden');
+      return;
+    }
     const frame = $('#admin-frame');
     if (frame) frame.src = '/admin/?embedded=1&t=' + Date.now();
     showView('admin');
+  });
+  const adminRefresh = $('#admin-refresh');
+  if (adminRefresh) adminRefresh.addEventListener('click', () => {
+    const frame = $('#admin-frame');
+    if (!frame) return;
+    // Re-set src with a fresh cache buster — works across browsers without
+    // poking into iframe.contentWindow (which can throw under strict CSP).
+    frame.src = '/admin/?embedded=1&t=' + Date.now();
   });
 
   $('#shot-cancel').addEventListener('click', () => $('#shot-dialog').close());
@@ -5195,9 +5219,17 @@ async function onAccountChanged() {
     if (typeof maybeAutoShowInstall === 'function') maybeAutoShowInstall();
   }
   // Surface the embedded Admin entry only for accounts with is_admin=1.
-  // /api/me returns isAdmin: bool — same field the admin SPA uses for cookie auth.
+  // /api/me returns isAdmin: bool — same field the admin SPA uses for cookie
+  // auth. Default to hidden; never show without an explicit positive signal.
   const adminCard = $('#admin-card');
-  if (adminCard) adminCard.classList.toggle('hidden', !(u && u.isAdmin));
+  if (adminCard) adminCard.classList.toggle('hidden', !(u && u.isAdmin === true));
+  // If view-admin happens to be active for a non-admin (e.g. stale tab state
+  // after sign-out / account switch), force back to home so the iframe can't
+  // linger.
+  if (!(u && u.isAdmin === true) && $('#view-admin')?.classList.contains('active')) {
+    showView('home');
+    const f = $('#admin-frame'); if (f) f.src = 'about:blank';
+  }
   if (u) {
     banner.classList.add('hidden');
     $('#account-signed-out').classList.add('hidden');
