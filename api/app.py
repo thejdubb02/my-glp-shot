@@ -218,7 +218,16 @@ def public_user(user_row):
         'isPremium': is_premium_now(user_row),
         'createdAt': user_row['created_at'],
         'hasStripeCustomer': bool(user_row['stripe_customer_id']),
+        'isAdmin': bool(_safe_col(user_row, 'is_admin')),
     }
+
+
+def _safe_col(row, name, default=0):
+    """sqlite3.Row throws on missing column on older DBs pre-migration."""
+    try:
+        return row[name]
+    except (IndexError, KeyError):
+        return default
 
 
 def get_session_user():
@@ -856,7 +865,24 @@ def _audit(action, target_uid=None, extra=None):
 
 
 def require_admin():
-    """Constant-time admin bearer token check. Returns True if request is authorized."""
+    """Admin authorized if EITHER a valid session belongs to a user with
+    is_admin=1, OR the legacy MGS_ADMIN_TOKEN bearer is presented.
+
+    Session path is what the PWA uses (cookie auth → no token entry, no
+    second login). Token path stays for emergency / scripted access when
+    no admin session exists."""
+    # 1) Session-based admin (PWA embed, signed-in user with is_admin=1)
+    user, _ = get_session_user()
+    if user is not None:
+        try:
+            if int(user['is_admin'] or 0) == 1:
+                return True
+        except (KeyError, IndexError, TypeError):
+            pass
+
+    # 2) Legacy bearer token. Note: if a session token IS present in the
+    # Authorization header, get_session_user() above already handled it; we
+    # only fall through here for the raw admin token case.
     if not MGS_ADMIN_TOKEN:
         return False
     auth = request.headers.get('Authorization', '')
@@ -866,6 +892,9 @@ def require_admin():
     if not token:
         token = request.headers.get('X-Admin-Token', '').strip()
     if not token:
+        return False
+    # Don't compare session-shaped tokens against the admin secret.
+    if TOKEN_RE.match(token):
         return False
     return secrets.compare_digest(token, MGS_ADMIN_TOKEN)
 
@@ -1515,6 +1544,7 @@ def init_db():
             'ALTER TABLE users ADD COLUMN stripe_subscription_id_test TEXT',
             'ALTER TABLE users ADD COLUMN test_subscription_status TEXT',
             'ALTER TABLE users ADD COLUMN test_premium_until INTEGER',
+            'ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0',
         ):
             try:
                 c.execute(stmt)

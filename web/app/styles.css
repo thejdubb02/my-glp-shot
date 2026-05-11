@@ -627,3 +627,9 @@ body.tab-more #view-home > [data-tab]:not([data-tab="more"]){display:none}
 .daily-reminder-time{display:flex;align-items:center;gap:6px;margin:0}
 .daily-reminder-time input[type="time"]{padding:4px 6px;font-size:.9rem}
 #set-timezone{width:100%}
+
+/* Embedded admin view — full-bleed iframe under the sub-header.
+   Override .view max-width:560px so the admin table has room. */
+#view-admin{max-width:none;padding:0}
+#view-admin .sub-header{padding:10px 12px;max-width:560px;margin:0 auto;width:100%;box-sizing:border-box}
+#admin-frame{flex:1;width:100%;border:0;background:var(--bg,#fff);min-height:calc(100vh - 60px)}

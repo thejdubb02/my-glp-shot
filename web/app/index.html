@@ -477,6 +477,14 @@
     <p id="expense-empty" class="empty"><span class="empty-illus">💵</span><br>Add medication copays, pharmacy fees, labs, or any other expenses to see total spend and dollars per pound lost.</p>
   </section>
 
+  <section id="admin-card" class="card hidden" data-tab="more">
+    <div class="card-head"><h2>Admin</h2></div>
+    <p class="muted small">User management, metrics, Stripe events. Signed in with your account.</p>
+    <div class="btn-row">
+      <button id="open-admin" class="btn-primary" type="button">Open admin</button>
+    </div>
+  </section>
+
   <section id="theme-picker-card" class="card" data-tab="more">
     <div class="card-head">
       <h2>App theme <button class="info-btn" type="button" data-info="theme" aria-label="About this">i</button> <span class="lock-pill" id="theme-lock">Premium</span></h2>
@@ -512,6 +520,11 @@
     <p class="muted small">Generate a private link you can text or email. Expires in 24 hours. Read-only.</p>
     <div class="btn-row"><button id="show-share-more" class="btn-primary" type="button">🔗 Make a share link</button></div>
   </section>
+</main>
+
+<main id="view-admin" class="view admin-view">
+  <header class="sub-header"><button class="back" data-back>‹</button><h1>Admin</h1></header>
+  <iframe id="admin-frame" title="Admin" src="about:blank" loading="lazy"></iframe>
 </main>
 
 <main id="view-history" class="view">

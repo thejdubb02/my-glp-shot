@@ -4,18 +4,30 @@
   const $$ = (s) => Array.from(document.querySelectorAll(s));
   const TOKEN_KEY = 'mgs_admin_token';
   let token = sessionStorage.getItem(TOKEN_KEY) || '';
+  // ?embedded=1 means: opened inside the PWA. Skip the token form entirely
+  // and rely solely on session-cookie auth — if the cookie isn't admin, the
+  // metrics call fails and we surface a small inline message instead of the
+  // legacy token input.
+  const EMBEDDED = new URLSearchParams(location.search).has('embedded');
+  if (EMBEDDED) document.body && document.body.classList.add('embedded');
   let usersOffset = 0;
   const USERS_LIMIT = 50;
 
   // ---------- API helper ----------
+  // Auth resolution order:
+  //   1) Session cookie (sent automatically because credentials: 'include').
+  //      Used when admin is opened inside the PWA — user signed in already.
+  //   2) Bearer token from the legacy admin-token sign-in screen.
   async function api(path, opts = {}) {
+    const headers = {
+      'Content-Type': 'application/json',
+      ...(opts.headers || {}),
+    };
+    if (token) headers['Authorization'] = 'Bearer ' + token;
     const res = await fetch(path, {
       ...opts,
-      headers: {
-        'Authorization': 'Bearer ' + token,
-        'Content-Type': 'application/json',
-        ...(opts.headers || {}),
-      },
+      credentials: 'include',
+      headers,
     });
     if (res.status === 401) {
       signOut();
@@ -376,8 +388,18 @@
   });
   $('#filter-status').addEventListener('change', () => { usersOffset = 0; loadUsers().catch(e => toast(e.message, 'error')); });
 
-  // Auto sign-in if we have a stored token.
-  if (token) {
-    api('/api/admin/metrics').then(() => { showApp(); loadAll(); }).catch(() => signOut());
-  }
+  // Auto sign-in: first try session cookie (zero-config when embedded in the
+  // PWA); fall back to stored bearer token. Either is sufficient — server
+  // accepts both via require_admin().
+  (async () => {
+    try {
+      await api('/api/admin/metrics');
+      showApp();
+      loadAll();
+    } catch (_) {
+      // Not authorized via session. If we had a token stored, signOut() already
+      // ran inside api() on 401. Otherwise, leave the token sign-in form
+      // visible for legacy/emergency access.
+    }
+  })();
 })();

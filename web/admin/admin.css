@@ -314,3 +314,9 @@ main { padding: 24px; max-width: 1400px; margin: 0 auto; }
   main { padding: 14px; }
   .metric-value { font-size: 22px; }
 }
+
+/* PWA-embedded mode: hide the bearer-token sign-in screen and the topbar
+   (the PWA provides its own back/title chrome). */
+body.embedded .hidden-when-embedded { display: none !important; }
+body.embedded .topbar { display: none; }
+body.embedded main { padding-top: 12px; }

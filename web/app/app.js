@@ -1270,6 +1270,16 @@ document.addEventListener('DOMContentLoaded', async () => {
   const viewAll = $('#view-all-history');
   if (viewAll) viewAll.addEventListener('click', (e) => { e.preventDefault(); showView('history'); });
 
+  // Admin: lazy-load iframe on first open. Same-origin → session cookie
+  // travels automatically; admin SPA detects the session and skips its own
+  // sign-in. Reload on each open so changes from prior session aren't stale.
+  const openAdmin = $('#open-admin');
+  if (openAdmin) openAdmin.addEventListener('click', () => {
+    const frame = $('#admin-frame');
+    if (frame) frame.src = '/admin/?embedded=1&t=' + Date.now();
+    showView('admin');
+  });
+
   $('#shot-cancel').addEventListener('click', () => $('#shot-dialog').close());
   // Show / hide the custom-site text input based on dropdown selection.
   $('#shot-site').addEventListener('change', () => {
@@ -5184,6 +5194,10 @@ async function onAccountChanged() {
     }
     if (typeof maybeAutoShowInstall === 'function') maybeAutoShowInstall();
   }
+  // Surface the embedded Admin entry only for accounts with is_admin=1.
+  // /api/me returns isAdmin: bool — same field the admin SPA uses for cookie auth.
+  const adminCard = $('#admin-card');
+  if (adminCard) adminCard.classList.toggle('hidden', !(u && u.isAdmin));
   if (u) {
     banner.classList.add('hidden');
     $('#account-signed-out').classList.add('hidden');
