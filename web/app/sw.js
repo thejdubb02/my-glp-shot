@@ -1,5 +1,5 @@
 // My GLP Shot service worker — network-first for app shell so updates are picked up on every visit; cache fallback for offline.
-const CACHE = 'mglp-v0.46.1';
+const CACHE = 'mglp-v0.47.0';
 const SHELL = [
   './',
   'index.html',
@@ -77,8 +77,14 @@ self.addEventListener('notificationclick', (e) => {
   const url = (e.notification.data && e.notification.data.url) || '/';
   e.waitUntil((async () => {
     const clientsList = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    // If a window is already open: focus it and ask it to deep-link to the
+    // reminder section. Use postMessage so the page can handle without a full
+    // reload (preserves IDB-backed UI state).
     for (const c of clientsList) {
-      if ('focus' in c) return c.focus();
+      if ('focus' in c) {
+        try { c.postMessage({ type: 'reminder-click', url }); } catch (_) {}
+        try { return await c.focus(); } catch (_) {}
+      }
     }
     if (self.clients.openWindow) return self.clients.openWindow(url);
   })());

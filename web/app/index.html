@@ -618,8 +618,19 @@
   </section>
 
   <section class="card">
+    <h2>Timezone</h2>
+    <p class="muted small">All "today", streaks, charts, and reminder times use this timezone. Set it to where you live so travel and DST don't break your data.</p>
+    <label>Your timezone
+      <select id="set-timezone"></select>
+    </label>
+    <p id="tz-status" class="muted small"></p>
+  </section>
+
+  <section class="card">
     <h2>Reminders</h2>
-    <label class="row"><input id="set-notify" type="checkbox"> Push notification when shot is due</label>
+
+    <h3 class="reminders-subhead">Shot reminder</h3>
+    <label class="row"><input id="set-notify" type="checkbox"> Notify me when my shot is due</label>
     <label>Lead time
       <select id="set-lead">
         <option value="0">At shot time</option>
@@ -631,6 +642,11 @@
       </select>
     </label>
     <p id="notify-status" class="muted small"></p>
+
+    <h3 class="reminders-subhead">Daily check-ins</h3>
+    <p class="muted small">Pick which sections to be reminded about each day, and when (in your timezone above).</p>
+    <div id="daily-reminders-list" class="daily-reminders"></div>
+
     <div class="btn-row">
       <button id="save-reminders" class="btn-primary" type="button" data-save-group="reminders">Save</button>
       <span class="save-status muted small" data-save-status="reminders"></span>

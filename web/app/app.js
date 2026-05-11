@@ -9,7 +9,7 @@ const DB_NAME = 'shotclock';
 // v8 bump: 'cycles' store added — opt-in menstrual cycle tracking (period start/end, flow, symptoms).
 // v9 bump: 'medChanges' store added — medication switches as discrete events so charts stay readable across drug changes.
 const DB_VERSION = 9;
-const APP_VERSION = '0.46.1';
+const APP_VERSION = '0.47.0';
 
 // Umami event tracker. Aggregates only — no PII (no email, no IDs). Safe to call before umami loads.
 function track(event, props) {
@@ -411,7 +411,29 @@ const DEFAULT_SETTINGS = {
   cycleEnabled: false,
   cycleSeenOptIn: false,
   maintenanceMode: false,
+  // Timezone: IANA name (e.g. "America/Chicago"). When unset, falls back to the
+  // device timezone at runtime. Once a user sets one explicitly it overrides
+  // device TZ everywhere — "today", streaks, charts, and reminder fire times.
+  timezone: null,
+  // Per-section daily reminders. Each entry: { enabled: bool, time: 'HH:MM' (24h, user TZ) }.
+  // Shot reminder ("notify"/"notifyLeadMinutes" above) is dose-driven and lives separately.
+  dailyReminders: {
+    weight:       { enabled: false, time: '08:00' },
+    moodAppetite: { enabled: false, time: '20:00' },
+    sideEffects:  { enabled: false, time: '20:00' },
+    measurements: { enabled: false, time: '07:30' },
+  },
 };
+
+// Daily reminder catalog. Order = render order in settings UI.
+// `route` is the URL hash the SW opens on notification click → main() reads it
+// and snaps to the right tab + card.
+const DAILY_REMINDERS = [
+  { key: 'weight',       label: 'Weight',           emoji: '⚖️',  title: 'Log your weight', body: 'Quick daily weigh-in keeps your chart honest.',                 route: '#reminder=weight' },
+  { key: 'moodAppetite', label: 'Mood & appetite',  emoji: '😊', title: 'How are you feeling?', body: 'Tap to log mood, appetite, and food-noise for today.',     route: '#reminder=moodAppetite' },
+  { key: 'sideEffects',  label: 'Side effects',     emoji: '🩺', title: 'Side effects check-in', body: 'Anything to report today? Logging helps spot patterns.', route: '#reminder=sideEffects' },
+  { key: 'measurements', label: 'Body measurements', emoji: '📏', title: 'Body measurements', body: 'Time to log waist, hips, and any other tracked sites.',      route: '#reminder=measurements' },
+];
 
 // Side-effect taxonomy. Each entry: [key, label, group]. Adding new keys is
 // purely additive — existing shot.sideEffects rows untouched.
@@ -630,15 +652,83 @@ const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
 const fmtDate = (iso) => new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 const fmtDateShort = (iso) => new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+// ---------- Timezone-aware date helpers ----------
+// Single source of truth: getUserTz(). All "today"/"now" math passes through
+// these so the app honors settings.timezone everywhere — streaks, charts,
+// input defaults, and reminder fire times.
+function getUserTz() {
+  try {
+    if (typeof settings !== 'undefined' && settings && settings.timezone) return settings.timezone;
+  } catch (_) {}
+  try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; } catch (_) { return 'UTC'; }
+}
+// 'en-CA' yields YYYY-MM-DD / HH:MM in ISO-friendly order regardless of locale.
+function _tzParts(d, tz) {
+  const fmt = new Intl.DateTimeFormat('en-CA', {
+    timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+  });
+  const out = {};
+  for (const p of fmt.formatToParts(d)) if (p.type !== 'literal') out[p.type] = p.value;
+  // Intl can yield "24" for midnight in some engines — normalize.
+  if (out.hour === '24') out.hour = '00';
+  return out;
+}
 const localISOForInput = (d = new Date()) => {
-  const tz = d.getTimezoneOffset() * 60000;
-  return new Date(d - tz).toISOString().slice(0, 16);
+  const p = _tzParts(d, getUserTz());
+  return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}`;
 };
 const todayISODate = () => {
-  const d = new Date();
-  const tz = d.getTimezoneOffset() * 60000;
-  return new Date(d - tz).toISOString().slice(0, 10);
+  const p = _tzParts(new Date(), getUserTz());
+  return `${p.year}-${p.month}-${p.day}`;
 };
+// Wall-clock time {YYYY-MM-DD, HH, MM} in a given IANA TZ → UTC Date.
+// Iteratively converges: works across DST (spring-forward / fall-back) because
+// we measure the offset by formatting the guess back in tz and correcting.
+function zonedWallToUtc(tz, ymd, hh, mm) {
+  const wantIso = `${ymd}T${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}:00`;
+  const want = Date.parse(wantIso + 'Z');
+  let guess = new Date(want);
+  for (let i = 0; i < 3; i++) {
+    const p = _tzParts(guess, tz);
+    const seen = Date.parse(`${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}:${p.second || '00'}Z`);
+    const drift = want - seen;
+    if (drift === 0) return guess;
+    guess = new Date(guess.getTime() + drift);
+  }
+  return guess;
+}
+// Next UTC instant when wall-clock in user TZ equals HH:MM. Returns Date in future.
+function nextDailyTriggerAt(hhmm) {
+  if (!hhmm || !/^\d{2}:\d{2}$/.test(hhmm)) return null;
+  const [hh, mm] = hhmm.split(':').map(Number);
+  const tz = getUserTz();
+  const now = new Date();
+  for (let offset = 0; offset < 2; offset++) {
+    const base = new Date(now.getTime() + offset * 86400000);
+    const p = _tzParts(base, tz);
+    const fire = zonedWallToUtc(tz, `${p.year}-${p.month}-${p.day}`, hh, mm);
+    if (fire.getTime() - now.getTime() > 30000) return fire;
+  }
+  return null;
+}
+// Common TZ list for the picker. Prefer Intl.supportedValuesOf when available
+// (modern browsers), else a curated list that covers the user base.
+function listSupportedTimezones() {
+  try {
+    if (typeof Intl.supportedValuesOf === 'function') return Intl.supportedValuesOf('timeZone');
+  } catch (_) {}
+  return [
+    'UTC',
+    'America/New_York','America/Chicago','America/Denver','America/Phoenix','America/Los_Angeles',
+    'America/Anchorage','Pacific/Honolulu','America/Toronto','America/Vancouver','America/Mexico_City',
+    'America/Sao_Paulo','Europe/London','Europe/Dublin','Europe/Paris','Europe/Berlin','Europe/Madrid',
+    'Europe/Rome','Europe/Amsterdam','Europe/Stockholm','Europe/Athens','Europe/Istanbul','Europe/Moscow',
+    'Africa/Cairo','Africa/Johannesburg','Asia/Dubai','Asia/Karachi','Asia/Kolkata','Asia/Bangkok',
+    'Asia/Singapore','Asia/Hong_Kong','Asia/Shanghai','Asia/Tokyo','Asia/Seoul',
+    'Australia/Perth','Australia/Sydney','Pacific/Auckland',
+  ];
+}
 
 // ---------- Views ----------
 function showView(name) {
@@ -1172,6 +1262,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   try { await migrateWeightDatesToCanonical(); } catch (e) { console.error('weight migration failed:', e); }
   try { await renderWeights(); } catch (e) { console.error(e); }
   try { setInterval(async () => renderCountdown(await getShotsSorted()), 60000); } catch (e) {}
+  try { handleReminderDeepLink(); } catch (e) { console.error('reminder deep link failed:', e); }
 
   // (Listeners that don't depend on IDB/data — attach defensively.)
   const logBtn = $('#log-shot-btn');
@@ -1332,6 +1423,55 @@ document.addEventListener('DOMContentLoaded', async () => {
     applyTheme();
   });
   $('#test-notify').addEventListener('click', sendTestNotification);
+
+  // Timezone picker — changing TZ rewrites "today" everywhere, so we re-render
+  // shots/weights/moods and re-plan reminders.
+  const tzSel = $('#set-timezone');
+  if (tzSel) {
+    populateTimezoneOptions(tzSel);
+    tzSel.addEventListener('change', async (e) => {
+      settings.timezone = e.target.value || null;
+      await saveSettings();
+      markSyncDirty();
+      updateTimezoneStatus();
+      try { await renderShots(); } catch (_) {}
+      try { await renderMood(); } catch (_) {}
+      try { await renderAppetite(); } catch (_) {}
+      maybeScheduleNotification();
+    });
+  }
+
+  // Daily reminder rows are built dynamically so DAILY_REMINDERS is the only
+  // place that knows the section list.
+  renderDailyReminderRows();
+  const dailyList = $('#daily-reminders-list');
+  if (dailyList) {
+    dailyList.addEventListener('change', async (e) => {
+      const t = e.target;
+      const key = t.getAttribute('data-rkey');
+      if (!key) return;
+      const cfg = settings.dailyReminders = { ...(settings.dailyReminders || {}) };
+      const entry = cfg[key] = { ...(cfg[key] || { enabled: false, time: '08:00' }) };
+      if (t.matches('input[type="checkbox"]')) {
+        if (t.checked) {
+          // Enabling any daily reminder requires notification permission once.
+          if (typeof Notification !== 'undefined' && Notification.permission !== 'granted') {
+            const perm = await Notification.requestPermission();
+            if (perm !== 'granted') { t.checked = false; return; }
+          }
+          entry.enabled = true;
+        } else {
+          entry.enabled = false;
+        }
+      } else if (t.matches('input[type="time"]')) {
+        entry.time = t.value || '08:00';
+      }
+      await saveSettings();
+      markSyncDirty();
+      maybeScheduleNotification();
+    });
+  }
+
   if (window.matchMedia) {
     window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
   }
@@ -1536,6 +1676,13 @@ function applySettingsToInputs() {
   if ($('#set-maintenance'))  $('#set-maintenance').checked = !!settings.maintenanceMode;
   $('#set-notify').checked = !!settings.notify && (typeof Notification !== 'undefined' && Notification.permission === 'granted');
   $('#set-lead').value = String(settings.notifyLeadMinutes ?? 60);
+  const tzSel = $('#set-timezone');
+  if (tzSel) {
+    if (!tzSel.options.length) populateTimezoneOptions(tzSel);
+    tzSel.value = settings.timezone || getUserTz();
+  }
+  updateTimezoneStatus();
+  renderDailyReminderRows();
   $('#set-theme').value = settings.theme || 'system';
   applyTheme();
   applyColorTheme(settings.colorTheme || 'teal');
@@ -2167,20 +2314,43 @@ async function downloadICS() {
 //   3. iOS PWA: requestPermission works on iOS 16.4+ when installed to home screen. Triggers API not supported, but iOS reschedules our SW periodically; we re-schedule in `pageshow` so reminders work when user opens the app.
 
 let notifyTimer = null;
+let dailyReminderTimers = [];
 const TRIGGERS_SUPPORTED = (typeof window !== 'undefined') && ('Notification' in window) && ('showTrigger' in Notification.prototype || (typeof TimestampTrigger !== 'undefined'));
 
 async function maybeScheduleNotification() {
+  // Top-level entry: re-plans the shot reminder and every enabled daily reminder.
+  // Called on settings change, on pageshow, and after sync pull so changes
+  // made on another device land immediately.
   if (notifyTimer) { clearTimeout(notifyTimer); notifyTimer = null; }
-  if (!settings.notify) return;
+  dailyReminderTimers.forEach(t => clearTimeout(t));
+  dailyReminderTimers = [];
+
   if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
 
+  // Clear all scheduled notifications we own (shot-* and daily-*) before re-scheduling.
+  if ('serviceWorker' in navigator) {
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      const existing = await reg.getNotifications({ includeTriggered: true });
+      existing.forEach(n => {
+        if (n.tag && (n.tag.startsWith('shot-') || n.tag.startsWith('daily-'))) n.close();
+      });
+    } catch (_) {}
+  }
+
+  await scheduleShotReminder();
+  await scheduleDailyReminders();
+}
+
+async function scheduleShotReminder() {
+  if (!settings.notify) return;
   const shots = await getShotsSorted();
   if (!shots.length) return;
   const next = nextShotDate(shots[0].when);
   const lead = (settings.notifyLeadMinutes || 0) * 60000;
   const fireAt = new Date(next.getTime() - lead);
   const ms = fireAt - new Date();
-  if (ms > 86400000 * 30) return; // don't schedule more than 30d out
+  if (ms > 86400000 * 30) return;
 
   const title = 'My GLP Shot';
   const body = lead > 0
@@ -2188,37 +2358,82 @@ async function maybeScheduleNotification() {
     : `${settings.medication} shot is due now.`;
   const tag = `shot-${next.toISOString()}`;
 
-  // Path 1: Notification Triggers API via service worker
   if (TRIGGERS_SUPPORTED && 'serviceWorker' in navigator) {
     try {
       const reg = await navigator.serviceWorker.ready;
-      // Clear prior scheduled to avoid duplicates
-      const existing = await reg.getNotifications({ includeTriggered: true });
-      existing.forEach(n => { if (n.tag && n.tag.startsWith('shot-')) n.close(); });
       if (ms > 0) {
         await reg.showNotification(title, {
           body, tag, icon: 'icons/icon-192.png', badge: 'icons/icon-192.png',
           showTrigger: new TimestampTrigger(fireAt.getTime()),
-          data: { url: '/shotclock/' },
+          data: { url: '/#reminder=shot' },
         });
         return;
       }
-    } catch (e) { /* fall through to setTimeout */ }
+    } catch (e) {}
   }
 
-  // Path 2: setTimeout (works while app is open)
   if (ms <= 0) return;
   if (ms > 86400000 * 14) return;
   notifyTimer = setTimeout(async () => {
     if ('serviceWorker' in navigator) {
       try {
         const reg = await navigator.serviceWorker.ready;
-        await reg.showNotification(title, { body, tag, icon: 'icons/icon-192.png', data: { url: '/shotclock/' } });
+        await reg.showNotification(title, { body, tag, icon: 'icons/icon-192.png', data: { url: '/#reminder=shot' } });
         return;
       } catch (e) {}
     }
     new Notification(title, { body, icon: 'icons/icon-192.png' });
   }, ms);
+}
+
+async function scheduleDailyReminders() {
+  const cfg = settings.dailyReminders || {};
+  for (const r of DAILY_REMINDERS) {
+    const entry = cfg[r.key];
+    if (!entry || !entry.enabled) continue;
+    const fireAt = nextDailyTriggerAt(entry.time);
+    if (!fireAt) continue;
+    const ms = fireAt - new Date();
+    if (ms <= 0) continue;
+
+    const tag = `daily-${r.key}-${fireAt.toISOString().slice(0,10)}`;
+    const opts = {
+      body: r.body,
+      tag,
+      icon: 'icons/icon-192.png',
+      badge: 'icons/icon-192.png',
+      data: { url: '/' + r.route },
+    };
+
+    // Path 1: real OS-level scheduled trigger (Android/Chrome installed PWA).
+    if (TRIGGERS_SUPPORTED && 'serviceWorker' in navigator) {
+      try {
+        const reg = await navigator.serviceWorker.ready;
+        await reg.showNotification(`${r.emoji} ${r.title}`, {
+          ...opts,
+          showTrigger: new TimestampTrigger(fireAt.getTime()),
+        });
+        continue;
+      } catch (_) { /* fall through */ }
+    }
+
+    // Path 2: in-process setTimeout (fires while app is open; on iOS we get
+    // a second chance via pageshow re-scheduling on next app open).
+    if (ms > 86400000 * 2) continue;
+    const t = setTimeout(async () => {
+      try {
+        if ('serviceWorker' in navigator) {
+          const reg = await navigator.serviceWorker.ready;
+          await reg.showNotification(`${r.emoji} ${r.title}`, opts);
+        } else {
+          new Notification(`${r.emoji} ${r.title}`, { body: r.body, icon: 'icons/icon-192.png' });
+        }
+      } catch (_) {}
+      // Roll the timer for tomorrow if the app is still open.
+      scheduleDailyReminders();
+    }, ms);
+    dailyReminderTimers.push(t);
+  }
 }
 
 function humanLead(ms) {
@@ -2228,6 +2443,103 @@ function humanLead(ms) {
   if (h < 24) return `${h} hour${h !== 1 ? 's' : ''}`;
   const d = Math.round(h / 24);
   return `${d} day${d !== 1 ? 's' : ''}`;
+}
+
+// Populate the TZ select with grouped options. Current device TZ at the top.
+function populateTimezoneOptions(sel) {
+  const all = listSupportedTimezones();
+  const deviceTz = (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; } catch (_) { return 'UTC'; } })();
+  sel.innerHTML = '';
+  const top = document.createElement('option');
+  top.value = deviceTz;
+  top.textContent = `Device default — ${deviceTz}`;
+  sel.appendChild(top);
+  for (const tz of all) {
+    if (tz === deviceTz) continue;
+    const o = document.createElement('option');
+    o.value = tz;
+    o.textContent = tz.replace(/_/g, ' ');
+    sel.appendChild(o);
+  }
+}
+
+function updateTimezoneStatus() {
+  const el = $('#tz-status'); if (!el) return;
+  const tz = getUserTz();
+  let nowStr = '';
+  try {
+    nowStr = new Intl.DateTimeFormat(undefined, {
+      timeZone: tz, weekday: 'short', hour: '2-digit', minute: '2-digit',
+    }).format(new Date());
+  } catch (_) {}
+  el.textContent = `Current time in ${tz}: ${nowStr}`;
+}
+
+function renderDailyReminderRows() {
+  const root = $('#daily-reminders-list');
+  if (!root) return;
+  const cfg = settings.dailyReminders || {};
+  root.innerHTML = DAILY_REMINDERS.map(r => {
+    const entry = cfg[r.key] || { enabled: false, time: '08:00' };
+    const id = `dr-${r.key}`;
+    return `
+      <div class="daily-reminder-row">
+        <label class="row daily-reminder-toggle">
+          <input type="checkbox" id="${id}-on" data-rkey="${r.key}" ${entry.enabled ? 'checked' : ''}>
+          <span class="daily-reminder-emoji" aria-hidden="true">${r.emoji}</span>
+          <span class="daily-reminder-label">${r.label}</span>
+        </label>
+        <label class="daily-reminder-time">
+          <span class="muted small">at</span>
+          <input type="time" id="${id}-time" data-rkey="${r.key}" value="${entry.time || '08:00'}">
+        </label>
+      </div>`;
+  }).join('');
+}
+
+// Called on boot AND on pageshow. Reads #reminder=KEY from the URL hash
+// (set by the SW notificationclick handler) and snaps the UI to the right
+// section. Clears the hash so a refresh doesn't re-trigger.
+function handleReminderDeepLink() {
+  const m = (location.hash || '').match(/reminder=([a-zA-Z]+)/);
+  if (!m) return;
+  const key = m[1];
+  try { history.replaceState(null, '', location.pathname + location.search); } catch (_) {}
+  const tabAndAnchor = {
+    weight:       { tab: 'home', scroll: '#weight-chart' },
+    moodAppetite: { tab: 'home', scroll: '#mood-card' },
+    sideEffects:  { tab: 'home', scroll: '#shot-card' },
+    measurements: { tab: 'more', scroll: '#measurements-card' },
+    shot:         { tab: 'home', scroll: null },
+  }[key];
+  if (!tabAndAnchor) return;
+  try {
+    showView('home');
+    setHomeTab(tabAndAnchor.tab);
+  } catch (_) {}
+  if (tabAndAnchor.scroll) {
+    setTimeout(() => {
+      const el = document.querySelector(tabAndAnchor.scroll);
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 100);
+  }
+  if (key === 'weight') {
+    setTimeout(() => { const b = document.querySelector('#add-weight-btn'); if (b) b.click(); }, 300);
+  } else if (key === 'shot') {
+    setTimeout(() => { const b = document.querySelector('#log-shot-btn'); if (b) b.click(); }, 300);
+  }
+}
+window.addEventListener('pageshow', () => { try { handleReminderDeepLink(); } catch (_) {} });
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.addEventListener('message', (e) => {
+    const data = e.data || {};
+    if (data.type !== 'reminder-click' || !data.url) return;
+    try {
+      const u = new URL(data.url, location.origin);
+      location.hash = u.hash;
+      handleReminderDeepLink();
+    } catch (_) {}
+  });
 }
 
 function updateNotifyStatus() {
@@ -4191,8 +4503,7 @@ async function renderMoodTrend(moods) {
   for (let i = days - 1; i >= 0; i--) {
     const d = new Date(today);
     d.setDate(d.getDate() - i);
-    const tz = d.getTimezoneOffset() * 60000;
-    const iso = new Date(d - tz).toISOString().slice(0, 10);
+    const iso = localISOForInput(d).slice(0, 10);
     const v = byDate.get(iso);
     if (v != null) { sum += v; count++; }
     bars.push({ iso, v });

@@ -614,3 +614,16 @@ body{padding-bottom:calc(env(safe-area-inset-bottom) + 76px)}
 body.tab-home #view-home > [data-tab]:not([data-tab="home"]){display:none}
 body.tab-insights #view-home > [data-tab]:not([data-tab="insights"]){display:none}
 body.tab-more #view-home > [data-tab]:not([data-tab="more"]){display:none}
+
+/* Reminders settings — daily check-in rows */
+.reminders-subhead{margin:18px 0 6px;font-size:.95rem;font-weight:600;color:var(--ink)}
+.reminders-subhead:first-of-type{margin-top:0}
+.daily-reminders{display:flex;flex-direction:column;gap:8px;margin:6px 0 10px}
+.daily-reminder-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;border:1px solid var(--border,#e5e7eb);border-radius:10px;background:var(--card-bg,transparent)}
+.daily-reminder-toggle{display:flex;align-items:center;gap:8px;margin:0;flex:1;cursor:pointer}
+.daily-reminder-toggle input[type="checkbox"]{margin:0}
+.daily-reminder-emoji{font-size:1.15rem;line-height:1}
+.daily-reminder-label{font-size:.95rem}
+.daily-reminder-time{display:flex;align-items:center;gap:6px;margin:0}
+.daily-reminder-time input[type="time"]{padding:4px 6px;font-size:.9rem}
+#set-timezone{width:100%}
