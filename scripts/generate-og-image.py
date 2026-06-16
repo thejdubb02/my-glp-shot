@@ -17,7 +17,7 @@ import base64, io, json, os, re, urllib.request
 KEY_FILE = "/root/.openclaw/openclaw.json"
 LANDING  = "/opt/my-glp-shot/web/landing"
 APP_DIR  = "/opt/my-glp-shot/web/app"
-MODEL    = "imagen-4.0-generate-001"
+MODEL    = "gemini-3.1-flash-image"  # migrated from imagen-4.0-generate-001 (discontinued 2026-08-17)
 
 # Same visual language as the achievement art so the brand reads cohesive across
 # the marketing site and the in-app share cards. NO TEXT, NO LETTERS, NO NUMBERS
@@ -46,18 +46,21 @@ def load_key():
     return m.group(1)
 
 def generate_hero(api_key):
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:predict?key={api_key}"
+    # Gemini image gen via :generateContent (Imagen 4 :predict was discontinued 2026-08-17).
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:generateContent?key={api_key}"
     body = json.dumps({
-        "instances": [{"prompt": PROMPT}],
-        "parameters": {"sampleCount": 1, "aspectRatio": "16:9"},
+        "contents": [{"parts": [{"text": PROMPT}]}],
+        "generationConfig": {"responseModalities": ["IMAGE"], "imageConfig": {"aspectRatio": "16:9"}},
     }).encode()
     req = urllib.request.Request(url, data=body, headers={"content-type": "application/json"})
     with urllib.request.urlopen(req, timeout=120) as r:
         data = json.loads(r.read())
-    preds = data.get("predictions", [])
-    if not preds or "bytesBase64Encoded" not in preds[0]:
-        raise RuntimeError(f"unexpected response: {str(data)[:400]}")
-    return base64.b64decode(preds[0]["bytesBase64Encoded"])
+    parts = data.get("candidates", [{}])[0].get("content", {}).get("parts", [])
+    for p in parts:
+        inline = p.get("inlineData") or p.get("inline_data")
+        if inline and inline.get("data"):
+            return base64.b64decode(inline["data"])
+    raise RuntimeError(f"no image in response: {str(data)[:400]}")
 
 def find_font(prefer_bold=False):
     candidates = (

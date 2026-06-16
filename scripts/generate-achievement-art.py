@@ -7,7 +7,7 @@ import base64, json, os, sys, time, urllib.request, urllib.error, re
 
 KEY_FILE = "/root/.openclaw/openclaw.json"
 OUT_DIR  = "/opt/my-glp-shot/web/app/icons/achievements"
-MODEL    = "imagen-4.0-generate-001"
+MODEL    = "gemini-3.1-flash-image"  # migrated from imagen-4.0-generate-001 (discontinued 2026-08-17)
 
 # Same ids as ACHIEVEMENTS in app.js. Each prompt is a self-contained scene
 # so the icons feel distinct, not just colour-shifted versions of one shape.
@@ -74,18 +74,21 @@ def load_key():
     return m.group(1)
 
 def gen(api_key, badge_id, prompt):
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:predict?key={api_key}"
+    # Gemini image gen via :generateContent (Imagen 4 :predict was discontinued 2026-08-17).
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:generateContent?key={api_key}"
     body = json.dumps({
-        "instances": [{"prompt": prompt}],
-        "parameters": {"sampleCount": 1, "aspectRatio": "1:1"},
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {"responseModalities": ["IMAGE"], "imageConfig": {"aspectRatio": "1:1"}},
     }).encode()
     req = urllib.request.Request(url, data=body, headers={"content-type": "application/json"})
     with urllib.request.urlopen(req, timeout=90) as r:
         data = json.loads(r.read())
-    preds = data.get("predictions", [])
-    if not preds or "bytesBase64Encoded" not in preds[0]:
-        raise RuntimeError(f"unexpected response for {badge_id}: {str(data)[:400]}")
-    return base64.b64decode(preds[0]["bytesBase64Encoded"])
+    parts = data.get("candidates", [{}])[0].get("content", {}).get("parts", [])
+    for p in parts:
+        inline = p.get("inlineData") or p.get("inline_data")
+        if inline and inline.get("data"):
+            return base64.b64decode(inline["data"])
+    raise RuntimeError(f"no image in response for {badge_id}: {str(data)[:400]}")
 
 def main():
     force = "--force" in sys.argv
