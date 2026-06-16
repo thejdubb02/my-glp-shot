@@ -71,7 +71,8 @@ find . -maxdepth 1 -name 'mgs-*.db.gz.enc' -mtime +30 | while read f; do
   fi
 done
 # Hard cap: keep at most 12 monthlies (oldest pruned).
-ls -1 mgs-*01T*.db.gz.enc 2>/dev/null | sort | head -n -12 | while read f; do
+# `|| true` so a no-match glob doesn't trip `set -o pipefail` (no monthlies yet).
+{ ls -1 mgs-*01T*.db.gz.enc 2>/dev/null || true; } | sort | head -n -12 | while read f; do
   rm -f "$f" "${f%.db.gz.enc}.manifest.json"
 done
 REMOTE
