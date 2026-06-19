@@ -49,109 +49,103 @@
     <a href="/#pricing">Pricing</a>
     <a href="/#faq">FAQ</a>
     <a href="/privacy.html">Privacy</a>
-    <a href="https://app.myglpshot.com/" class="btn-cta-sm">Open app &rarr;</a>
+    <a href="https://app.myglpshot.com/" class="btn-cta-sm">Open app →</a>
   </nav>
 </header>
 
 <main class="article-body">
   <p class="breadcrumbs"><a href="/">My GLP Shot</a> &rsaquo; <a href="/medication-guides/">Medication Guides</a> &rsaquo; Adempas (Riociguat)</p>
 
-  <h1>Adempas (Riociguat): Overview, Dosage, Side Effects &amp; Patient Resources</h1>
-  <p class="muted small">Last updated: <time datetime="2026-05-04">May 4, 2026</time>. This page is for informational purposes only and does not constitute medical advice. Always follow the guidance of a licensed healthcare provider.</p>
+  <h1>Adempas (Riociguat) Overview, Dosage, Side Effects &amp; Patient Resources</h1>
+  <p class="muted small">Last updated: <time datetime="2026-05-04">May 4, 2026</time>. This page is for informational purposes only. It is not medical advice. Always follow the guidance of a licensed healthcare provider.</p>
 
-  <p>Adempas is the brand name for riociguat, a prescription oral tablet used to treat two serious forms of pulmonary hypertension in adults. My GLP Shot has compiled this overview to help patients, caregivers, and clinicians quickly find accurate, plain-language information about how Adempas works, how it is dosed, what side effects to watch for, and where to find financial assistance. For a broader look at the disease itself, see our <a href="/pulmonary-hypertension/overview">pulmonary hypertension overview</a>.</p>
+  <p>Adempas is the brand name for riociguat, a prescription oral tablet used to treat two serious forms of pulmonary hypertension in adults. My GLP Shot has put together this overview to help patients, caregivers, and clinicians quickly find accurate, plain-language information about how Adempas works, how it is dosed, what side effects to watch for, and where to find financial support. For a broader look at the disease itself, see our <a href="/pulmonary-hypertension/overview">pulmonary hypertension overview</a>.</p>
 
   <h2>What Is Adempas (Riociguat)?</h2>
-  <p>Adempas (riociguat) is an oral tablet that belongs to a class of drugs called soluble guanylate cyclase (sGC) stimulators. It is the first and, as of this writing, only approved drug in that class for pulmonary hypertension. Riociguat is the generic (international nonproprietary) name; Adempas is the trade name under which it is marketed.</p>
-  <p>The drug is available in three tablet strengths: 0.5&nbsp;mg, 1&nbsp;mg, 1.5&nbsp;mg, 2&nbsp;mg, and 2.5&nbsp;mg. It is taken three times daily, making adherence to a consistent schedule important for maintaining stable blood levels.</p>
-  <p>Adempas is a prescription-only medication. It is dispensed exclusively through a restricted program because of its risk of serious fetal harm — patients and prescribers must both be enrolled before the drug can be dispensed.</p>
+  <p>Adempas (riociguat) is a small-molecule oral tablet that belongs to a class of drugs called soluble guanylate cyclase (sGC) stimulators. It is manufactured by Bayer and received FDA approval for use in adults with specific types of pulmonary hypertension. Riociguat is the generic (international nonproprietary) name; Adempas is the trade name under which it is marketed in the United States.</p>
+  <p>Unlike many older pulmonary hypertension therapies, Adempas works through a distinct pathway — the nitric oxide–sGC–cGMP signaling cascade — which sets it apart from prostacyclin analogues and endothelin receptor antagonists. It is available in tablet strengths of 0.5 mg, 1 mg, 1.5 mg, 2 mg, and 2.5 mg to support the gradual dose-titration approach required during treatment initiation.</p>
 
   <h2>How Does Adempas Work?</h2>
-  <p>Riociguat works by directly stimulating soluble guanylate cyclase (sGC), an enzyme found in the smooth muscle cells lining blood vessel walls. It does this through two complementary actions: it sensitizes sGC to the body's own nitric oxide (NO), and it can activate sGC independently even when NO levels are low.</p>
-  <p>When sGC is stimulated, it produces more cyclic guanosine monophosphate (cGMP). Elevated cGMP causes smooth muscle in the pulmonary arteries to relax and dilate, which lowers the resistance the right side of the heart must pump against. Over time, this can also slow or partially reverse the abnormal remodeling of pulmonary vessel walls that characterizes pulmonary hypertension.</p>
-  <p>This mechanism is distinct from phosphodiesterase-5 (PDE-5) inhibitors such as sildenafil or tadalafil, which prevent cGMP breakdown rather than stimulating its production. Because both drug types act on the same cGMP pathway, combining them significantly increases the risk of dangerous hypotension — which is why the combination is contraindicated.</p>
+  <p>The pulmonary vasculature in patients with pulmonary hypertension is characterized by vasoconstriction, abnormal cell proliferation, and remodeling of the vessel walls. Nitric oxide (NO) normally binds to sGC and triggers production of cyclic guanosine monophosphate (cGMP), which relaxes smooth muscle and inhibits vascular remodeling. In pulmonary hypertension, this pathway is impaired.</p>
+  <p>Riociguat stimulates sGC directly — independently of nitric oxide — and also sensitizes the enzyme to the low levels of NO that are still present. The result is increased cGMP production, which leads to:</p>
+  <ul>
+    <li>Relaxation and dilation of the pulmonary blood vessels (vasodilation).</li>
+    <li>Reduced pulmonary vascular resistance.</li>
+    <li>Inhibition of smooth muscle cell proliferation and fibrosis (anti-remodeling effects).</li>
+  </ul>
+  <p>By addressing both vasoconstriction and remodeling, Adempas targets two of the core mechanisms driving disease progression in CTEPH and PAH.</p>
 
   <h2>Approved Indications &amp; Who Can Use It</h2>
-  <p>Adempas carries two FDA-approved indications in adult patients:</p>
+  <p>Adempas carries FDA approval for two distinct adult patient populations:</p>
   <ul>
-    <li><strong>Chronic thromboembolic pulmonary hypertension (CTEPH)</strong> — specifically in patients with persistent or recurrent CTEPH after surgical treatment, or in patients who are not candidates for surgery. The goal is to improve exercise capacity and WHO functional class.</li>
-    <li><strong>Pulmonary arterial hypertension (PAH), WHO Group&nbsp;1</strong> — to improve exercise capacity, improve WHO functional class, and delay clinical worsening.</li>
+    <li><strong>Chronic thromboembolic pulmonary hypertension (CTEPH):</strong> Specifically for adults with persistent or recurrent CTEPH after surgical treatment, or for those whose disease is inoperable. The goal is to improve exercise capacity and WHO functional class.</li>
+    <li><strong>Pulmonary arterial hypertension (PAH), WHO Group 1:</strong> For adult patients to improve exercise capacity, improve WHO functional class, and delay clinical worsening.</li>
   </ul>
   <p>Adempas is <strong>not</strong> appropriate for everyone. Key contraindications include:</p>
   <ul>
-    <li><strong>Pregnancy.</strong> Adempas is pregnancy category X. It causes fetal harm and must not be used during pregnancy.</li>
-    <li><strong>Concurrent use of PDE-5 inhibitors</strong> (e.g., sildenafil, tadalafil, vardenafil) or nonspecific PDE inhibitors.</li>
-    <li><strong>Concurrent use of nitrates or nitric oxide donors</strong> in any form.</li>
-    <li><strong>Severe hepatic impairment</strong> (Child-Pugh C).</li>
-    <li><strong>Severe hypotension</strong> (systolic BP below 95&nbsp;mmHg at baseline).</li>
-    <li><strong>Pulmonary hypertension associated with idiopathic interstitial pneumonias</strong> — a separate indication where riociguat has shown harm.</li>
+    <li><strong>Pregnancy.</strong> Adempas is pregnancy category X and is absolutely contraindicated. It causes fetal harm. Women of childbearing potential must use reliable contraception throughout treatment and for at least 30 days after the final dose. Adempas is only available through a Risk Evaluation and Mitigation Strategy (REMS) program because of this risk.</li>
+    <li><strong>Concomitant use of nitrates or nitric oxide donors</strong> in any form (including recreational use of amyl nitrite).</li>
+    <li><strong>Concomitant use of phosphodiesterase-5 (PDE-5) inhibitors</strong> such as sildenafil or tadalafil, or non-specific PDE inhibitors.</li>
+    <li><strong>Severe hypotension</strong> (systolic blood pressure below 95 mmHg at baseline).</li>
+    <li><strong>Severe hepatic impairment</strong> (Child-Pugh class C).</li>
   </ul>
 
   <h2>Dosage &amp; Administration Guidelines</h2>
-  <p>Adempas is taken <strong>three times daily</strong>, ideally spaced approximately six to eight hours apart. It can be taken with or without food, though consistency matters — if you take it with food, take it with food every time.</p>
-  <p>The standard titration schedule works as follows:</p>
+  <p>Adempas is taken <strong>three times daily (TID)</strong>, approximately six to eight hours apart, with or without food — though consistent administration with food is generally recommended to reduce gastrointestinal side effects. Tablets should be swallowed whole; patients who cannot swallow tablets may crush them and mix with water or soft food immediately before taking.</p>
+  <p>The standard titration approach is:</p>
   <ul>
-    <li><strong>Starting dose:</strong> 1&nbsp;mg three times daily for two weeks.</li>
-    <li><strong>Upward titration:</strong> If systolic blood pressure remains above 95&nbsp;mmHg and the patient tolerates the current dose, the prescriber may increase by 0.5&nbsp;mg increments every two weeks.</li>
-    <li><strong>Maximum dose:</strong> 2.5&nbsp;mg three times daily.</li>
-    <li><strong>Downward titration:</strong> If hypotension or intolerance occurs, the dose can be reduced by 0.5&nbsp;mg increments.</li>
+    <li><strong>Starting dose:</strong> 1 mg three times daily for the first two weeks.</li>
+    <li><strong>Upward titration:</strong> If systolic blood pressure remains above 95 mmHg and the patient shows no signs of hypotension, the dose may be increased by 0.5 mg TID every two weeks.</li>
+    <li><strong>Maximum dose:</strong> 2.5 mg three times daily.</li>
+    <li><strong>Downward adjustment:</strong> If hypotension occurs at any point, the dose should be reduced by 0.5 mg TID.</li>
   </ul>
-  <p>For patients who smoke, drug exposure is reduced because smoking induces CYP1A1 enzymes that metabolize riociguat more rapidly. Prescribers may consider higher doses in smokers, and patients who quit smoking during treatment may need dose reduction to avoid toxicity.</p>
-  <p>Dose adjustments are also considered for patients with renal impairment. Adempas has not been studied in patients with creatinine clearance below 15&nbsp;mL/min or in dialysis patients, so use in severe renal impairment requires careful clinical judgment. For a printable dosage reference, see our <a href="/medication-guides/riociguat-dosage-chart">riociguat dosage chart</a>.</p>
-  <p>If a dose is missed, take it as soon as you remember — unless it is almost time for the next scheduled dose, in which case skip the missed dose and resume the regular schedule. Do not double up.</p>
+  <p>For patients with renal impairment (creatinine clearance below 15 mL/min) or those on dialysis, data are limited and caution is required. For patients with moderate hepatic impairment (Child-Pugh class B), starting doses should be conservative and titration should proceed carefully. Severe hepatic impairment is a contraindication.</p>
+  <p><strong>Smoking</strong> significantly reduces riociguat plasma concentrations. Patients who smoke may require higher doses, and those who stop smoking during treatment may need dose reductions to avoid toxicity. For a printable dosage reference, see our <a href="/medication-guides/riociguat-dosage-chart">riociguat dosage chart</a>.</p>
 
   <h2>Common Side Effects and Safety Profile</h2>
-  <p>Like all medications, Adempas carries a risk of side effects. The most frequently reported ones in clinical studies include:</p>
+  <p>Like all medications, Adempas carries a risk of side effects. The most frequently reported adverse events are related to its vasodilatory mechanism and gastrointestinal effects:</p>
   <ul>
-    <li><strong>Headache</strong> — often the most common complaint, particularly early in treatment.</li>
-    <li><strong>Dizziness and lightheadedness</strong> — related to the blood-pressure-lowering effect.</li>
-    <li><strong>Hypotension</strong> — low blood pressure, which can be significant, especially when standing up quickly.</li>
-    <li><strong>Gastrointestinal symptoms</strong> — nausea, vomiting, diarrhea, stomach pain, and dyspepsia.</li>
-    <li><strong>Peripheral edema</strong> — swelling in the legs or ankles.</li>
-    <li><strong>Nasal congestion</strong> and sinus-related symptoms.</li>
+    <li><strong>Headache</strong> — one of the most common, particularly early in treatment.</li>
+    <li><strong>Dizziness and lightheadedness</strong> — often related to blood pressure reduction.</li>
+    <li><strong>Hypotension</strong> — can be significant, especially with rapid titration or in patients on antihypertensives.</li>
+    <li><strong>Nausea, vomiting, diarrhea, and dyspepsia</strong> — GI effects are common and may improve over time.</li>
+    <li><strong>Peripheral edema</strong> — swelling in the legs and ankles.</li>
+    <li><strong>Nasopharyngitis and respiratory tract infections.</strong></li>
   </ul>
   <p>More serious risks that require prompt medical attention include:</p>
   <ul>
-    <li><strong>Pulmonary bleeding and hemoptysis</strong> — coughing up blood. Patients with a history of serious hemoptysis or prior bronchial artery embolization may be at higher risk.</li>
-    <li><strong>Symptomatic hypotension</strong> — fainting, severe dizziness, or collapse.</li>
+    <li><strong>Pulmonary bleeding and hemoptysis</strong> — serious bleeding events have been reported. Patients with a history of hemoptysis or pulmonary hemorrhage should be monitored closely.</li>
+    <li><strong>Symptomatic hypotension</strong> — particularly dangerous in patients who are volume-depleted or on concurrent antihypertensive therapy.</li>
     <li><strong>Liver enzyme elevations</strong> — periodic liver function monitoring is recommended.</li>
   </ul>
-  <p>Patients should report any new or worsening symptoms to their prescriber promptly. Do not stop taking Adempas abruptly without medical guidance, as this can cause a rapid worsening of pulmonary hypertension.</p>
+  <p>Patients should not stop Adempas abruptly without consulting their prescriber, as clinical worsening of pulmonary hypertension can occur rapidly after discontinuation.</p>
 
-  <h2>Drug Interactions &amp; Contra&#8209;indications</h2>
-  <p>Adempas has several clinically important drug interactions that can either increase the risk of serious harm or reduce the drug's effectiveness.</p>
-  <p><strong>Combinations to avoid entirely:</strong></p>
+  <h2>Drug Interactions &amp; Contra‑indications</h2>
+  <p>Riociguat has several clinically important drug interactions that must be reviewed before starting therapy:</p>
   <ul>
-    <li><strong>PDE-5 inhibitors</strong> (sildenafil, tadalafil, vardenafil, avanafil) — combining these with riociguat causes additive blood-pressure lowering and is contraindicated.</li>
-    <li><strong>Nitrates and nitric oxide donors</strong> (nitroglycerin, isosorbide mononitrate, amyl nitrite/"poppers") — same mechanism, same risk of severe hypotension.</li>
-    <li><strong>Nonspecific PDE inhibitors</strong> such as dipyridamole or theophylline — also contraindicated.</li>
+    <li><strong>Nitrates and nitric oxide donors:</strong> Absolutely contraindicated. Combining Adempas with any nitrate (including nitroglycerin, isosorbide mononitrate, or recreational nitrites) can cause severe, potentially fatal hypotension.</li>
+    <li><strong>PDE-5 inhibitors (sildenafil, tadalafil, vardenafil):</strong> Contraindicated. The combination amplifies the blood-pressure-lowering effect and increases the risk of serious hypotension. Non-specific PDE inhibitors (such as dipyridamole and theophylline) are also contraindicated.</li>
+    <li><strong>Strong CYP and P-glycoprotein inhibitors</strong> (such as azole antifungals, certain HIV protease inhibitors, and clarithromycin): These can substantially increase riociguat plasma levels, raising the risk of hypotension. Dose reduction or avoidance may be necessary.</li>
+    <li><strong>Strong CYP inducers</strong> (such as rifampicin, phenytoin, carbamazepine, and St. John's Wort): These can reduce riociguat exposure significantly, potentially reducing efficacy.</li>
+    <li><strong>Antacids containing aluminum or magnesium hydroxide:</strong> Can reduce riociguat absorption. Adempas should not be taken within one hour of antacid use.</li>
+    <li><strong>Smoking:</strong> Induces CYP1A1 and reduces riociguat plasma concentrations. Dose adjustments may be needed when smoking status changes.</li>
   </ul>
-  <p><strong>Interactions requiring monitoring or dose adjustment:</strong></p>
-  <ul>
-    <li><strong>Strong CYP3A4 inhibitors</strong> (e.g., ketoconazole, itraconazole, ritonavir, clarithromycin) — these increase riociguat blood levels and may require dose reduction.</li>
-    <li><strong>Strong CYP3A4 inducers</strong> (e.g., rifampin, carbamazepine, phenytoin, St. John's Wort) — these lower riociguat levels and may reduce effectiveness.</li>
-    <li><strong>Antacids containing aluminum or magnesium hydroxide</strong> — can reduce riociguat absorption; separate administration by at least two hours.</li>
-    <li><strong>Other antihypertensive agents</strong> — additive blood-pressure lowering; monitor closely.</li>
-  </ul>
-  <p><strong>Smoking:</strong> As noted above, smoking significantly reduces riociguat exposure. Patients should inform their prescriber if they start or stop smoking during treatment.</p>
-  <p>Always give your prescriber and pharmacist a complete list of all medications, supplements, and herbal products you take before starting Adempas.</p>
+  <p>Always provide a complete medication list — including over-the-counter drugs, supplements, and herbal products — to the prescribing clinician before starting Adempas.</p>
 
-  <h2>Monitoring &amp; Follow&#8209;up Recommendations</h2>
-  <p>Because Adempas affects blood pressure and carries risks of bleeding and organ toxicity, regular monitoring is an important part of safe treatment.</p>
-  <p><strong>Before starting treatment, a baseline assessment typically includes:</strong></p>
+  <h2>Monitoring &amp; Follow‑up Recommendations</h2>
+  <p>Adempas requires careful monitoring, particularly during the titration phase. Clinicians typically establish a baseline and then follow up at defined intervals:</p>
   <ul>
-    <li>Blood pressure measurement.</li>
-    <li>Liver function tests (LFTs).</li>
-    <li>Renal function (creatinine, eGFR).</li>
-    <li>Pregnancy test for women of childbearing potential, plus confirmation of effective contraception.</li>
-    <li>Pulmonary function and six-minute walk distance (6MWD) as a functional baseline.</li>
+    <li><strong>Baseline assessments:</strong> Blood pressure, complete blood count, liver function tests, renal function, pulmonary function, and a six-minute walk distance (6MWD) test. Pregnancy testing is required for women of childbearing potential before the first dose.</li>
+    <li><strong>During titration (every two weeks):</strong> Blood pressure check before each dose increase. Symptoms of hypotension, dizziness, or syncope should prompt a dose hold or reduction rather than escalation.</li>
+    <li><strong>Ongoing follow-up (approximately every three to six months):</strong> Repeat 6MWD, WHO functional class assessment, echocardiography as clinically indicated, and liver function tests.</li>
+    <li><strong>Pregnancy testing:</strong> Monthly pregnancy tests are required throughout treatment for women of childbearing potential as part of the REMS program.</li>
   </ul>
-  <p><strong>During titration:</strong> Blood pressure should be checked at each dose-adjustment visit (approximately every two weeks during the titration phase). Symptoms of hypotension — dizziness, lightheadedness, syncope — should prompt immediate evaluation.</p>
-  <p><strong>Ongoing follow-up</strong> typically occurs every three to six months once a stable dose is established, and includes blood pressure, liver function, renal function, and a clinical assessment of functional status. Any new symptoms — particularly hemoptysis, worsening dyspnea, or edema — warrant earlier evaluation.</p>
-  <p><strong>When to consider dose reduction or discontinuation:</strong> Symptomatic hypotension, significant bleeding, severe liver enzyme elevation, or clinical deterioration despite treatment are all reasons to reassess the dose or discontinue under medical supervision.</p>
+  <p>If a patient misses doses for three or more days, the prescriber should reassess whether to restart at a lower dose rather than resuming at the previously established dose, to avoid hypotension.</p>
 
   <h2>Patient Assistance Programs &amp; Cost Savings</h2>
-  <p>Adempas is a specialty medication, and out-of-pocket costs can be substantial without insurance coverage. Several resources may help reduce the financial burden:</p>
+  <p>Adempas is a specialty medication, and out-of-pocket costs can be substantial without insurance coverage. Several support pathways are available:</p>
   <ul>
-    <li><strong>Manufacturer patient support program:</strong> The manufacturer of Adempas offers a patient support program that may include co-pay assistance for eligible commercially insured patients. Contact the manufacturer directly or ask your specialty pharmacy for enrollment details.</li>
-    <li><strong>Independent patient assistance
+    <li><strong>Manufacturer co-pay assistance:</strong> Bayer offers a patient support program for eligible commercially insured patients. Eligibility requirements and benefit levels are set by the manufacturer and can change; contact the program directly for current details.</li>
+    <li><strong>Patient advocacy foundations:</strong> Organizations focused on pulmonary hypertension may offer independent co-pay assistance or emergency grants for patients who do not qualify for manufacturer programs. Income and insurance requirements vary by foundation.</li>
+    <li><strong>Prior authorization support:</strong> Because Adempas is a specialty drug, most insurance plans require prior authorization. The prescribing clinician's office typically handles this process, but patients can ask the specialty pharmacy or manufacturer support line for assistance with documentation.</li>
+    <li><strong>Generic availability:</strong> As
