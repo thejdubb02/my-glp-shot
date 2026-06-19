@@ -1,32 +1,17 @@
-I need to flag a critical issue before proceeding.
+I need to flag a serious compliance issue before producing any output.
 
-The brief asks me to write a page about **"Abraxyne"** — described as a proprietary pain-relief injection product from My GLP Shot. However:
+The planning brief asks me to write about **"Abraxyne"** — described as a proprietary pain-relief injection product from My GLP Shot. However:
 
-1. **My GLP Shot is a GLP-1 injection *tracker* app**, not a pharmaceutical manufacturer or pain-relief product company. The sample pages make this unambiguous: it is a free Progressive Web App for logging Ozempic, Mounjaro, Wegovy, and similar medications.
+1. **My GLP Shot is a GLP-1 injection *tracker* app**, not a pharmaceutical manufacturer or pain-relief product company. The sample pages make this unambiguous — it is a browser-based PWA for logging Mounjaro, Ozempic, Wegovy, and similar medications.
 
-2. **"Abraxyne" does not exist as a My GLP Shot product.** The brief's planning notes, FAQs, and product claims (subcutaneous pain-relief injection, "clinically proven active ingredients," "rapid onset within 15 minutes," "up to 72 hours" duration, "non-addictive," etc.) are entirely fabricated specifics with no basis in the sample pages or any real My GLP Shot offering.
+2. **"Abraxyne" does not exist as a My GLP Shot product.** The brief's own FAQ answers contain fabricated specifics I am prohibited from publishing: invented mechanisms of action, invented onset times ("within 15 minutes"), invented duration claims ("up to 72 hours"), invented administration descriptions ("painless, takes less than a minute"), and invented safety profiles — none of which appear anywhere in the sample pages or reflect anything My GLP Shot actually offers.
 
-3. **The target query "abraxane"** in the brief refers to a real oncology chemotherapy drug (nab-paclitaxel). Writing a page that conflates a fictional "Abraxyne" pain product with that query — on a GLP-1 tracker's domain — would be medically misleading and potentially harmful.
+3. The brief's `meta_description` field is visibly corrupted/malformed, which suggests the brief itself was generated erroneously.
 
-4. **Rule 1 of my absolute constraints** prohibits fabricating prices, certifications, named products, statistics, clinical claims, or quotes. Nearly every claim in this brief is fabricated.
-
-Publishing this page as drafted would:
-- Misrepresent My GLP Shot's actual product (a tracker app)
-- Make unverifiable medical/clinical claims about a non-existent injectable drug
-- Risk serious harm to users who might act on fabricated safety or dosing information
-- Violate the site's own footer disclaimer: *"Not medical advice. Talk to your doctor."*
-
-**I cannot write this article as briefed.**
-
----
+4. **Rule 1 is absolute:** *Never invent prices, percentages, dates, certifications, named people, named clients, statistics, study citations, uptime numbers, response times, customer counts, ratings, or quotes.* Publishing fabricated pharmaceutical product claims under a real brand's domain would expose My GLP Shot to regulatory and legal risk, not just an SEO penalty.
 
 **What I can do instead:**
 
-If the goal is a legitimate informational page for myglpshot.com, I can write one that matches the brand's actual identity — for example:
+If you have a legitimate page brief for myglpshot.com — such as a comparison page, a guide to tracking a specific GLP-1 medication, a privacy explainer, or a features page — I am ready to write it immediately, matching the site's exact voice and markup conventions from the samples.
 
-- A guide to **tracking GLP-1 injections** with My GLP Shot
-- A comparison page (matching the vs-careclinic.html pattern)
-- An FAQ or explainer about **how the app works**
-- A page explaining **what GLP-1 medications are** (informational, no fabricated clinical claims)
-
-Please provide a revised brief grounded in what My GLP Shot actually is, and I will produce a fully compliant, publish-ready article.
+If "Abraxyne" is a real, documented My GLP Shot feature or product, please share the source documentation and I will incorporate only those verified facts.
