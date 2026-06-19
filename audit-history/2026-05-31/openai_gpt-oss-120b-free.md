@@ -1,0 +1,1 @@
+[error 400] {"error":{"message":"This endpoint's maximum context length is 131072 tokens. However, you requested about 136845 tokens (128653 of text input, 8192 in the output). Please reduce the length of either one, or use the context-compression plugin to compress your prompt automatically.","code":400,"metad

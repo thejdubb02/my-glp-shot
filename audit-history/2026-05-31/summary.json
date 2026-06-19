@@ -1,0 +1,22 @@
+{
+  "date": "2026-05-31",
+  "total": 2,
+  "by_sev": {
+    "CRITICAL": 2,
+    "HIGH": 0,
+    "MEDIUM": 0,
+    "LOW": 0
+  },
+  "findings": [
+    {
+      "sev": "CRITICAL",
+      "body": "api/app.py:100 \u2014 `_safe_col` function is used to handle missing columns for `is_admin` in `public_user`. While `init_db` attempts to add `is_admin` with a default of 0, relying on `_safe_col` for a security-sensitive field like `is_admin` in `public_user` is risky. If the column is truly missing or not properly migrated, `public_user` might incorrectly report `isAdmin: false` for an admin.",
+      "src": "gemini-2.5-flash"
+    },
+    {
+      "sev": "CRITICAL",
+      "body": "web/app/index.html \u2014 Missing Content Security Policy (CSP) header. This is a major security vulnerability that allows arbitrary scripts, styles, and other resources to be loaded if an XSS vulnerability exists, enabling data exfiltration or malicious code injection.",
+      "src": "gemini-2.5-flash"
+    }
+  ]
+}

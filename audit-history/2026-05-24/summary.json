@@ -1,0 +1,22 @@
+{
+  "date": "2026-05-24",
+  "total": 2,
+  "by_sev": {
+    "CRITICAL": 0,
+    "HIGH": 0,
+    "MEDIUM": 2,
+    "LOW": 0
+  },
+  "findings": [
+    {
+      "sev": "MEDIUM",
+      "body": "api/app.py:173 \u2014 Auth fallback logic reveals email existence.** The client-side logic attempts signup, then login if `email_in_use`, or login then signup if `invalid_credentials`. While the server's `forgot_password` endpoint prevents email enumeration, this client-side flow, if observed by an attacker, could still reveal if an email is registered by the sequence of API calls (e.g., a 409 from `/api/signup` followed by a 401 from `/api/login` vs. a 401 from `/api/login` followed by a 200 from `/api/signup`). This is a minor information leak. Fix: The client should not attempt a fallback. If signup fails with `email_in_use`, it should prompt the user to log in. If login fails with `invalid_credentials`, it should prompt the user to sign up or use \"Forgot password\".",
+      "src": "gemini-2.5-flash"
+    },
+    {
+      "sev": "MEDIUM",
+      "body": "web/app/app.js:1071 \u2014 AES encryption key stored in localStorage. The raw AES encryption key (`account.encryptionKey`) is exported and stored in `localStorage` as `account.cred`. While this enables session persistence without re-prompting for the password, it makes the E2EE vulnerable to XSS attacks. If an attacker can inject malicious JavaScript, they can steal this key and decrypt all cloud-synced data. Fix: Consider using a more secure storage mechanism for the encryption key, such as a Web Crypto API `",
+      "src": "gemini-2.5-flash"
+    }
+  ]
+}

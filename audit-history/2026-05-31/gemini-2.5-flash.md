@@ -1,0 +1,7 @@
+Here is an audit of My GLP Shot, focusing on bugs, security issues, and high-leverage optimizations, formatted as requested.**
+
+- [CRITICAL] api/app.py:100 — `_safe_col` function is used to handle missing columns for `is_admin` in `public_user`. While `init_db` attempts to add `is_admin` with a default of 0, relying on `_safe_col` for a security-sensitive field like `is_admin` in `public_user` is risky. If the column is truly missing or not properly migrated, `public_user` might incorrectly report `isAdmin: false` for an admin.
+    *   Fix: Ensure `is_admin` column is always present and defaulted to 0 in `init_db`. Modify `public_user` to directly access `user_row['is_admin']` and treat `None` as 0, removing reliance on `_safe_col` for this specific field.
+
+- [CRITICAL] web/app/index.html — Missing Content Security Policy (CSP) header. This is a major security vulnerability that allows arbitrary scripts, styles, and other resources to be loaded if an XSS vulnerability exists, enabling data exfiltration or malicious code injection.
+    *   Fix: Implement a strict CSP header (e.g., `Content-Security-Policy: default-src 'self'; script-src 'self' https://analytics.willhitestrategy.org; style-src '

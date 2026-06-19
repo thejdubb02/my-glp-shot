@@ -1,0 +1,42 @@
+{
+  "date": "2026-05-17",
+  "total": 6,
+  "by_sev": {
+    "CRITICAL": 0,
+    "HIGH": 0,
+    "MEDIUM": 2,
+    "LOW": 4
+  },
+  "findings": [
+    {
+      "sev": "MEDIUM",
+      "body": "api/app.py:100 \u2014 `APP_BASE_URL` is used for password reset links but not for Stripe success/cancel URLs. Fix: Consolidate to a single `APP_BASE_URL` environment variable for all external-facing URLs to ensure consistency and prevent misconfiguration.",
+      "src": "gemini-2.5-flash"
+    },
+    {
+      "sev": "MEDIUM",
+      "body": "api/app.py:107 \u2014 `MGS_ADMIN_TOKEN` is stored in plaintext in an environment variable. Fix: Hash the admin token (e.g., with bcrypt) and store the hash. Compare the provided token against the hash using `secrets.compare_digest`.",
+      "src": "gemini-2.5-flash"
+    },
+    {
+      "sev": "LOW",
+      "body": "api/app.py:126 \u2014 Missing explicit index on `users.email`. Fix: Add `CREATE UNIQUE INDEX IF NOT EXISTS users_email_idx ON users(email);` to the schema. (SQLite implicitly indexes `UNIQUE` columns, but explicit definition is clearer).",
+      "src": "gemini-2.5-flash"
+    },
+    {
+      "sev": "LOW",
+      "body": "api/app.py:136 \u2014 Missing index on `sessions.user_id`. Fix: Add `CREATE INDEX IF NOT EXISTS sessions_user_id_idx ON sessions(user_id);` to the schema.",
+      "src": "gemini-2.5-flash"
+    },
+    {
+      "sev": "LOW",
+      "body": "api/app.py:150 \u2014 Missing index on `share_links.user_id`. Fix: Add `CREATE INDEX IF NOT EXISTS share_links_user_id_idx ON share_links(user_id);` to the schema.",
+      "src": "gemini-2.5-flash"
+    },
+    {
+      "sev": "LOW",
+      "body": "api/app.py:157 \u2014 Missing index",
+      "src": "gemini-2.5-flash"
+    }
+  ]
+}
