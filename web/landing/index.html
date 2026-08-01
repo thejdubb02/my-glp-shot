@@ -7,7 +7,7 @@
 
 <!-- Primary SEO -->
 <title>My GLP Shot — Private Offline GLP-1 Dose Tracker</title>
-<meta name="description" content="Private, offline-first GLP-1 dose tracker for tirzepatide, semaglutide, Ozempic, Wegovy. No account, no cloud sync — your health data stays on your device. $19.99/year.">
+<meta name="description" content="Offline-first GLP-1 dose tracker for tirzepatide, semaglutide, Ozempic and Wegovy. No account — your data stays on your device. Free, or $19.99/year.">
 <meta name="keywords" content="GLP-1 tracker, tirzepatide tracker, semaglutide tracker, shot tracker, weight loss shot tracker, injection tracker, Mounjaro tracker, Zepbound tracker, Ozempic tracker, Wegovy tracker, GLP-1 dose tracker, weekly shot reminder, privacy-first weight loss app">
 <link rel="canonical" href="https://myglpshot.com/">
 <!-- Allow Google AI Overviews / Bing Copilot / others to use full snippets and large images -->
@@ -88,16 +88,33 @@
       "price": "19.99",
       "priceCurrency": "USD",
       "billingDuration": "P1Y",
-      "description": "Cloud sync, pen and vial tracking, lab numbers, plateau alerts, doctor PDF, 14-day free trial."
+      "description": "Cloud sync, pen and vial tracking, lab numbers, plateau alerts, doctor PDF, 14-day free trial.",
+      "hasMerchantReturnPolicy": {
+        "@type": "MerchantReturnPolicy",
+        "applicableCountry": "US",
+        "returnPolicyCategory": "https://schema.org/MerchantReturnFiniteReturnWindow",
+        "merchantReturnDays": 30,
+        "refundType": "https://schema.org/FullRefund",
+        "returnFees": "https://schema.org/FreeReturn"
+      }
     },
     {
       "@type": "Offer",
       "name": "Premium (monthly)",
       "price": "1.99",
       "priceCurrency": "USD",
-      "billingDuration": "P1M"
+      "billingDuration": "P1M",
+      "hasMerchantReturnPolicy": {
+        "@type": "MerchantReturnPolicy",
+        "applicableCountry": "US",
+        "returnPolicyCategory": "https://schema.org/MerchantReturnFiniteReturnWindow",
+        "merchantReturnDays": 30,
+        "refundType": "https://schema.org/FullRefund",
+        "returnFees": "https://schema.org/FreeReturn"
+      }
     }
   ],
+  "dateCreated": "2026",
   "featureList": [
     "GLP-1 shot logging with injection site rotation",
     "Mixing / reconstitution calculator",
@@ -149,6 +166,16 @@
     "@type": "Brand",
     "name": "My GLP Shot",
     "url": "https://myglpshot.com"
+  },
+  "contactPoint": {
+    "@type": "ContactPoint",
+    "contactType": "customer support",
+    "email": "hello@myglpshot.com",
+    "availableLanguage": "English",
+    "hoursAvailable": {
+      "@type": "OpeningHoursSpecification",
+      "dayOfWeek": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
+    }
   },
   "sameAs": [
     "https://github.com/thejdubb02/my-glp-shot"
@@ -798,6 +825,7 @@
     <div>
       <strong>App</strong>
       <a href="https://app.myglpshot.com/">Open the app</a>
+      <a href="/about.html">About</a>
       <a href="#features">Features</a>
       <a href="#pricing">Pricing</a>
       <a href="#faq">FAQ</a>
