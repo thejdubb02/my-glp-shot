@@ -1507,8 +1507,16 @@ document.addEventListener('DOMContentLoaded', async () => {
       const perm = await Notification.requestPermission();
       settings.notify = perm === 'granted';
       e.target.checked = settings.notify;
+      // Register for push where we can. Failing here is not fatal — the in-page
+      // timer still works while the app is open — so it must not block the
+      // toggle, only downgrade what the status line promises.
+      if (settings.notify && PUSH_SUPPORTED && account.user) {
+        try { await enablePushReminders(); }
+        catch (err) { console.warn('[mgs] push enable failed:', err); }
+      }
     } else {
       settings.notify = false;
+      try { await disablePushReminders(); } catch (_) {}
     }
     await saveSettings();
     markSyncDirty();
@@ -2515,6 +2523,10 @@ async function maybeScheduleNotification() {
 
   if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
 
+  // Re-publish the upcoming fire times whenever the plan changes, so a schedule
+  // edited here lands on the server that actually delivers when the app is shut.
+  syncPushSchedule().catch(() => {});
+
   // Clear all scheduled notifications we own (shot-* and daily-*) before re-scheduling.
   if ('serviceWorker' in navigator) {
     try {
@@ -2629,6 +2641,138 @@ async function scheduleDailyReminders() {
       scheduleDailyReminders();
     }, ms);
     dailyReminderTimers.push(t);
+  }
+}
+
+// ---------- Web Push reminders ----------
+// In-page timers can only fire while the app is open, and Notification Triggers
+// is not shipped by any current browser. Push is the only way a reminder reaches
+// someone who closed the tab three days ago.
+//
+// The privacy trade, stated plainly because it is the whole design: the server
+// is told WHEN to send and nothing else. Fire times are computed here from the
+// local (encrypted, server-unreadable) schedule; the wording is picked by the
+// server from a fixed list keyed on `kind`. The medication, dose, sites and
+// history never leave the device.
+const PUSH_SUPPORTED = typeof window !== 'undefined'
+  && 'serviceWorker' in navigator && 'PushManager' in window;
+const PUSH_HORIZON_DAYS = 30;
+const PUSH_MAX_QUEUED = 32;
+
+function urlBase64ToUint8Array(b64) {
+  const padding = '='.repeat((4 - (b64.length % 4)) % 4);
+  const raw = atob((b64 + padding).replace(/-/g, '+').replace(/_/g, '/'));
+  const out = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+  return out;
+}
+
+async function getPushSubscription() {
+  if (!PUSH_SUPPORTED) return null;
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    return await reg.pushManager.getSubscription();
+  } catch (_) { return null; }
+}
+
+async function enablePushReminders() {
+  if (!PUSH_SUPPORTED) throw new Error('This browser cannot receive push reminders.');
+  if (!account.user) throw new Error('Sign in first — push reminders need an account.');
+  if (Notification.permission !== 'granted') {
+    const p = await Notification.requestPermission();
+    if (p !== 'granted') throw new Error('Notification permission was not granted.');
+  }
+  const keyResp = await accountFetch('push/key');
+  if (!keyResp.ok) throw new Error('Push is not configured on the server yet.');
+  const { publicKey } = await keyResp.json();
+
+  const reg = await navigator.serviceWorker.ready;
+  let sub = await reg.pushManager.getSubscription();
+  // A subscription made against a different VAPID key is dead; replace it.
+  if (sub) {
+    const existing = sub.options && sub.options.applicationServerKey;
+    const want = urlBase64ToUint8Array(publicKey);
+    const same = existing && new Uint8Array(existing).length === want.length
+      && new Uint8Array(existing).every((b, i) => b === want[i]);
+    if (!same) { try { await sub.unsubscribe(); } catch (_) {} sub = null; }
+  }
+  if (!sub) {
+    sub = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(publicKey),
+    });
+  }
+  const r = await accountFetch('push/subscribe', { method: 'POST', body: JSON.stringify(sub.toJSON()) });
+  if (!r.ok) throw new Error('Could not register this device for reminders.');
+  await syncPushSchedule();
+  track('push_enabled');
+  return true;
+}
+
+async function disablePushReminders() {
+  const sub = await getPushSubscription();
+  try {
+    await accountFetch('push/unsubscribe', {
+      method: 'POST',
+      body: JSON.stringify({ endpoint: sub ? sub.endpoint : '' }),
+    });
+  } catch (_) {}
+  if (sub) { try { await sub.unsubscribe(); } catch (_) {} }
+  track('push_disabled');
+}
+
+// Compute the upcoming fire times from local data. Returns only {kind, fireAt}
+// pairs — deliberately the least the server can be told and still send on time.
+async function computeUpcomingReminders() {
+  const out = [];
+  const now = Date.now();
+  const horizon = now + PUSH_HORIZON_DAYS * 86400000;
+
+  if (settings.notify) {
+    const shots = await getShotsSorted();
+    if (shots.length) {
+      const lead = (settings.notifyLeadMinutes || 0) * 60000;
+      // Project the cadence forward rather than sending only the next one, so a
+      // user who doesn't open the app for a month still gets nudged.
+      let next = nextShotDate(shots[0].when);
+      const cadenceMs = Math.max(1, settings.cadenceDays || 7) * 86400000;
+      for (let i = 0; i < 8; i++) {
+        const fire = next.getTime() - lead;
+        if (fire > now && fire <= horizon) out.push({ kind: 'shot', fireAt: Math.floor(fire / 1000) });
+        next = new Date(next.getTime() + cadenceMs);
+        if (next.getTime() > horizon) break;
+      }
+    }
+  }
+
+  const cfg = settings.dailyReminders || {};
+  for (const r of DAILY_REMINDERS) {
+    const entry = cfg[r.key];
+    if (!entry || !entry.enabled) continue;
+    let fireAt = nextDailyTriggerAt(entry.time);
+    if (!fireAt) continue;
+    for (let d = 0; d < 14; d++) {
+      const t = fireAt.getTime() + d * 86400000;
+      if (t > now && t <= horizon) out.push({ kind: `daily:${r.key}`, fireAt: Math.floor(t / 1000) });
+    }
+  }
+
+  out.sort((a, b) => a.fireAt - b.fireAt);
+  return out.slice(0, PUSH_MAX_QUEUED);
+}
+
+async function syncPushSchedule() {
+  if (!account.user) return null;
+  const sub = await getPushSubscription();
+  if (!sub) return null;                    // nothing registered: nothing to schedule
+  try {
+    const reminders = await computeUpcomingReminders();
+    const r = await accountFetch('push/schedule', { method: 'PUT', body: JSON.stringify({ reminders }) });
+    if (!r.ok) return null;
+    return await r.json();
+  } catch (e) {
+    console.warn('[mgs] push schedule sync failed:', e);
+    return null;
   }
 }
 
@@ -2752,16 +2896,32 @@ function updateNotifyStatus() {
   if (isIOS && !standalone) {
     el.textContent = 'On iOS, install My GLP Shot to your Home Screen first — notifications only work for installed PWAs.'; return;
   }
-  if (TRIGGERS_SUPPORTED) {
-    el.textContent = settings.notify ? '✓ Reminders scheduled (work when app is closed).' : 'Toggle on for scheduled push reminders.';
-  } else {
-    // No browser currently ships Notification Triggers, so reminders run on an
-    // in-page timer and only fire while the app is open. Saying so plainly beats
-    // a user missing a dose because the app implied it would nudge them.
-    el.textContent = settings.notify
-      ? '✓ Reminders on — but this browser can only fire them while My GLP Shot is open. Keep a tab open, or set a phone alarm as a backup until scheduled reminders ship.'
-      : 'Toggle on to enable reminders. Note: this browser can only show them while the app is open.';
+  if (!settings.notify) {
+    el.textContent = PUSH_SUPPORTED && account.user
+      ? 'Toggle on for reminders that arrive even when the app is closed.'
+      : 'Toggle on to enable reminders.';
+    return;
   }
+  // Say which delivery path is actually live. Claiming "scheduled" when only an
+  // in-page timer is running is how someone ends up missing a dose.
+  el.textContent = '✓ Reminders on — checking delivery…';
+  getPushSubscription().then(async (sub) => {
+    if (sub && account.user) {
+      const st = await accountFetch('push/status').then(r => r.ok ? r.json() : null).catch(() => null);
+      if (st && st.configured && st.devices > 0) {
+        const when = st.nextFireAt ? new Date(st.nextFireAt * 1000).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : null;
+        el.textContent = when
+          ? `✓ Reminders on — delivered even when the app is closed. Next: ${when}.`
+          : '✓ Reminders on — delivered even when the app is closed.';
+        return;
+      }
+    }
+    if (!account.user) {
+      el.textContent = '✓ Reminders on, but only while the app is open. Sign in to get them delivered when it\'s closed.';
+    } else {
+      el.textContent = '✓ Reminders on, but only while the app is open on this device. Re-toggle to retry background delivery.';
+    }
+  }).catch(() => {});
 }
 
 async function sendTestNotification() {

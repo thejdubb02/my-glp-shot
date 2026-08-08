@@ -9,7 +9,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY app.py .
+COPY app.py push_send.py push_dispatch.py ./
 
 # Non-root user for runtime isolation
 RUN useradd --system --create-home --shell /bin/false app && \

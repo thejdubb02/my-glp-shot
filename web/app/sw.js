@@ -112,6 +112,15 @@ self.addEventListener('push', (e) => {
   let data = {};
   try { data = e.data ? e.data.json() : {}; } catch (_) { data = { title: 'My GLP Shot', body: e.data ? e.data.text() : '' }; }
   const title = data.title || 'My GLP Shot';
-  const opts = { body: data.body || 'Shot reminder', icon: 'icons/icon-192.png', data: { url: '/' } };
+  const opts = {
+    body: data.body || 'Shot reminder',
+    icon: 'icons/icon-192.png',
+    badge: 'icons/icon-192.png',
+    // Carry the server's deep link through, so tapping a weigh-in reminder opens
+    // the weigh-in and not just the home screen. This was hardcoded to '/'.
+    data: { url: data.url || '/' },
+    tag: data.tag || undefined,
+    renotify: !!data.tag,
+  };
   e.waitUntil(self.registration.showNotification(title, opts));
 });
