@@ -2575,6 +2575,14 @@ async function scheduleShotReminder() {
 }
 
 async function scheduleDailyReminders() {
+  // Re-planning replaces the whole set, so drop any timers still pending. The
+  // roll-over call at the end of a fired reminder re-enters here directly
+  // (not via maybeScheduleNotification, which is where clearing used to
+  // happen), so without this every fire stacked another full set of timers and
+  // a long-lived tab ended up showing the same reminder several times.
+  dailyReminderTimers.forEach(t => clearTimeout(t));
+  dailyReminderTimers = [];
+
   const cfg = settings.dailyReminders || {};
   for (const r of DAILY_REMINDERS) {
     const entry = cfg[r.key];
@@ -2747,7 +2755,12 @@ function updateNotifyStatus() {
   if (TRIGGERS_SUPPORTED) {
     el.textContent = settings.notify ? '✓ Reminders scheduled (work when app is closed).' : 'Toggle on for scheduled push reminders.';
   } else {
-    el.textContent = settings.notify ? '✓ Reminders enabled. Open the app at least once between shots so it can re-schedule.' : 'Toggle on to enable reminders.';
+    // No browser currently ships Notification Triggers, so reminders run on an
+    // in-page timer and only fire while the app is open. Saying so plainly beats
+    // a user missing a dose because the app implied it would nudge them.
+    el.textContent = settings.notify
+      ? '✓ Reminders on — but this browser can only fire them while My GLP Shot is open. Keep a tab open, or set a phone alarm as a backup until scheduled reminders ship.'
+      : 'Toggle on to enable reminders. Note: this browser can only show them while the app is open.';
   }
 }
 
