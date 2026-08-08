@@ -27,6 +27,7 @@ APP_BASE_URL = os.environ.get('APP_BASE_URL', 'https://myglpshot.com')
 MAIL_FROM = os.environ.get('MAIL_FROM', 'My GLP Shot <hello@myglpshot.com>')
 TRIAL_DAYS = 14
 SESSION_DAYS = 90
+SESSION_TOUCH_INTERVAL = 300  # seconds between last_seen writes for one session
 SHARE_TTL_HOURS = 24
 MAX_BLOB_BYTES = 2 * 1024 * 1024  # 2 MB ciphertext cap
 STRIPE_API_KEY = os.environ.get('STRIPE_API_KEY', '')
@@ -141,16 +142,43 @@ CREATE TABLE IF NOT EXISTS admin_audit (
     ts              INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS admin_audit_ts_idx ON admin_audit(ts DESC);
+-- Every lookup below ran as a full table scan before these existed.
+CREATE INDEX IF NOT EXISTS sessions_user_idx      ON sessions(user_id);
+CREATE INDEX IF NOT EXISTS sessions_expires_idx   ON sessions(expires_at);
+CREATE INDEX IF NOT EXISTS share_links_user_idx   ON share_links(user_id);
+CREATE INDEX IF NOT EXISTS share_links_exp_idx    ON share_links(expires_at);
+CREATE INDEX IF NOT EXISTS pw_resets_user_idx     ON password_resets(user_id);
+CREATE INDEX IF NOT EXISTS pw_resets_exp_idx      ON password_resets(expires_at);
+CREATE INDEX IF NOT EXISTS users_customer_idx     ON users(stripe_customer_id);
+CREATE INDEX IF NOT EXISTS users_customer_test_idx ON users(stripe_customer_id_test);
+CREATE INDEX IF NOT EXISTS users_created_idx      ON users(created_at);
+CREATE INDEX IF NOT EXISTS stripe_events_ts_idx   ON stripe_events(received_at);
 """
+
+
+def _configure_connection(db):
+    """Pragmas that make SQLite safe under gunicorn's 2 workers x 4 threads.
+
+    Without WAL every reader blocks every writer, and without a busy timeout a
+    contended write fails instantly with 'database is locked' instead of waiting
+    its turn. Both are per-connection settings, so they belong here rather than
+    in the schema.
+    """
+    db.row_factory = sqlite3.Row
+    db.execute('PRAGMA journal_mode=WAL')
+    db.execute('PRAGMA busy_timeout=5000')
+    db.execute('PRAGMA synchronous=NORMAL')
+    db.execute('PRAGMA foreign_keys=ON')
+    return db
 
 
 def get_db():
     db = getattr(g, '_db', None)
     if db is None:
-        db = g._db = sqlite3.connect(DB_PATH)
-        db.row_factory = sqlite3.Row
-        db.executescript(SCHEMA)
-        db.commit()
+        # The schema is created once at boot by init_db(). Re-running it on every
+        # request re-parsed 8 CREATE statements and forced an implicit commit
+        # before each one, for no benefit.
+        db = g._db = _configure_connection(sqlite3.connect(DB_PATH, timeout=5.0))
     return db
 
 
@@ -256,8 +284,13 @@ def get_session_user():
     user = db.execute('SELECT * FROM users WHERE id = ?', (sess['user_id'],)).fetchone()
     if not user:
         return None, None
-    db.execute('UPDATE sessions SET last_seen = ? WHERE token = ?', (now_ts(), token))
-    db.commit()
+    # last_seen only drives an admin "when were they last here" column, so a
+    # write on literally every authenticated request was pure write contention.
+    # Once every 5 minutes is the same information at a fraction of the cost.
+    now = now_ts()
+    if (sess['last_seen'] or 0) < now - SESSION_TOUCH_INTERVAL:
+        db.execute('UPDATE sessions SET last_seen = ? WHERE token = ?', (now, token))
+        db.commit()
     return user, sess
 
 
@@ -287,10 +320,57 @@ def send_email(to, subject, html, text=None):
         return False
 
 
+# ---------- Retention ----------
+# Expired rows used to accumulate forever: dead sessions, spent reset tokens,
+# lapsed share links and every Stripe event ever seen. That is both unbounded
+# growth and a privacy problem — an expired doctor share link is still health
+# data sitting in the database.
+LEGACY_BLOB_TTL_DAYS = 400   # untouched legacy sync blobs are unreachable data
+STRIPE_EVENT_TTL_DAYS = 120  # only needed for the idempotency window
+
+
+def purge_expired(db=None):
+    """Delete rows that are past their useful life. Safe to call repeatedly."""
+    db = db or get_db()
+    now = now_ts()
+    deleted = {}
+    deleted['sessions'] = db.execute('DELETE FROM sessions WHERE expires_at < ?', (now,)).rowcount
+    deleted['share_links'] = db.execute('DELETE FROM share_links WHERE expires_at < ?', (now,)).rowcount
+    deleted['password_resets'] = db.execute(
+        'DELETE FROM password_resets WHERE expires_at < ? OR used_at IS NOT NULL', (now,)
+    ).rowcount
+    deleted['stripe_events'] = db.execute(
+        'DELETE FROM stripe_events WHERE received_at < ?', (now - STRIPE_EVENT_TTL_DAYS * 86400,)
+    ).rowcount
+    # Legacy blobs carry no user_id — a content-addressed lookup_id is the only
+    # handle — so age is the only retention lever available for them.
+    deleted['legacy_blobs'] = db.execute(
+        'DELETE FROM legacy_blobs WHERE updated_at < ?', (now - LEGACY_BLOB_TTL_DAYS * 86400,)
+    ).rowcount
+    db.commit()
+    return deleted
+
+
 # ---------- Health ----------
 @app.route('/api/health')
 def health():
+    """Liveness + a real database read, so a wedged DB fails the healthcheck."""
+    try:
+        get_db().execute('SELECT 1').fetchone()
+    except Exception as e:
+        app.logger.exception('health check DB probe failed: %s', e)
+        return jsonify(ok=False, error='db_unavailable'), 503
     return jsonify(ok=True, ts=now_ts())
+
+
+@app.route('/api/admin/purge', methods=['POST'])
+def admin_purge():
+    blocked = admin_gate()
+    if blocked:
+        return blocked
+    deleted = purge_expired()
+    _audit('purge_expired', None, deleted)
+    return jsonify(ok=True, deleted=deleted)
 
 
 # ---------- Auth ----------
@@ -311,11 +391,17 @@ def signup():
 
     pw_hash = bcrypt.hashpw(auth_token.encode('utf-8'), bcrypt.gensalt(rounds=12)).decode()
     trial_ends = now_ts() + TRIAL_DAYS * 86400
-    cur = db.execute(
-        """INSERT INTO users (email, password_hash, created_at, subscription_status, trial_ends_at)
-           VALUES (?, ?, ?, 'trial', ?)""",
-        (email, pw_hash, now_ts(), trial_ends),
-    )
+    try:
+        cur = db.execute(
+            """INSERT INTO users (email, password_hash, created_at, subscription_status, trial_ends_at)
+               VALUES (?, ?, ?, 'trial', ?)""",
+            (email, pw_hash, now_ts(), trial_ends),
+        )
+    except sqlite3.IntegrityError:
+        # Two signups for the same address in flight at once — the UNIQUE index is
+        # the real guard; the SELECT above is only a fast path. Report it as the
+        # conflict it is instead of a 500.
+        return err('email_in_use', 'An account with this email already exists.', 409)
     user_id = cur.lastrowid
     db.commit()
     user = db.execute('SELECT * FROM users WHERE id = ?', (user_id,)).fetchone()
@@ -381,12 +467,19 @@ def delete_account():
         return err('unauthorized', 'Not signed in.', 401)
     db = get_db()
     uid = user['id']
-    # Best-effort: cancel Stripe subscription so we don't keep billing.
+    # Best-effort: cancel Stripe subscriptions so we don't keep billing. Test-mode
+    # subscriptions are cancelled too — a leftover test sub keeps firing webhooks
+    # for a user row that no longer exists.
     if _stripe_ready() and user['stripe_subscription_id']:
         try:
-            stripe.Subscription.delete(user['stripe_subscription_id'])
+            stripe.Subscription.delete(user['stripe_subscription_id'], api_key=STRIPE_API_KEY)
         except stripe.StripeError as e:
             app.logger.warning('Stripe sub cancel failed during account delete: %s', e)
+    if STRIPE_API_KEY_TEST and _safe_col(user, 'stripe_subscription_id_test', None):
+        try:
+            stripe.Subscription.delete(user['stripe_subscription_id_test'], api_key=STRIPE_API_KEY_TEST)
+        except stripe.StripeError as e:
+            app.logger.warning('Stripe TEST sub cancel failed during account delete: %s', e)
     db.execute('DELETE FROM share_links WHERE user_id = ?', (uid,))
     db.execute('DELETE FROM sync_blobs WHERE user_id = ?', (uid,))
     db.execute('DELETE FROM sessions WHERE user_id = ?', (uid,))
@@ -442,7 +535,12 @@ def reset_password():
         return err('invalid_or_expired', 'Reset link is invalid or expired.', 400)
     pw_hash = bcrypt.hashpw(new_auth_token.encode('utf-8'), bcrypt.gensalt(rounds=12)).decode()
     db.execute('UPDATE users SET password_hash = ? WHERE id = ?', (pw_hash, row['user_id']))
-    db.execute('UPDATE password_resets SET used_at = ? WHERE token = ?', (now_ts(), token))
+    # Burn every outstanding reset for this account, not just the one used —
+    # otherwise an older emailed link stays live and can reset the new password.
+    db.execute(
+        'UPDATE password_resets SET used_at = ? WHERE user_id = ? AND used_at IS NULL',
+        (now_ts(), row['user_id']),
+    )
     db.execute('DELETE FROM sync_blobs WHERE user_id = ?', (row['user_id'],))  # E2EE: cloud copy can't be decrypted
     db.execute('DELETE FROM share_links WHERE user_id = ?', (row['user_id'],))  # Old shares contain pre-reset data
     db.execute('DELETE FROM sessions WHERE user_id = ?', (row['user_id'],))
@@ -698,16 +796,17 @@ def billing_checkout():
                 return jsonify(url=portal.url, alreadySubscribed=True)
     except stripe.StripeError as e:
         app.logger.warning('subscription list check failed (continuing): %s', e)
+    # Only first-time subscribers get the introductory trial.
+    subscription_data = {'metadata': {'user_id': str(user['id']), 'app': 'myglpshot'}}
+    if not _has_used_trial(user):
+        subscription_data['trial_period_days'] = TRIAL_DAYS
     try:
         sess = stripe.checkout.Session.create(
             mode='subscription',
             customer=customer_id,
             line_items=[{'price': price_id, 'quantity': 1}],
             allow_promotion_codes=True,
-            subscription_data={
-                'trial_period_days': TRIAL_DAYS,
-                'metadata': {'user_id': str(user['id']), 'app': 'myglpshot'},
-            },
+            subscription_data=subscription_data,
             metadata={'user_id': str(user['id']), 'app': 'myglpshot'},
             success_url=f'{app_base}/?billing=success&session_id={{CHECKOUT_SESSION_ID}}',
             cancel_url=f'{app_base}/?billing=canceled',
@@ -737,6 +836,33 @@ def billing_portal():
     return jsonify(url=sess.url)
 
 
+def _period_end(sub):
+    """Paid-through timestamp for a Stripe subscription.
+
+    Stripe moved current_period_end off the Subscription object and onto each
+    subscription item in the 2025-03-31 API version. Reading only the top-level
+    field silently yields None on a newer account, which would write a NULL
+    premium_until and drop a paying customer to free.
+    """
+    top = sub.get('current_period_end')
+    if top:
+        return top
+    items = (sub.get('items') or {}).get('data') or []
+    ends = [i.get('current_period_end') for i in items if i.get('current_period_end')]
+    return max(ends) if ends else None
+
+
+def _has_used_trial(user):
+    """True if this account has already consumed its introductory trial.
+
+    Without this check every new Checkout session handed out another 14 free
+    days, so cancel-and-resubscribe was an unlimited free plan.
+    """
+    if user['trial_ends_at']:
+        return True
+    return (user['subscription_status'] or '').lower() in ('premium', 'lifetime', 'free')
+
+
 def _apply_subscription(sub):
     """Update a user's subscription columns from a Stripe Subscription object/dict."""
     cust_id = sub.get('customer')
@@ -763,7 +889,7 @@ def _apply_subscription(sub):
 
     status = sub.get('status')  # trialing | active | past_due | canceled | unpaid | incomplete | incomplete_expired
     sub_id = sub.get('id')
-    current_period_end = sub.get('current_period_end')
+    current_period_end = _period_end(sub)
     trial_end = sub.get('trial_end')
     cancel_at_period_end = sub.get('cancel_at_period_end')
 
@@ -813,17 +939,18 @@ def stripe_webhook():
     et = event['type']
     eid = event.get('id')
     obj = event['data']['object']
-    # Idempotency: skip events we've already processed.
+    # Idempotency. INSERT OR IGNORE claims the event atomically — the previous
+    # SELECT-then-INSERT let two concurrent deliveries of the same event both
+    # pass the check and process twice.
     if eid:
         db = get_db()
-        seen = db.execute('SELECT 1 FROM stripe_events WHERE id = ?', (eid,)).fetchone()
-        if seen:
-            return jsonify(received=True, duplicate=True)
-        db.execute(
-            'INSERT INTO stripe_events (id, type, received_at) VALUES (?, ?, ?)',
+        claimed = db.execute(
+            'INSERT OR IGNORE INTO stripe_events (id, type, received_at) VALUES (?, ?, ?)',
             (eid, et, now_ts()),
-        )
+        ).rowcount
         db.commit()
+        if not claimed:
+            return jsonify(received=True, duplicate=True)
     try:
         if et == 'checkout.session.completed':
             # Link customer to user via metadata, then refresh the subscription.
@@ -838,7 +965,7 @@ def stripe_webhook():
                 )
                 get_db().commit()
             if sub_id:
-                sub = stripe.Subscription.retrieve(sub_id)
+                sub = stripe.Subscription.retrieve(sub_id, api_key=STRIPE_API_KEY)
                 _apply_subscription(sub)
         elif et in ('customer.subscription.created', 'customer.subscription.updated', 'customer.subscription.deleted'):
             _apply_subscription(obj)
@@ -846,8 +973,18 @@ def stripe_webhook():
             app.logger.warning('Payment failed for customer %s', obj.get('customer'))
         # Any other event type is ignored.
     except Exception as e:
+        # Release the idempotency claim and fail loudly. Returning 200 here meant
+        # a transient error permanently dropped a subscription change — the user
+        # paid and never got premium, and Stripe never retried.
         app.logger.exception('webhook handler error for %s: %s', et, e)
-        # Still 200 so Stripe doesn't retry endlessly on internal bugs.
+        if eid:
+            try:
+                db = get_db()
+                db.execute('DELETE FROM stripe_events WHERE id = ?', (eid,))
+                db.commit()
+            except Exception:
+                app.logger.exception('failed to release idempotency claim for %s', eid)
+        return err('handler_error', 'Webhook handler failed; retry.', 500)
     return jsonify(received=True)
 
 
@@ -1350,7 +1487,7 @@ def _apply_subscription_test(sub):
         db.execute('UPDATE users SET stripe_customer_id_test = ? WHERE id = ?', (cust_id, user['id']))
     status = sub.get('status')
     sub_id = sub.get('id')
-    cpe = sub.get('current_period_end')
+    cpe = _period_end(sub)
     trial_end = sub.get('trial_end')
     if status in ('active', 'trialing'):
         new_status = 'premium' if status == 'active' else 'trial'
@@ -1390,38 +1527,43 @@ def stripe_webhook_test():
     test_eid = f'TEST:{eid}' if eid else None
     if test_eid:
         db = get_db()
-        seen = db.execute('SELECT 1 FROM stripe_events WHERE id = ?', (test_eid,)).fetchone()
-        if seen:
-            return jsonify(received=True, duplicate=True)
-        db.execute('INSERT INTO stripe_events (id, type, received_at) VALUES (?, ?, ?)',
-                   (test_eid, f'TEST:{et}', now_ts()))
+        claimed = db.execute(
+            'INSERT OR IGNORE INTO stripe_events (id, type, received_at) VALUES (?, ?, ?)',
+            (test_eid, f'TEST:{et}', now_ts()),
+        ).rowcount
         db.commit()
+        if not claimed:
+            return jsonify(received=True, duplicate=True)
     try:
-        # In test mode we use the test API key for any retrieval call.
-        prev = stripe.api_key
-        if STRIPE_API_KEY_TEST:
-            stripe.api_key = STRIPE_API_KEY_TEST
-        try:
-            if et == 'checkout.session.completed':
-                meta = obj.get('metadata') or {}
-                uid = meta.get('user_id')
-                cust_id = obj.get('customer')
-                sub_id = obj.get('subscription')
-                if uid and cust_id:
-                    get_db().execute(
-                        'UPDATE users SET stripe_customer_id_test = COALESCE(stripe_customer_id_test, ?) WHERE id = ?',
-                        (cust_id, uid),
-                    )
-                    get_db().commit()
-                if sub_id:
-                    sub = stripe.Subscription.retrieve(sub_id)
-                    _apply_subscription_test(sub)
-            elif et in ('customer.subscription.created', 'customer.subscription.updated', 'customer.subscription.deleted'):
-                _apply_subscription_test(obj)
-        finally:
-            stripe.api_key = prev
+        # The test API key is passed per call. Assigning it to the process-global
+        # `stripe.api_key` raced with concurrent live requests on the other
+        # gunicorn threads — a live checkout could execute against the test key.
+        if et == 'checkout.session.completed':
+            meta = obj.get('metadata') or {}
+            uid = meta.get('user_id')
+            cust_id = obj.get('customer')
+            sub_id = obj.get('subscription')
+            if uid and cust_id:
+                get_db().execute(
+                    'UPDATE users SET stripe_customer_id_test = COALESCE(stripe_customer_id_test, ?) WHERE id = ?',
+                    (cust_id, uid),
+                )
+                get_db().commit()
+            if sub_id:
+                sub = stripe.Subscription.retrieve(sub_id, api_key=STRIPE_API_KEY_TEST)
+                _apply_subscription_test(sub)
+        elif et in ('customer.subscription.created', 'customer.subscription.updated', 'customer.subscription.deleted'):
+            _apply_subscription_test(obj)
     except Exception as e:
         app.logger.exception('TEST webhook handler error for %s: %s', et, e)
+        if test_eid:
+            try:
+                db = get_db()
+                db.execute('DELETE FROM stripe_events WHERE id = ?', (test_eid,))
+                db.commit()
+            except Exception:
+                app.logger.exception('failed to release test idempotency claim for %s', test_eid)
+        return err('handler_error', 'Test webhook handler failed; retry.', 500)
     return jsonify(received=True, mode='test')
 
 
@@ -1448,8 +1590,8 @@ def admin_test_checkout():
     if not user:
         return err('not_found', 'User not found.', 404)
     price_id = STRIPE_PRICE_YEARLY_TEST if plan == 'yearly' else STRIPE_PRICE_MONTHLY_TEST
-    prev = stripe.api_key
-    stripe.api_key = STRIPE_API_KEY_TEST
+    # api_key is passed per call rather than swapped on the module global, which
+    # would be visible to every other thread in this worker mid-request.
     try:
         # Reuse test customer if we already created one for this user.
         cust_id = user['stripe_customer_id_test']
@@ -1457,6 +1599,7 @@ def admin_test_checkout():
             cust = stripe.Customer.create(
                 email=user['email'],
                 metadata={'user_id': str(user['id']), 'app': 'myglpshot', 'mode': 'test'},
+                api_key=STRIPE_API_KEY_TEST,
             )
             cust_id = cust.id
             db.execute('UPDATE users SET stripe_customer_id_test = ? WHERE id = ?', (cust_id, user['id']))
@@ -1474,12 +1617,11 @@ def admin_test_checkout():
             metadata={'user_id': str(user['id']), 'app': 'myglpshot', 'mode': 'test'},
             success_url=f'{app_base}/?billing=test-success&session_id={{CHECKOUT_SESSION_ID}}',
             cancel_url=f'{app_base}/?billing=test-canceled',
+            api_key=STRIPE_API_KEY_TEST,
         )
     except stripe.StripeError as e:
         app.logger.exception('admin test-checkout failed: %s', e)
         return err('stripe_error', str(getattr(e, 'user_message', None) or 'Stripe error'), 502)
-    finally:
-        stripe.api_key = prev
     _audit('test_checkout_created', user['id'], {'plan': plan, 'sessionId': sess.id})
     return jsonify(url=sess.url, sessionId=sess.id, mode='test')
 
@@ -1637,8 +1779,11 @@ def import_parse():
             },
         }
         try:
+            # The key goes in a header, not the query string: URLs end up in
+            # nginx access logs, proxy logs and error traces.
             r = _r.post(
-                f'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}',
+                'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent',
+                headers={'x-goog-api-key': GEMINI_API_KEY, 'Content-Type': 'application/json'},
                 json=body, timeout=150,
             )
         except Exception as e:
@@ -1684,7 +1829,11 @@ def import_parse():
 # ---------- Bootstrap ----------
 def init_db():
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-    with closing(sqlite3.connect(DB_PATH)) as c:
+    with closing(sqlite3.connect(DB_PATH, timeout=10.0)) as c:
+        # journal_mode=WAL is persistent in the database file, so setting it here
+        # applies to every later connection too.
+        c.execute('PRAGMA journal_mode=WAL')
+        c.execute('PRAGMA busy_timeout=10000')
         c.executescript(SCHEMA)
         # Idempotent column adds for older DBs (tolerates concurrent worker init).
         for stmt in (
@@ -1700,6 +1849,13 @@ def init_db():
             except sqlite3.OperationalError:
                 pass
         c.commit()
+        # Sweep expired rows at boot so retention doesn't depend on anyone
+        # remembering to hit the admin endpoint.
+        try:
+            _configure_connection(c)
+            purge_expired(c)
+        except Exception as e:  # never block startup on housekeeping
+            print(f'[init_db] purge skipped: {e}')
 
 
 init_db()

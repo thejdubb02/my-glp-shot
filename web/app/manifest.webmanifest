@@ -1,18 +1,85 @@
 {
+  "id": "/",
   "name": "My GLP Shot",
   "short_name": "My GLP Shot",
   "description": "Track your GLP-1 / peptide shots, weight, side effects. Local-first, end-to-end encrypted sync.",
+  "lang": "en-US",
+  "dir": "ltr",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
+  "display_override": [
+    "standalone",
+    "minimal-ui"
+  ],
   "orientation": "portrait",
   "background_color": "#f6faf9",
   "theme_color": "#0f766e",
+  "categories": [
+    "health",
+    "medical",
+    "lifestyle"
+  ],
   "icons": [
-    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
-    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
-    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
-    { "src": "icons/apple-touch-icon.png", "sizes": "180x180", "type": "image/png" }
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "icons/icon-mono-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "monochrome"
+    },
+    {
+      "src": "icons/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "screenshots/home-phone.png",
+      "sizes": "1179x2556",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "Your next shot, streak and weight at a glance"
+    },
+    {
+      "src": "screenshots/insights-phone.png",
+      "sizes": "1179x2556",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "Patterns in your side effects, mood and appetite"
+    },
+    {
+      "src": "screenshots/log-shot-phone.png",
+      "sizes": "1179x2556",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "Log a shot in seconds with site rotation built in"
+    },
+    {
+      "src": "screenshots/home-desktop.png",
+      "sizes": "2560x1600",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "My GLP Shot on desktop"
+    }
   ],
   "shortcuts": [
     {
@@ -20,21 +87,37 @@
       "short_name": "Log shot",
       "description": "Open the shot logger",
       "url": "./?action=log-shot",
-      "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }]
+      "icons": [
+        {
+          "src": "icons/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
     },
     {
       "name": "Log weight",
       "short_name": "Weight",
       "description": "Open the weight logger",
       "url": "./?action=log-weight",
-      "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }]
+      "icons": [
+        {
+          "src": "icons/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
     },
     {
       "name": "Insights",
       "short_name": "Insights",
       "description": "See patterns in your data",
       "url": "./?tab=insights",
-      "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }]
+      "icons": [
+        {
+          "src": "icons/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
     }
-  ]
+  ],
+  "prefer_related_applications": false
 }

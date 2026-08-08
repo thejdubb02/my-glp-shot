@@ -1,31 +1,34 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!--
+    My GLP Shot mark.
+
+    Two shapes and a ground, nothing else. The previous icon carried four tick
+    marks that vanished below ~64px and a soft gradient droplet that muddied
+    against the teal; both cost legibility at the size that actually matters —
+    48dp in a Play Store list and on a home screen.
+
+    The open ring is the dose cycle (it reads as a countdown, which is the app's
+    core screen); the droplet is the dose. The ring's gap sits at the bottom so
+    the silhouette stays distinct from the many circular medical icons.
+  -->
   <defs>
-    <linearGradient id="sq" x1="0%" y1="0%" x2="100%" y2="100%">
+    <linearGradient id="ground" x1="0%" y1="0%" x2="0%" y2="100%">
       <stop offset="0%" stop-color="#14b8a6"/>
-      <stop offset="100%" stop-color="#0f766e"/>
+      <stop offset="100%" stop-color="#0d7d72"/>
     </linearGradient>
-    <linearGradient id="drop2" x1="50%" y1="0%" x2="50%" y2="100%">
-      <stop offset="0%" stop-color="#ffffff"/>
-      <stop offset="100%" stop-color="#ccfbf1"/>
-    </linearGradient>
-    <radialGradient id="hi2" cx="38%" cy="32%" r="32%">
-      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.7"/>
-      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
-    </radialGradient>
   </defs>
-  <rect x="0" y="0" width="1024" height="1024" rx="220" ry="220" fill="url(#sq)"/>
-  <!-- Tick marks around (clock face) -->
-  <g stroke="#ffffff" stroke-opacity="0.35" stroke-width="14" stroke-linecap="round">
-    <line x1="512" y1="160" x2="512" y2="220"/>
-    <line x1="864" y1="512" x2="804" y2="512"/>
-    <line x1="512" y1="864" x2="512" y2="804"/>
-    <line x1="160" y1="512" x2="220" y2="512"/>
-  </g>
-  <!-- Centered droplet -->
-  <path d="M 512 280
-           C 632 432, 700 540, 700 624
-           A 188 188 0 1 1 324 624
-           C 324 540, 392 432, 512 280 Z"
-        fill="url(#drop2)"/>
-  <ellipse cx="460" cy="555" rx="62" ry="86" fill="url(#hi2)"/>
+
+  <rect x="0" y="0" width="1024" height="1024" rx="224" ry="224" fill="url(#ground)"/>
+
+  <!-- Dose cycle: open ring, gap at the bottom. -->
+  <path d="M 738.3 781.6 A 352 352 0 1 0 285.7 781.6"
+        fill="none" stroke="#ffffff" stroke-opacity="0.62"
+        stroke-width="54" stroke-linecap="round"/>
+
+  <!-- Dose: solid droplet, no gradient, maximum contrast. -->
+  <path d="M 512 300
+           C 620 445, 680 545, 680 600
+           A 168 168 0 1 1 344 600
+           C 344 545, 404 445, 512 300 Z"
+        fill="#ffffff"/>
 </svg>

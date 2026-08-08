@@ -1,10 +1,15 @@
 // My GLP Shot service worker — network-first for app shell so updates are picked up on every visit; cache fallback for offline.
-const CACHE = 'mglp-v0.47.2';
-const SHELL = [
+const CACHE = 'mglp-v0.48.0';
+// Without these three the app cannot boot offline at all, so a failure to cache
+// them must fail the install rather than leaving a service worker that claims
+// offline support it can't deliver.
+const CRITICAL = [
   './',
   'index.html',
   'styles.css',
   'app.js',
+];
+const OPTIONAL = [
   'lib/chart.min.js',
   'manifest.webmanifest',
   'icons/icon-192.png',
@@ -15,11 +20,12 @@ const SHELL = [
 
 self.addEventListener('install', (e) => {
   // Pre-cache shell so the app boots offline even on first run after activation.
-  e.waitUntil(
-    caches.open(CACHE)
-      .then(c => Promise.all(SHELL.map(u => c.add(u).catch(() => null))))
-      .then(() => self.skipWaiting())
-  );
+  e.waitUntil((async () => {
+    const c = await caches.open(CACHE);
+    await c.addAll(CRITICAL);                                   // rejects install on failure
+    await Promise.all(OPTIONAL.map(u => c.add(u).catch(() => null)));
+    await self.skipWaiting();
+  })());
 });
 
 self.addEventListener('activate', (e) => {
@@ -52,7 +58,19 @@ self.addEventListener('fetch', (e) => {
           caches.open(CACHE).then(c => c.put(req, copy));
         }
         return res;
-      }).catch(() => caches.match(req).then(c => c || caches.match('index.html')))
+      }).catch(async () => {
+        const cached = await caches.match(req);
+        if (cached) return cached;
+        // Only a navigation may fall back to the app shell. Serving index.html
+        // in response to a failed app.js or styles.css request handed the page
+        // HTML with a JS content-type, which fails to parse and looks like a
+        // corrupt app rather than an offline one.
+        if (req.mode === 'navigate') {
+          const shell = await caches.match('index.html');
+          if (shell) return shell;
+        }
+        return new Response('Offline', { status: 503, statusText: 'Offline' });
+      })
     );
     return;
   }

@@ -46,21 +46,53 @@
     const ct = Uint8Array.from(atob(j.ciphertext), c => c.charCodeAt(0));
     const aesKey = await crypto.subtle.importKey('raw', HEX(keyHex), 'AES-GCM', false, ['decrypt']);
     const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, aesKey, ct);
-    const data = JSON.parse(new TextDecoder().decode(pt));
+    const data = await decodePayload(new Uint8Array(pt));
     render(data, j);
   } catch (e) {
-    root.innerHTML = `<p class="err">Could not decrypt: ${e.message}</p>`;
+    root.textContent = '';
+    const p = document.createElement('p');
+    p.className = 'err';
+    p.textContent = 'Could not decrypt: ' + e.message;
+    root.appendChild(p);
   }
 
-  function escapeHTML(s){return String(s||'').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));}
+  // Share blobs are gzip-compressed behind a magic header from v0.48 on;
+  // anything older is plain JSON.
+  async function decodePayload(bytes) {
+    const MAGIC = 'MGSZ1:';
+    const head = new TextDecoder().decode(bytes.subarray(0, MAGIC.length));
+    if (head !== MAGIC) return JSON.parse(new TextDecoder().decode(bytes));
+    const stream = new Blob([bytes.subarray(MAGIC.length)]).stream()
+      .pipeThrough(new DecompressionStream('gzip'));
+    return JSON.parse(new TextDecoder().decode(await new Response(stream).arrayBuffer()));
+  }
+
+  function escapeHTML(s){return String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));}
+  // Numeric fields still arrive from a patient-authored blob, so never trust the
+  // type — a crafted share link would otherwise run script in the doctor's browser.
+  function num(v, dp) {
+    const n = Number(v);
+    if (!Number.isFinite(n)) return '—';
+    return dp === undefined ? String(n) : n.toFixed(dp);
+  }
+
+  function fmtWhen(v) {
+    const d = new Date(v);
+    return Number.isNaN(d.getTime()) ? '—' : d.toLocaleString();
+  }
 
   function render(data, meta){
     const since = new Date(); since.setDate(since.getDate() - 90);
-    const shots = (data.shots || []).filter(s => new Date(s.when) >= since).sort((a,b) => new Date(b.when) - new Date(a.when));
-    const weights = (data.weights || []).slice().sort((a,b)=>a.date.localeCompare(b.date));
-    const labs = data.labs || [];
-    const measurements = data.measurements || [];
-    const wd = weights.length ? { start: weights[0].value, current: weights[weights.length-1].value, delta: weights[weights.length-1].value - weights[0].value } : null;
+    const arr = (v) => Array.isArray(v) ? v : [];
+    const shots = arr(data.shots).filter(s => new Date(s.when) >= since).sort((a,b) => new Date(b.when) - new Date(a.when));
+    const weights = arr(data.weights).slice().sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+    const labs = arr(data.labs);
+    const measurements = arr(data.measurements);
+    const first = Number(weights[0]?.value);
+    const last = Number(weights[weights.length-1]?.value);
+    const wd = (Number.isFinite(first) && Number.isFinite(last))
+      ? { start: first, current: last, delta: last - first }
+      : null;
     const expires = new Date(meta.expiresAt * 1000);
     root.innerHTML = `
       <div class="doctor-banner">
@@ -75,19 +107,19 @@
         ${wd ? `<div class="stat"><strong>${wd.current.toFixed(1)} lb</strong><span>current weight</span></div>` : ''}
       </div>
       <h2>Medication</h2>
-      <p>${escapeHTML(data.settings?.medication || 'Tirzepatide')} · cadence every ${data.settings?.cadenceDays || 7}d · half-life ${data.settings?.halfLifeDays || 5}d</p>
+      <p>${escapeHTML(data.settings?.medication || 'Tirzepatide')} · cadence every ${num(data.settings?.cadenceDays ?? 7)}d · half-life ${num(data.settings?.halfLifeDays ?? 5)}d</p>
       <h2>Recent shots</h2>
       <table><thead><tr><th>Date</th><th>Dose</th><th>Site</th><th>Notes</th></tr></thead><tbody>
-      ${shots.slice(0,60).map(s => `<tr><td>${new Date(s.when).toLocaleString()}</td><td>${s.dose} mg</td><td>${escapeHTML(s.site||'')}</td><td>${escapeHTML(s.notes||'')}</td></tr>`).join('')}
+      ${shots.slice(0,60).map(s => `<tr><td>${escapeHTML(fmtWhen(s.when))}</td><td>${num(s.dose)} mg</td><td>${escapeHTML(s.site||'')}</td><td>${escapeHTML(s.notes||'')}</td></tr>`).join('')}
       </tbody></table>
       ${weights.length ? `<h2>Weight (last 30 entries)</h2><table><thead><tr><th>Date</th><th>Weight</th></tr></thead><tbody>
-      ${weights.slice(-30).map(w => `<tr><td>${w.date}</td><td>${w.value} ${w.unit}</td></tr>`).join('')}
+      ${weights.slice(-30).map(w => `<tr><td>${escapeHTML(w.date)}</td><td>${num(w.value)} ${escapeHTML(w.unit)}</td></tr>`).join('')}
       </tbody></table>` : ''}
       ${labs.length ? `<h2>Labs</h2><table><thead><tr><th>Date</th><th>Test</th><th>Value</th></tr></thead><tbody>
-      ${labs.map(l => `<tr><td>${l.date}</td><td>${escapeHTML(l.type)}</td><td>${l.value}</td></tr>`).join('')}
+      ${labs.map(l => `<tr><td>${escapeHTML(l.date)}</td><td>${escapeHTML(l.type)}</td><td>${num(l.value)}</td></tr>`).join('')}
       </tbody></table>` : ''}
       ${measurements.length ? `<h2>Body measurements</h2><table><thead><tr><th>Date</th><th>Type</th><th>Value</th></tr></thead><tbody>
-      ${measurements.map(m => `<tr><td>${m.date}</td><td>${escapeHTML(m.type)}</td><td>${m.value} ${m.unit}</td></tr>`).join('')}
+      ${measurements.map(m => `<tr><td>${escapeHTML(m.date)}</td><td>${escapeHTML(m.type)}</td><td>${num(m.value)} ${escapeHTML(m.unit)}</td></tr>`).join('')}
       </tbody></table>` : ''}
       <p class="muted small">This snapshot was decrypted in your browser using the key in the URL. The server cannot read this data.</p>
     `;

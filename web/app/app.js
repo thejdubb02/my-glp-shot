@@ -9,7 +9,7 @@ const DB_NAME = 'shotclock';
 // v8 bump: 'cycles' store added — opt-in menstrual cycle tracking (period start/end, flow, symptoms).
 // v9 bump: 'medChanges' store added — medication switches as discrete events so charts stay readable across drug changes.
 const DB_VERSION = 9;
-const APP_VERSION = '0.47.2';
+const APP_VERSION = '0.48.0';
 
 // Umami event tracker. Aggregates only — no PII (no email, no IDs). Safe to call before umami loads.
 function track(event, props) {
@@ -58,7 +58,7 @@ const INFO_TOPICS = {
       const firstShot = shots.length ? new Date(shots[0].when) : null;
       const weeks = firstShot ? Math.floor((Date.now() - firstShot.getTime()) / (7 * 86400000)) : 0;
       let yourLine = '<p><strong>For you right now:</strong> ';
-      if (start != null && latest != null) yourLine += `you've gone from <strong>${start} lb</strong> to <strong>${latest} lb</strong> = <strong>${lost > 0 ? lost + ' lb lost' : Math.abs(lost) + ' lb gained'}</strong>`;
+      if (start != null && latest != null) yourLine += `you've gone from <strong>${escapeHTML(start)} lb</strong> to <strong>${escapeHTML(latest)} lb</strong> = <strong>${escapeHTML(lost > 0 ? lost + ' lb lost' : Math.abs(lost) + ' lb gained')}</strong>`;
       else yourLine += `log your starting weight in Settings + at least one weight entry to see your progress`;
       yourLine += `, ${weeks} week${weeks === 1 ? '' : 's'} since first shot, ${shots.length} shot${shots.length === 1 ? '' : 's'} logged.</p>`;
       return `<p>Three numbers across the top of the home screen tell you the big picture.</p>
@@ -401,6 +401,8 @@ const DEFAULT_SETTINGS = {
   syncLastPushAt: null,
   syncLastPullAt: null,
   syncLastUpdatedAt: null,
+  syncLastError: '',
+  syncLastErrorAt: null,
   syncAutoPush: true,
   syncDirty: false,
   bodySex: 'male',
@@ -631,8 +633,17 @@ async function withStore(store, mode, fn) {
     t.onabort = () => reject(t.error);
   });
 }
-const dbAdd = (store, val) => withStore(store, 'readwrite', s => s.add(val));
-const dbPut = (store, val) => withStore(store, 'readwrite', s => s.put(val));
+// Auto-increment ids are device-local, so they can't identify a record across
+// devices. Every new row in these stores gets a stable `uid` at the single point
+// where rows are written — that is what lets a cloud pull merge rather than
+// clobber. (newUid is a hoisted function declaration defined with the sync code.)
+const UID_STORES = new Set(['shots', 'weights', 'supplies', 'measurements', 'labs', 'expenses', 'cycles', 'medChanges']);
+const withUid = (store, val) =>
+  (UID_STORES.has(store) && val && typeof val === 'object' && !val.uid)
+    ? { ...val, uid: newUid() }
+    : val;
+const dbAdd = (store, val) => withStore(store, 'readwrite', s => s.add(withUid(store, val)));
+const dbPut = (store, val) => withStore(store, 'readwrite', s => s.put(withUid(store, val)));
 const dbDel = (store, id) => withStore(store, 'readwrite', s => s.delete(id));
 const dbAll = (store) => withStore(store, 'readonly', s => s.getAll());
 const dbGet = (store, key) => withStore(store, 'readonly', s => s.get(key));
@@ -645,6 +656,66 @@ async function loadSettings() {
 }
 async function saveSettings() {
   await dbPut(STORES.settings, { key: SETTINGS_KEY, value: settings });
+}
+
+// ---------- Binary <-> base64 ----------
+// `btoa(String.fromCharCode(...bytes))` spreads every byte as a function argument,
+// which blows the JS call stack at ~124 KB. That silently killed cloud sync and
+// doctor share links for anyone with real history — the push threw, the caller
+// swallowed it, and the user was told nothing. Chunk it so size is never a cliff.
+const B64_CHUNK = 0x8000; // 32 KB per call, far below any engine's argument limit
+function bytesToBase64(buf) {
+  const bytes = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += B64_CHUNK) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + B64_CHUNK));
+  }
+  return btoa(binary);
+}
+function base64ToBytes(s) {
+  const bin = atob(s);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+// ---------- Payload compression ----------
+// Tracker JSON is highly repetitive and compresses ~8-10x. Compressing before
+// encryption keeps heavy accounts under the server's blob cap and cuts sync
+// bandwidth on mobile. Blobs written before this change are plain JSON, so the
+// reader sniffs for the magic header and falls back.
+const GZIP_MAGIC = 'MGSZ1:';
+const GZIP_SUPPORTED = typeof CompressionStream !== 'undefined' && typeof DecompressionStream !== 'undefined';
+
+async function encodePayloadBytes(payload) {
+  const json = JSON.stringify(payload);
+  const raw = new TextEncoder().encode(json);
+  if (!GZIP_SUPPORTED) return raw;
+  try {
+    const cs = new CompressionStream('gzip');
+    const stream = new Blob([raw]).stream().pipeThrough(cs);
+    const gz = new Uint8Array(await new Response(stream).arrayBuffer());
+    const magic = new TextEncoder().encode(GZIP_MAGIC);
+    const out = new Uint8Array(magic.length + gz.length);
+    out.set(magic, 0);
+    out.set(gz, magic.length);
+    // Only worth it if it actually shrank (tiny payloads can grow).
+    return out.length < raw.length ? out : raw;
+  } catch (e) {
+    console.warn('[mgs] compression unavailable, sending uncompressed:', e);
+    return raw;
+  }
+}
+
+async function decodePayloadBytes(bytes) {
+  const view = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  const head = new TextDecoder().decode(view.subarray(0, GZIP_MAGIC.length));
+  if (head !== GZIP_MAGIC) return JSON.parse(new TextDecoder().decode(view));
+  const body = view.subarray(GZIP_MAGIC.length);
+  const ds = new DecompressionStream('gzip');
+  const stream = new Blob([body]).stream().pipeThrough(ds);
+  const raw = await new Response(stream).arrayBuffer();
+  return JSON.parse(new TextDecoder().decode(raw));
 }
 
 // ---------- Utilities ----------
@@ -898,8 +969,8 @@ function shotItem(shot) {
   li.dataset.intensity = intensity;
   li.innerHTML = `
     <div>
-      <div class="dose">${shot.dose} mg <span class="muted small">· ${escapeHTML(shot.med)}</span></div>
-      <div class="meta">${fmtDate(shot.when)}${shot.site ? ' · ' + escapeHTML(shot.site) : ''}</div>
+      <div class="dose">${escapeHTML(shot.dose)} mg <span class="muted small">· ${escapeHTML(shot.med)}</span></div>
+      <div class="meta">${escapeHTML(fmtDate(shot.when))}${shot.site ? ' · ' + escapeHTML(shot.site) : ''}</div>
     </div>
     <span class="meta">›</span>
   `;
@@ -1196,7 +1267,7 @@ function wireCriticalUI() {
       try {
         localStorage.setItem('mgs_session_token', j.token);
         const raw = await crypto.subtle.exportKey('raw', aesKey);
-        const b64 = btoa(String.fromCharCode(...new Uint8Array(raw)));
+        const b64 = bytesToBase64(raw);
         localStorage.setItem('account.cred', JSON.stringify({ email: cleanEmail, k: b64, v: 2 }));
       } catch (_) {}
       track(_authMode === 'signup' ? 'signup_success' : 'login_success');
@@ -2078,28 +2149,24 @@ async function smartImport(e) {
       throw new Error(j.message || `Failed (${r.status})`);
     }
     const j = await r.json();
-    const shots = (j.shots || []).filter(s => s && s.when && s.dose != null);
-    const weights = (j.weights || []).filter(w => w && w.date && w.value != null);
+    // The parser is an LLM reading a user-supplied file: treat its output as
+    // untrusted. sanitizeShot/Weight drop anything with an unusable date or
+    // dose rather than letting one bad row abort a 2000-row import.
+    const shots = (Array.isArray(j.shots) ? j.shots : [])
+      .map(s => sanitizeShot({ ...s, med: s && s.med ? s.med : (settings.medication || 'Tirzepatide') }))
+      .filter(Boolean);
+    const weights = (Array.isArray(j.weights) ? j.weights : []).map((w) => {
+      const clean = sanitizeWeight(w);
+      if (clean && clean.unit === 'kg') return { ...clean, value: Number((clean.value * 2.20462).toFixed(2)), unit: 'lb' };
+      return clean;
+    }).filter(Boolean);
     if (!shots.length && !weights.length) {
       alert('AI did not find any shots or weights in this file.');
       return;
     }
     if (!confirm(`Found ${shots.length} shots and ${weights.length} weight entries. Import them now?`)) return;
-    for (const s of shots) {
-      await dbAdd(STORES.shots, {
-        med: String(s.med || settings.medication || 'Tirzepatide'),
-        dose: parseFloat(s.dose),
-        when: new Date(s.when).toISOString(),
-        site: s.site || null,
-        notes: s.notes || null,
-      });
-    }
-    for (const w of weights) {
-      let val = parseFloat(w.value);
-      if (w.unit && String(w.unit).toLowerCase() === 'kg') val = val * 2.20462;
-      const canon = toCanonicalDate(w.date);
-      if (canon) await dbAdd(STORES.weights, { value: val, date: canon });
-    }
+    for (const s of shots) await dbAdd(STORES.shots, s);
+    for (const w of weights) await dbAdd(STORES.weights, { value: w.value, date: w.date });
     await renderShots();
     await renderWeights();
     markSyncDirty();
@@ -2114,6 +2181,74 @@ async function smartImport(e) {
   }
 }
 
+// ---------- Import sanitising ----------
+// Imported files (and LLM-parsed exports) are untrusted input that ends up in
+// innerHTML sinks. Coercing types at the door is the only place this has to be
+// got right — every renderer downstream then gets a number where it expects one.
+const MAX_TEXT_FIELD = 500;
+
+function safeNum(v, { min = -1e9, max = 1e9, dp = 4 } = {}) {
+  const n = typeof v === 'number' ? v : parseFloat(String(v ?? '').replace(/[^\d.\-]/g, ''));
+  if (!Number.isFinite(n)) return null;
+  return Math.min(max, Math.max(min, Number(n.toFixed(dp))));
+}
+
+function safeText(v, max = MAX_TEXT_FIELD) {
+  if (v == null) return '';
+  return String(v).slice(0, max);
+}
+
+function safeISO(v) {
+  const d = new Date(v);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+}
+
+function sanitizeShot(s) {
+  if (!s || typeof s !== 'object') return null;
+  const when = safeISO(s.when);
+  const dose = safeNum(s.dose, { min: 0, max: 1000, dp: 3 });
+  if (!when || dose == null) return null;
+  const out = {
+    when,
+    dose,
+    med: safeText(s.med, 80) || 'Tirzepatide',
+    site: safeText(s.site, 80),
+    notes: safeText(s.notes, 2000),
+  };
+  if (s.sideEffects && typeof s.sideEffects === 'object' && !Array.isArray(s.sideEffects)) {
+    const se = {};
+    for (const [k, v] of Object.entries(s.sideEffects).slice(0, 40)) se[safeText(k, 40)] = safeText(v, 40);
+    out.sideEffects = se;
+  }
+  return out;
+}
+
+function sanitizeWeight(w) {
+  if (!w || typeof w !== 'object') return null;
+  const value = safeNum(w.value, { min: 0, max: 2000, dp: 2 });
+  const date = toCanonicalDate(w.date);
+  if (value == null || !date) return null;
+  return { date, value, unit: w.unit === 'kg' ? 'kg' : 'lb' };
+}
+
+// Settings from a file may only overwrite keys we know about, with the type we
+// expect. Anything else — including sync credentials — is ignored.
+function sanitizeSettings(raw) {
+  if (!raw || typeof raw !== 'object') return {};
+  const SYNC_KEYS = new Set(['syncEnabled', 'syncUsername', 'syncLastPushAt', 'syncLastPullAt', 'syncLastUpdatedAt', 'syncLastError']);
+  const out = {};
+  for (const [k, def] of Object.entries(DEFAULT_SETTINGS)) {
+    if (SYNC_KEYS.has(k) || !(k in raw)) continue;
+    const v = raw[k];
+    if (typeof def === 'number') { const n = safeNum(v); if (n != null) out[k] = n; }
+    else if (typeof def === 'boolean') { if (typeof v === 'boolean') out[k] = v; }
+    else if (typeof def === 'string') out[k] = safeText(v, 200);
+    else if (Array.isArray(def) && Array.isArray(v)) out[k] = v.slice(0, 50);
+    else if (def && typeof def === 'object' && v && typeof v === 'object') out[k] = v;
+  }
+  return out;
+}
+
 async function importData(e) {
   const file = e.target.files[0];
   if (!file) return;
@@ -2125,13 +2260,21 @@ async function importData(e) {
     } else {
       const parsed = JSON.parse(text);
       if (!parsed || !Array.isArray(parsed.shots)) throw new Error('Invalid JSON file');
-      if (!confirm(`Import ${parsed.shots.length} shots and ${(parsed.weights || []).length} weight entries? This will MERGE with existing data.`)) return;
-      for (const s of parsed.shots) { delete s.id; await dbAdd(STORES.shots, s); }
-      for (const w of (parsed.weights || [])) { delete w.id; await dbAdd(STORES.weights, w); }
-      if (parsed.settings) { settings = { ...settings, ...parsed.settings }; await saveSettings(); applySettingsToInputs(); }
+      const shots = parsed.shots.map(sanitizeShot).filter(Boolean);
+      const weights = (Array.isArray(parsed.weights) ? parsed.weights : []).map(sanitizeWeight).filter(Boolean);
+      const dropped = (parsed.shots.length - shots.length) + ((parsed.weights || []).length - weights.length);
+      const warn = dropped > 0 ? `\n\n${dropped} row(s) will be skipped — missing or unreadable date/value.` : '';
+      if (!confirm(`Import ${shots.length} shots and ${weights.length} weight entries? This will MERGE with existing data.${warn}`)) return;
+      for (const s of shots) await dbAdd(STORES.shots, s);
+      for (const w of weights) await dbAdd(STORES.weights, w);
+      if (parsed.settings) {
+        settings = { ...settings, ...sanitizeSettings(parsed.settings) };
+        await saveSettings();
+        applySettingsToInputs();
+      }
       await renderShots();
       await renderWeights();
-      alert('Imported.');
+      alert(`Imported ${shots.length} shots and ${weights.length} weight entries.`);
     }
   } catch (err) {
     alert('Import failed: ' + err.message);
@@ -2294,6 +2437,17 @@ function updateBackupLabel() {
     el.textContent = `Last backup: ${d.toLocaleDateString()} (${days}d ago)` + (days > 14 ? ' — consider exporting again' : '');
   } else {
     el.textContent = 'No backup yet — export to download a JSON file.';
+  }
+  // A failing cloud sync must be visible, not just logged to a console nobody opens.
+  const errEl = $('#sync-error-banner');
+  if (errEl) {
+    if (settings.syncLastError) {
+      errEl.textContent = `Cloud backup is failing: ${settings.syncLastError}. Your data is safe on this device — export a copy to be sure.`;
+      errEl.hidden = false;
+    } else {
+      errEl.textContent = '';
+      errEl.hidden = true;
+    }
   }
 }
 
@@ -2713,6 +2867,23 @@ function maybeAutoShowInstall() {
   } catch (_) {}
 }
 
+// A backup that fails quietly is worse than no backup — the user believes their
+// health history is safe when it isn't. Record the failure, surface it in
+// Settings, and warn once per session rather than swallowing the error.
+let _syncFailureWarned = false;
+async function noteSyncFailure(e) {
+  const msg = String((e && e.message) || e || 'Unknown error');
+  console.warn('[mgs] sync push failed:', msg);
+  settings.syncLastError = msg;
+  settings.syncLastErrorAt = new Date().toISOString();
+  try { await saveSettings(); } catch (_) {}
+  updateBackupLabel();
+  if (!_syncFailureWarned) {
+    _syncFailureWarned = true;
+    toast('Cloud backup failed — your data is still safe on this device.');
+  }
+}
+
 // Flush pending pushes when the tab loses focus / unloads, and pull fresh data
 // when it regains focus (covers the "I switched devices" UX). Without this,
 // debounced writes can be silently dropped and the user sees stale data.
@@ -2723,7 +2894,7 @@ function setupSyncFlushAndVisibilityPull() {
     // Cancel the debounced push and fire one synchronously-initiated push now.
     clearTimeout(window._syncDebounce);
     window._syncDirty = false;
-    accountSyncPush().catch(() => { window._syncDirty = true; });
+    accountSyncPush().catch((e) => { window._syncDirty = true; noteSyncFailure(e); });
   };
   document.addEventListener('visibilitychange', async () => {
     if (document.visibilityState === 'hidden') {
@@ -2765,7 +2936,7 @@ async function markSyncDirty() {
     clearTimeout(window._syncDebounce);
     window._syncDebounce = setTimeout(() => {
       window._syncDirty = false;
-      accountSyncPush().catch(() => { window._syncDirty = true; });
+      accountSyncPush().catch((e) => { window._syncDirty = true; noteSyncFailure(e); });
     }, 1500);
     return;
   }
@@ -5010,7 +5181,7 @@ function isPremium() {
 async function rememberSignedIn(email, aesKey) {
   try {
     const raw = await crypto.subtle.exportKey('raw', aesKey);
-    const b64 = btoa(String.fromCharCode(...new Uint8Array(raw)));
+    const b64 = bytesToBase64(raw);
     localStorage.setItem('account.cred', JSON.stringify({ email, k: b64, v: 2 }));
     // Migrate away from any old plaintext-password entries on this device.
     localStorage.removeItem('account.cred.legacy');
@@ -5031,10 +5202,7 @@ function clearRememberedSignIn() {
 }
 
 async function importStoredAesKey(b64) {
-  const bin = atob(b64);
-  const bytes = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  return crypto.subtle.importKey('raw', bytes, 'AES-GCM', true, ['encrypt', 'decrypt']);
+  return crypto.subtle.importKey('raw', base64ToBytes(b64), 'AES-GCM', true, ['encrypt', 'decrypt']);
 }
 
 async function tryRestoreAccount() {
@@ -5047,43 +5215,30 @@ async function tryRestoreAccount() {
       account.encryptionKey = await importStoredAesKey(remembered.k);
     } catch (e) {}
   }
-  // Auto-pull on every login. Strategy:
-  //   - Pull cloud copy if it exists.
-  //   - If local is empty: apply pulled payload directly (cross-device login).
-  //   - If local has data AND cloud is newer than our last-pull stamp: apply pulled
-  //     payload (cloud is source of truth — another device pushed since we last synced).
-  //   - If local has data and cloud is stale or absent: push local up.
-  // The previous "only pull if local empty" check was the bug — if a user opened
-  // the app on a second device that had any prior local data, the pull was skipped
-  // and they'd never see their phone's shots.
+  // Auto-sync on every login: pull, merge, push the union back.
+  //
+  // This used to compare timestamps and pick a winner, which meant whichever
+  // side "lost" had its records discarded — a device that logged shots offline
+  // lost them the moment another device pushed. Because a pull now merges
+  // instead of replacing, there is no winner to pick: both sides' records
+  // survive, and pushing the union afterwards converges every device.
   if (account.encryptionKey) {
     try {
-      const localShots = (await dbAll(STORES.shots)) || [];
-      const localWeights = (await dbAll(STORES.weights)) || [];
-      const localEmpty = localShots.length === 0 && localWeights.length === 0;
       const result = await accountSyncPull();
       if (result && result.payload) {
-        const cloudUpdatedAt = result.updatedAt || 0;
-        const lastSeenUpdatedAt = settings.syncLastUpdatedAt || 0;
-        const cloudNewer = cloudUpdatedAt > lastSeenUpdatedAt;
-        if (localEmpty || cloudNewer) {
-          await applyPulledPayload(result.payload);
-          track('cross_device_auto_pull', {
-            shots: (result.payload.shots || []).length,
-            reason: localEmpty ? 'local_empty' : 'cloud_newer',
-          });
-        } else {
-          // Local has unsynced changes newer than cloud — push them.
-          try { await accountSyncPush(); } catch (e) { console.warn('[mgs] auto-push on login failed:', e); }
-        }
-      } else {
-        // No cloud copy yet — push local if we have anything to push.
-        if (!localEmpty) {
-          try { await accountSyncPush(); } catch (e) { console.warn('[mgs] initial push on login failed:', e); }
-        }
+        await applyPulledPayload(result.payload);
+        track('cross_device_auto_pull', {
+          shots: (result.payload.shots || []).length,
+          merged: (window._lastMergeStats && window._lastMergeStats.shots) || null,
+        });
       }
+      await accountSyncPush();
+      settings.syncLastError = '';
+      await saveSettings();
     } catch (e) {
-      console.warn('[mgs] auto-pull on login failed (non-fatal):', e);
+      console.warn('[mgs] auto-sync on login failed (non-fatal):', e);
+      settings.syncLastError = String(e && e.message || e);
+      try { await saveSettings(); } catch (_) {}
     }
   }
   return true;
@@ -5093,13 +5248,16 @@ async function accountSyncPush() {
   if (!account.user || !account.encryptionKey) throw new Error('Not unlocked');
   const payload = await buildPayload();
   const iv = crypto.getRandomValues(new Uint8Array(12));
-  const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, account.encryptionKey, new TextEncoder().encode(JSON.stringify(payload)));
-  const body = { iv: btoa(String.fromCharCode(...iv)), ciphertext: btoa(String.fromCharCode(...new Uint8Array(ct))) };
+  const plaintext = await encodePayloadBytes(payload);
+  const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, account.encryptionKey, plaintext);
+  const body = { iv: bytesToBase64(iv), ciphertext: bytesToBase64(ct) };
   const r = await accountFetch('me/sync', { method: 'PUT', body: JSON.stringify(body) });
+  if (r.status === 413) throw new Error('Your data is too large to back up. Export a copy and contact support.');
   if (!r.ok) throw new Error('Sync failed: ' + r.status);
   const j = await r.json();
   settings.syncLastPushAt = new Date().toISOString();
   settings.syncLastUpdatedAt = j.updatedAt;
+  settings.syncLastError = '';
   await saveSettings();
   return j;
 }
@@ -5110,15 +5268,15 @@ async function accountSyncPull() {
   if (!r.ok) throw new Error('Pull failed: ' + r.status);
   const j = await r.json();
   if (!j.exists) return null;
-  const iv = Uint8Array.from(atob(j.iv), c => c.charCodeAt(0));
-  const ct = Uint8Array.from(atob(j.ciphertext), c => c.charCodeAt(0));
+  const iv = base64ToBytes(j.iv);
+  const ct = base64ToBytes(j.ciphertext);
   let pt;
   try {
     pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, account.encryptionKey, ct);
   } catch (e) {
     throw new Error('Decryption failed — wrong password');
   }
-  return { payload: JSON.parse(new TextDecoder().decode(pt)), updatedAt: j.updatedAt };
+  return { payload: await decodePayloadBytes(new Uint8Array(pt)), updatedAt: j.updatedAt };
 }
 
 async function accountSyncDelete() {
@@ -6097,8 +6255,8 @@ async function createShareLink(label, opts) {
   const shareKey = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt']);
   const rawKey = await crypto.subtle.exportKey('raw', shareKey);
   const iv = crypto.getRandomValues(new Uint8Array(12));
-  const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, shareKey, new TextEncoder().encode(JSON.stringify(payload)));
-  const body = { iv: btoa(String.fromCharCode(...iv)), ciphertext: btoa(String.fromCharCode(...new Uint8Array(ct))), label: label || null };
+  const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, shareKey, await encodePayloadBytes(payload));
+  const body = { iv: bytesToBase64(iv), ciphertext: bytesToBase64(ct), label: label || null };
   const r = await accountFetch('share', { method: 'POST', body: JSON.stringify(body) });
   if (r.status === 402) throw new Error('Doctor share is a Premium feature.');
   if (!r.ok) throw new Error('Share creation failed.');
@@ -6115,8 +6273,8 @@ async function createShareLink(label, opts) {
 let syncCreds = null; // { username, aesKey, lookupId }
 
 const b64 = {
-  enc: (buf) => btoa(String.fromCharCode(...new Uint8Array(buf))),
-  dec: (s) => Uint8Array.from(atob(s), c => c.charCodeAt(0)),
+  enc: (buf) => bytesToBase64(buf),
+  dec: (s) => base64ToBytes(s),
 };
 
 async function deriveSyncCreds(username, passphrase) {
@@ -6183,7 +6341,8 @@ async function buildPayload(opts) {
   let medChanges = [];
   if (inc('medChanges')) { try { medChanges = (await dbAll('medChanges')) || []; } catch (e) {} }
   return {
-    version: 7,
+    // v8 adds stable per-record `uid`s so pulls can merge instead of replace.
+    version: 8,
     exportedAt: new Date().toISOString(),
     range: opts && opts.range ? opts.range : 'all',
     settings,
@@ -6230,43 +6389,95 @@ async function syncCloudExists(creds) {
   return res.json();
 }
 
+// ---------- Sync merge ----------
+// Records get a stable `uid` on write so the same shot logged on a phone and
+// pulled onto a tablet is recognised as one record rather than duplicated.
+// Rows written before uids existed fall back to a content key, which is stable
+// for the fields that actually identify an entry.
+function newUid() {
+  if (crypto.randomUUID) return crypto.randomUUID();
+  return HEX(crypto.getRandomValues(new Uint8Array(16)));
+}
+
+// Content keys identify a record by the fields a human would call "the same
+// entry". They exist because rows written before uids have no other identity —
+// and because a uid assigned locally to an old row would otherwise differ from
+// the uid the same row got on another device, duplicating it on every pull.
+const CONTENT_KEYS = {
+  shots: (r) => `s|${String(r.when).slice(0, 16)}|${r.dose}`,
+  weights: (r) => `w|${r.date}`,
+  supplies: (r) => `p|${r.med || ''}|${r.openedAt || ''}|${r.mg || ''}`,
+  measurements: (r) => `m|${r.date}|${r.type}`,
+  labs: (r) => `l|${r.date}|${r.type}`,
+  expenses: (r) => `e|${r.date}|${r.type}|${r.amount}`,
+  cycles: (r) => `c|${r.start || r.date || ''}`,
+  medChanges: (r) => `x|${r.date}|${r.from || ''}|${r.to || ''}`,
+};
+
+// Union-merge one auto-increment store: keep every local row, add cloud rows we
+// don't already have. Never deletes — a pull can only ever add.
+//
+// A record matches if EITHER its uid or its content key is already present, so
+// uid-bearing and legacy rows both dedupe correctly and a pull is idempotent.
+async function mergeStore(storeName, incoming, contentKey) {
+  const rows = Array.isArray(incoming) ? incoming : [];
+  if (!rows.length) return { added: 0, skipped: 0 };
+  const existing = (await dbAll(storeName)) || [];
+  const seenUid = new Set();
+  const seenContent = new Set();
+  for (const r of existing) {
+    if (r && r.uid) seenUid.add(r.uid);
+    if (r) seenContent.add(contentKey(r));
+  }
+  let added = 0, skipped = 0;
+  for (const raw of rows) {
+    if (!raw || typeof raw !== 'object') { skipped++; continue; }
+    const rec = { ...raw };
+    delete rec.id;                 // local autoincrement ids are device-scoped
+    const ck = contentKey(rec);
+    if ((rec.uid && seenUid.has(rec.uid)) || seenContent.has(ck)) { skipped++; continue; }
+    if (!rec.uid) rec.uid = newUid();
+    seenUid.add(rec.uid);
+    seenContent.add(ck);
+    await dbAdd(storeName, rec);
+    added++;
+  }
+  return { added, skipped };
+}
+
 async function applyPulledPayload(payload) {
   // Refuse newer payloads we can't safely interpret — avoids silent data loss
   // if a stale client pulls a blob written by a future schema.
-  const SUPPORTED_PAYLOAD_VERSION = 7;
+  const SUPPORTED_PAYLOAD_VERSION = 8;
   const pv = Number(payload && payload.version) || 1;
   if (pv > SUPPORTED_PAYLOAD_VERSION) {
     throw new Error(`This cloud backup was written by a newer version of the app (payload v${pv}). Please update before restoring.`);
   }
-  // Ensure premium stores exist before clearing
-  // openDB() already creates all stores in v5 onupgradeneeded — no separate ensureStore needed.
   await openDB();
-  // Replace local data with cloud copy. Settings merge (preserve local sync creds).
-  const db = await openDB();
-  await new Promise((resolve, reject) => {
-    const stores = [STORES.shots, STORES.weights, STORES.moods, 'supplies', 'measurements', 'labs', 'expenses', 'appetites', 'foodNoise', 'cycles', 'medChanges'];
-    const t = db.transaction(stores, 'readwrite');
-    stores.forEach(s => t.objectStore(s).clear());
-    t.oncomplete = resolve; t.onerror = () => reject(t.error);
-  });
-  for (const s of (payload.shots || [])) { delete s.id; await dbAdd(STORES.shots, s); }
-  for (const w of (payload.weights || [])) {
-    delete w.id;
-    const canon = toCanonicalDate(w.date);
-    if (canon) await dbAdd(STORES.weights, { ...w, date: canon });
-  }
-  for (const m of (payload.moods || [])) await dbPut(STORES.moods, m);
-  for (const a of (payload.appetites || [])) await saveAppetite(a.date, a.value);
-  for (const f of (payload.foodNoise || [])) await saveFoodNoise(f.date, f.value);
-  for (const c of (payload.cycles || [])) { delete c.id; await saveCycle(c); }
-  for (const m of (payload.medChanges || [])) { delete m.id; await saveMedChange(m); }
-  for (const s of (payload.supplies || [])) { delete s.id; await saveSupply(s); }
-  for (const m of (payload.measurements || [])) { delete m.id; await saveMeasurement(m); }
-  for (const l of (payload.labs || [])) { delete l.id; await saveLab(l); }
-  for (const e of (payload.expenses || [])) { delete e.id; await saveExpense(e); }
+
+  // A pull ADDS cloud records to what is already here. The old behaviour cleared
+  // every store first, which silently destroyed anything logged on this device
+  // since its last push — and left the database empty if the tab closed midway.
+  const stats = {};
+  stats.shots = await mergeStore(STORES.shots, (payload.shots || []).map(sanitizeShot).filter(Boolean), CONTENT_KEYS.shots);
+  stats.weights = await mergeStore(STORES.weights, (payload.weights || []).map(sanitizeWeight).filter(Boolean), CONTENT_KEYS.weights);
+  stats.supplies = await mergeStore('supplies', payload.supplies, CONTENT_KEYS.supplies);
+  stats.measurements = await mergeStore('measurements', payload.measurements, CONTENT_KEYS.measurements);
+  stats.labs = await mergeStore('labs', payload.labs, CONTENT_KEYS.labs);
+  stats.expenses = await mergeStore('expenses', payload.expenses, CONTENT_KEYS.expenses);
+  stats.cycles = await mergeStore('cycles', payload.cycles, CONTENT_KEYS.cycles);
+  stats.medChanges = await mergeStore('medChanges', payload.medChanges, CONTENT_KEYS.medChanges);
+
+  // Date-keyed daily stores: last write wins per day, which is the intent — one
+  // mood/appetite/food-noise reading per date.
+  for (const m of (payload.moods || [])) if (m && m.date) await dbPut(STORES.moods, m);
+  for (const a of (payload.appetites || [])) if (a && a.date) await saveAppetite(a.date, a.value);
+  for (const f of (payload.foodNoise || [])) if (f && f.date) await saveFoodNoise(f.date, f.value);
+
+  window._lastMergeStats = stats;
   if (payload.settings) {
     const preserve = { syncEnabled: settings.syncEnabled, syncUsername: settings.syncUsername, syncLastPushAt: settings.syncLastPushAt, syncLastPullAt: settings.syncLastPullAt, syncLastUpdatedAt: settings.syncLastUpdatedAt };
-    settings = { ...DEFAULT_SETTINGS, ...payload.settings, ...preserve };
+    settings = { ...DEFAULT_SETTINGS, ...sanitizeSettings(payload.settings), ...preserve };
     await saveSettings();
     applySettingsToInputs();
   }

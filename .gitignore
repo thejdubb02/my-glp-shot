@@ -1,2 +1,4 @@
 docker/api.env
 web/landing/*.bak.*
+__pycache__/
+*.pyc
