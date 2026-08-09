@@ -156,6 +156,16 @@ def main():
     queued = con.execute('SELECT COUNT(*) FROM push_reminders WHERE sent_at IS NULL').fetchone()[0]
     check('unsubscribe drops device and queued reminders', subs == 0 and queued == 0, f'subs={subs} queued={queued}')
 
+    # --- deleting the account must remove the push data too ---------------
+    client.post('/api/push/subscribe', json=sub, headers=hdr)
+    client.put('/api/push/schedule', json={'reminders': [{'kind': 'shot', 'fireAt': now + 900}]}, headers=hdr)
+    r = client.delete('/api/me', headers=hdr)
+    check('account delete succeeds', r.status_code == 200, str(r.data[:120]))
+    subs = con.execute('SELECT COUNT(*) FROM push_subscriptions').fetchone()[0]
+    rem = con.execute('SELECT COUNT(*) FROM push_reminders').fetchone()[0]
+    check('account delete removes push subscriptions', subs == 0, f'rows={subs}')
+    check('account delete removes queued reminders', rem == 0, f'rows={rem}')
+
     con.close()
     print(f'\n{len(PASS)} passed, {len(FAIL)} failed')
     if FAIL:

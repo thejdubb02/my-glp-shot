@@ -1,16 +1,6 @@
 {
-  "models": [
-    "google/gemini-3.1-pro-preview",
-    "openai/gpt-5.3-codex",
-    "x-ai/grok-4.20",
-    "deepseek/deepseek-v4-pro"
-  ],
-  "slices": [
-    "a",
-    "b",
-    "c",
-    "d"
-  ],
+  "models": [],
+  "slices": [],
   "total": 95,
   "bySeverity": {
     "CRITICAL": 14,
@@ -19,6 +9,32 @@
     "LOW": 14
   },
   "findings": [
+    {
+      "severity": "CRITICAL",
+      "file": "api/app.py",
+      "line": 147,
+      "title": "SQLite concurrency corruption risk with multiple gunicorn workers",
+      "issue": "The app uses SQLite without WAL mode or busy timeout, and the Dockerfile runs gunicorn with 2 workers. Multiple processes writing to the same SQLite file can cause database corruption, 'database is locked' errors, and silent data loss under any concurrent write load (e.g., sync, signup, webhooks).",
+      "fix": "Either switch to a single worker with threads (--workers 1 --threads 8) or enable WAL mode and set a busy timeout in get_db(): db.execute('PRAGMA journal_mode=WAL'); db.execute('PRAGMA busy_timeout=5000');. For production, consider using a client/server database like PostgreSQL.",
+      "slice": "a",
+      "model": "deepseek/deepseek-v4-pro",
+      "confirmedBy": [
+        "deepseek/deepseek-v4-pro"
+      ]
+    },
+    {
+      "severity": "CRITICAL",
+      "file": "api/app.py",
+      "line": 1401,
+      "title": "Global Stripe API key is mutated per-request (thread race between live and test flows)",
+      "issue": "`stripe.api_key` is process-global, but `/api/stripe/webhook/test` and `/api/admin/billing/test-checkout` temporarily overwrite it (`prev = stripe.api_key; stripe.api_key = STRIPE_API_KEY_TEST; ...; stripe.api_key = prev`). With gunicorn threads enabled, concurrent live requests can run while the key is switched, causing live billing/webhook calls to execute against test mode (or fail), and vice versa.",
+      "fix": "Stop mutating `stripe.api_key` globally inside request handlers. Use per-request Stripe clients (e.g., `stripe.StripeClient(STRIPE_API_KEY_TEST)` / `stripe.StripeClient(STRIPE_API_KEY)`) and call resources through that client, or isolate test-mode handling into a separate process/service.",
+      "slice": "a",
+      "model": "openai/gpt-5.3-codex",
+      "confirmedBy": [
+        "openai/gpt-5.3-codex"
+      ]
+    },
     {
       "severity": "CRITICAL",
       "file": "api/app.py",
@@ -47,12 +63,25 @@
     },
     {
       "severity": "CRITICAL",
-      "file": "api/app.py",
-      "line": 1401,
-      "title": "Global Stripe API key is mutated per-request (thread race between live and test flows)",
-      "issue": "`stripe.api_key` is process-global, but `/api/stripe/webhook/test` and `/api/admin/billing/test-checkout` temporarily overwrite it (`prev = stripe.api_key; stripe.api_key = STRIPE_API_KEY_TEST; ...; stripe.api_key = prev`). With gunicorn threads enabled, concurrent live requests can run while the key is switched, causing live billing/webhook calls to execute against test mode (or fail), and vice versa.",
-      "fix": "Stop mutating `stripe.api_key` globally inside request handlers. Use per-request Stripe clients (e.g., `stripe.StripeClient(STRIPE_API_KEY_TEST)` / `stripe.StripeClient(STRIPE_API_KEY)`) and call resources through that client, or isolate test-mode handling into a separate process/service.",
-      "slice": "a",
+      "file": "web/app/app.js",
+      "line": 6246,
+      "title": "Non-atomic clear-then-insert in applyPulledPayload can cause permanent data loss",
+      "issue": "The function calls `t.objectStore(s).clear()` across multiple stores inside a single transaction, then after that transaction resolves it sequentially adds records with `dbAdd`/`saveSupply`/etc. If the page is closed, crashes, or an error occurs between the clear and the completion of all inserts, all existing data in these stores is lost.",
+      "fix": "Put all clear operations and all subsequent insert/put calls into a single `readwrite` transaction that covers every affected store, so the replacement is atomic.",
+      "slice": "b",
+      "model": "deepseek/deepseek-v4-pro",
+      "confirmedBy": [
+        "deepseek/deepseek-v4-pro"
+      ]
+    },
+    {
+      "severity": "CRITICAL",
+      "file": "web/app/app.js",
+      "line": 6246,
+      "title": "Cloud restore is destructive and non-atomic",
+      "issue": "`applyPulledPayload()` clears all local stores in one transaction, then repopulates them record-by-record outside that transaction. If any later write fails (quota, IndexedDB error, interrupted tab, malformed row), local data has already been wiped and ends up partially restored or empty.",
+      "fix": "Make restore atomic: perform clear+all inserts in a single readwrite transaction (or write to shadow stores and swap only on success). If any insert fails, abort the transaction so previous local data remains intact.",
+      "slice": "b",
       "model": "openai/gpt-5.3-codex",
       "confirmedBy": [
         "openai/gpt-5.3-codex"
@@ -60,15 +89,15 @@
     },
     {
       "severity": "CRITICAL",
-      "file": "api/app.py",
-      "line": 147,
-      "title": "SQLite concurrency corruption risk with multiple gunicorn workers",
-      "issue": "The app uses SQLite without WAL mode or busy timeout, and the Dockerfile runs gunicorn with 2 workers. Multiple processes writing to the same SQLite file can cause database corruption, 'database is locked' errors, and silent data loss under any concurrent write load (e.g., sync, signup, webhooks).",
-      "fix": "Either switch to a single worker with threads (--workers 1 --threads 8) or enable WAL mode and set a busy timeout in get_db(): db.execute('PRAGMA journal_mode=WAL'); db.execute('PRAGMA busy_timeout=5000');. For production, consider using a client/server database like PostgreSQL.",
-      "slice": "a",
-      "model": "deepseek/deepseek-v4-pro",
+      "file": "web/app/app.js",
+      "line": 5176,
+      "title": "Login flow can overwrite existing cloud data before pull/merge decision",
+      "issue": "After successful login, `handleAccountSubmit()` immediately pushes local data when local shots exist (`accountSyncPush()` at lines 5176-5179) before pulling cloud state. On a device with stale/old local shots, this can overwrite a newer cloud copy, causing irreversible cross-device data loss.",
+      "fix": "Do not push first on login. Pull first, compare versions/timestamps, then explicitly resolve conflicts (or only push when cloud is absent or confirmed older). Remove the unconditional pre-pull push block.",
+      "slice": "b",
+      "model": "openai/gpt-5.3-codex",
       "confirmedBy": [
-        "deepseek/deepseek-v4-pro"
+        "openai/gpt-5.3-codex"
       ]
     },
     {
@@ -100,24 +129,24 @@
     {
       "severity": "CRITICAL",
       "file": "web/app/app.js",
-      "line": 6246,
-      "title": "Cloud restore is destructive and non-atomic",
-      "issue": "`applyPulledPayload()` clears all local stores in one transaction, then repopulates them record-by-record outside that transaction. If any later write fails (quota, IndexedDB error, interrupted tab, malformed row), local data has already been wiped and ends up partially restored or empty.",
-      "fix": "Make restore atomic: perform clear+all inserts in a single readwrite transaction (or write to shadow stores and swap only on success). If any insert fails, abort the transaction so previous local data remains intact.",
-      "slice": "b",
-      "model": "openai/gpt-5.3-codex",
+      "line": 782,
+      "title": "Date parsing ignores user-configured timezone, causing day-boundary errors",
+      "issue": "parseDateFlexible interprets bare YYYY-MM-DD strings via `new Date(year, month-1, day)`, which uses the system local timezone instead of the user's chosen timezone (settings.timezone). This causes weight entries, mood logs, and other data to be assigned to the wrong calendar day when the device timezone differs from the user's configured timezone, silently corrupting streaks, charts, and plateau detection.",
+      "fix": "Replace the `new Date(...)` construction with a conversion that respects the user's timezone (e.g., using the existing `zonedWallToUtc` helper or `Intl.DateTimeFormat` with the selected timezone) to obtain the correct UTC timestamp.",
+      "slice": "c",
+      "model": "deepseek/deepseek-v4-pro",
       "confirmedBy": [
-        "openai/gpt-5.3-codex"
+        "deepseek/deepseek-v4-pro"
       ]
     },
     {
       "severity": "CRITICAL",
       "file": "web/app/app.js",
-      "line": 5176,
-      "title": "Login flow can overwrite existing cloud data before pull/merge decision",
-      "issue": "After successful login, `handleAccountSubmit()` immediately pushes local data when local shots exist (`accountSyncPush()` at lines 5176-5179) before pulling cloud state. On a device with stale/old local shots, this can overwrite a newer cloud copy, causing irreversible cross-device data loss.",
-      "fix": "Do not push first on login. Pull first, compare versions/timestamps, then explicitly resolve conflicts (or only push when cloud is absent or confirmed older). Remove the unconditional pre-pull push block.",
-      "slice": "b",
+      "line": 899,
+      "title": "Stored XSS via unescaped shot fields rendered with innerHTML",
+      "issue": "Shot records imported from JSON are inserted without validation (`importData` does `await dbAdd(STORES.shots, s)` at line 2129). Later, `shotItem()` renders `shot.dose` directly inside `li.innerHTML` (line 899+) without escaping. A crafted import file can set `dose` to HTML/JS payload, which executes on render and can read local health data, sync tokens, and encryption material from localStorage.",
+      "fix": "Validate/coerce imported shot fields before storage (e.g., `dose = Number(...)`, reject non-finite). In rendering, avoid template-string `innerHTML` for user data; build nodes with `textContent`, or at minimum escape every interpolated field including `dose`.",
+      "slice": "c",
       "model": "openai/gpt-5.3-codex",
       "confirmedBy": [
         "openai/gpt-5.3-codex"
@@ -151,45 +180,6 @@
     },
     {
       "severity": "CRITICAL",
-      "file": "web/app/app.js",
-      "line": 899,
-      "title": "Stored XSS via unescaped shot fields rendered with innerHTML",
-      "issue": "Shot records imported from JSON are inserted without validation (`importData` does `await dbAdd(STORES.shots, s)` at line 2129). Later, `shotItem()` renders `shot.dose` directly inside `li.innerHTML` (line 899+) without escaping. A crafted import file can set `dose` to HTML/JS payload, which executes on render and can read local health data, sync tokens, and encryption material from localStorage.",
-      "fix": "Validate/coerce imported shot fields before storage (e.g., `dose = Number(...)`, reject non-finite). In rendering, avoid template-string `innerHTML` for user data; build nodes with `textContent`, or at minimum escape every interpolated field including `dose`.",
-      "slice": "c",
-      "model": "openai/gpt-5.3-codex",
-      "confirmedBy": [
-        "openai/gpt-5.3-codex"
-      ]
-    },
-    {
-      "severity": "CRITICAL",
-      "file": "web/app/app.js",
-      "line": 6246,
-      "title": "Non-atomic clear-then-insert in applyPulledPayload can cause permanent data loss",
-      "issue": "The function calls `t.objectStore(s).clear()` across multiple stores inside a single transaction, then after that transaction resolves it sequentially adds records with `dbAdd`/`saveSupply`/etc. If the page is closed, crashes, or an error occurs between the clear and the completion of all inserts, all existing data in these stores is lost.",
-      "fix": "Put all clear operations and all subsequent insert/put calls into a single `readwrite` transaction that covers every affected store, so the replacement is atomic.",
-      "slice": "b",
-      "model": "deepseek/deepseek-v4-pro",
-      "confirmedBy": [
-        "deepseek/deepseek-v4-pro"
-      ]
-    },
-    {
-      "severity": "CRITICAL",
-      "file": "web/app/app.js",
-      "line": 782,
-      "title": "Date parsing ignores user-configured timezone, causing day-boundary errors",
-      "issue": "parseDateFlexible interprets bare YYYY-MM-DD strings via `new Date(year, month-1, day)`, which uses the system local timezone instead of the user's chosen timezone (settings.timezone). This causes weight entries, mood logs, and other data to be assigned to the wrong calendar day when the device timezone differs from the user's configured timezone, silently corrupting streaks, charts, and plateau detection.",
-      "fix": "Replace the `new Date(...)` construction with a conversion that respects the user's timezone (e.g., using the existing `zonedWallToUtc` helper or `Intl.DateTimeFormat` with the selected timezone) to obtain the correct UTC timestamp.",
-      "slice": "c",
-      "model": "deepseek/deepseek-v4-pro",
-      "confirmedBy": [
-        "deepseek/deepseek-v4-pro"
-      ]
-    },
-    {
-      "severity": "CRITICAL",
       "file": "web/app/sw.js",
       "line": 55,
       "title": "Silent data-loss on navigation cache fallback",
@@ -204,40 +194,14 @@
     {
       "severity": "HIGH",
       "file": "api/app.py",
-      "line": 152,
-      "title": "Schema migration runs on every request inside get_db()",
-      "issue": "`db.executescript(SCHEMA)` + `db.commit()` executes on *every* request because get_db() is called from before_request and every route. This is extremely expensive and creates unnecessary write locks under concurrency.",
-      "fix": "Move schema creation and the ALTER TABLE migration block into the one-time `init_db()` function only. Remove from get_db().",
+      "line": 1641,
+      "title": "Gemini API key exposed in URL query string",
+      "issue": "The import_parse endpoint sends the GEMINI_API_KEY as a query parameter in the URL. This key will appear in server logs, request logs, and possibly in error messages, leading to secret leakage.",
+      "fix": "Pass the API key in the request header (e.g., 'x-goog-api-key') or use the Google AI Python client library which handles authentication securely.",
       "slice": "a",
-      "model": "x-ai/grok-4.20",
+      "model": "deepseek/deepseek-v4-pro",
       "confirmedBy": [
-        "x-ai/grok-4.20"
-      ]
-    },
-    {
-      "severity": "HIGH",
-      "file": "api/app.py",
-      "line": 820,
-      "title": "Stripe webhook idempotency table can be bypassed by replay before commit",
-      "issue": "The SELECT for existing event, INSERT into stripe_events, and subsequent business logic are not inside a single transaction. A duplicate webhook can be processed twice if it arrives between the SELECT and the INSERT commit (race condition exacerbated by 8 threads and no WAL).",
-      "fix": "Wrap the idempotency check + INSERT + business logic in `db.execute('BEGIN IMMEDIATE')` / explicit transaction with final COMMIT.",
-      "slice": "a",
-      "model": "x-ai/grok-4.20",
-      "confirmedBy": [
-        "x-ai/grok-4.20"
-      ]
-    },
-    {
-      "severity": "HIGH",
-      "file": "api/app.py",
-      "line": 385,
-      "title": "Account deletion and admin_delete_user do not cancel test-mode subscriptions",
-      "issue": "delete_account() and admin_delete_user() only cancel the live `stripe_subscription_id`. Test-mode subscriptions (`stripe_subscription_id_test`) are never canceled, which can lead to orphaned test subscriptions and potential billing side-effects.",
-      "fix": "Also cancel the test subscription if `user['stripe_subscription_id_test']` exists (using the test API key).",
-      "slice": "a",
-      "model": "x-ai/grok-4.20",
-      "confirmedBy": [
-        "x-ai/grok-4.20"
+        "deepseek/deepseek-v4-pro"
       ]
     },
     {
@@ -282,11 +246,50 @@
     {
       "severity": "HIGH",
       "file": "api/app.py",
-      "line": 1641,
-      "title": "Gemini API key exposed in URL query string",
-      "issue": "The import_parse endpoint sends the GEMINI_API_KEY as a query parameter in the URL. This key will appear in server logs, request logs, and possibly in error messages, leading to secret leakage.",
-      "fix": "Pass the API key in the request header (e.g., 'x-goog-api-key') or use the Google AI Python client library which handles authentication securely.",
+      "line": 152,
+      "title": "Schema migration runs on every request inside get_db()",
+      "issue": "`db.executescript(SCHEMA)` + `db.commit()` executes on *every* request because get_db() is called from before_request and every route. This is extremely expensive and creates unnecessary write locks under concurrency.",
+      "fix": "Move schema creation and the ALTER TABLE migration block into the one-time `init_db()` function only. Remove from get_db().",
       "slice": "a",
+      "model": "x-ai/grok-4.20",
+      "confirmedBy": [
+        "x-ai/grok-4.20"
+      ]
+    },
+    {
+      "severity": "HIGH",
+      "file": "api/app.py",
+      "line": 820,
+      "title": "Stripe webhook idempotency table can be bypassed by replay before commit",
+      "issue": "The SELECT for existing event, INSERT into stripe_events, and subsequent business logic are not inside a single transaction. A duplicate webhook can be processed twice if it arrives between the SELECT and the INSERT commit (race condition exacerbated by 8 threads and no WAL).",
+      "fix": "Wrap the idempotency check + INSERT + business logic in `db.execute('BEGIN IMMEDIATE')` / explicit transaction with final COMMIT.",
+      "slice": "a",
+      "model": "x-ai/grok-4.20",
+      "confirmedBy": [
+        "x-ai/grok-4.20"
+      ]
+    },
+    {
+      "severity": "HIGH",
+      "file": "api/app.py",
+      "line": 385,
+      "title": "Account deletion and admin_delete_user do not cancel test-mode subscriptions",
+      "issue": "delete_account() and admin_delete_user() only cancel the live `stripe_subscription_id`. Test-mode subscriptions (`stripe_subscription_id_test`) are never canceled, which can lead to orphaned test subscriptions and potential billing side-effects.",
+      "fix": "Also cancel the test subscription if `user['stripe_subscription_id_test']` exists (using the test API key).",
+      "slice": "a",
+      "model": "x-ai/grok-4.20",
+      "confirmedBy": [
+        "x-ai/grok-4.20"
+      ]
+    },
+    {
+      "severity": "HIGH",
+      "file": "web/app/app.js",
+      "line": 5097,
+      "title": "Stack-overflow crash when base64-encoding large ciphertexts during sync push",
+      "issue": "The code uses `btoa(String.fromCharCode(...new Uint8Array(ct)))` (line 5097, similarly in b64.enc line 6117 and syncEncrypt line 6143). When the encrypted payload is large (many entries), spreading the Uint8Array into `String.fromCharCode` arguments causes a `RangeError: Maximum call stack size exceeded`, silently aborting the sync push.",
+      "fix": "Replace the spread-based encoding with a chunked conversion (e.g., iterate over bytes, concatenate in chunks, then call `btoa`) to avoid call stack exhaustion.",
+      "slice": "b",
       "model": "deepseek/deepseek-v4-pro",
       "confirmedBy": [
         "deepseek/deepseek-v4-pro"
@@ -295,40 +298,14 @@
     {
       "severity": "HIGH",
       "file": "web/app/app.js",
-      "line": 5097,
-      "title": "Base64 encoding of binary data is broken for >255 byte values",
-      "issue": "Multiple places (accountSyncPush:5097, createShareLink:6101, syncEncrypt:6143, etc.) do `btoa(String.fromCharCode(...iv))` and `btoa(String.fromCharCode(...new Uint8Array(ct)))`. When any byte >= 128, `String.fromCharCode` produces incorrect Unicode characters. `btoa` then corrupts the data. This can cause decryption failures or silent data corruption on some payloads.",
-      "fix": "Replace all binary-to-base64 conversions with the provided `b64.enc()` helper (lines 6118-6119) which correctly uses `Uint8Array`. Update accountSyncPull, syncDecrypt, and importStoredAesKey accordingly.",
+      "line": 6469,
+      "title": "Empty catch blocks silently swallow sync errors, hiding failures",
+      "issue": "The auto-push interval (line 6469) and several try/catch wrappers (lines 5077, 5086, 5096\u20135103 fallbacks) have empty catch blocks or only `console.warn`. Users receive no visual indication that sync is failing, leading to a false belief that data is backed up while cloud copy becomes stale.",
+      "fix": "At minimum, log the error via a notification system; ideally surface a transient warning (e.g., \u2018Sync failed \u2014 tap to retry\u2019) so the user is aware.",
       "slice": "b",
-      "model": "x-ai/grok-4.20",
+      "model": "deepseek/deepseek-v4-pro",
       "confirmedBy": [
-        "x-ai/grok-4.20"
-      ]
-    },
-    {
-      "severity": "HIGH",
-      "file": "web/app/app.js",
-      "line": 5034,
-      "title": "importStoredAesKey uses legacy broken base64 decoding",
-      "issue": "importStoredAesKey() (lines 5034-5037) manually does `atob()` + `charCodeAt()` but does not handle padding or characters outside the 0-255 range safely. Combined with the broken encoding on line 5013, this is fragile and can produce wrong keys after certain browser updates or when data is copied between environments.",
-      "fix": "Replace with the robust `b64.dec()` pattern used later in the file, or better, switch to a proper ArrayBuffer \u2192 base64 library that is standards-compliant.",
-      "slice": "b",
-      "model": "x-ai/grok-4.20",
-      "confirmedBy": [
-        "x-ai/grok-4.20"
-      ]
-    },
-    {
-      "severity": "HIGH",
-      "file": "web/app/app.js",
-      "line": 5118,
-      "title": "Decryption error leaks that the account is valid",
-      "issue": "accountSyncPull() throws 'Decryption failed \u2014 wrong password' only on AES-GCM tag failure. An attacker who can observe whether this specific error is returned can distinguish between 'account does not exist' and 'valid account, wrong password'. This enables username enumeration and confirms valid accounts.",
-      "fix": "Return a generic 'Sync failed' error for both 404 and decryption failures. Do not differentiate the error messages.",
-      "slice": "b",
-      "model": "x-ai/grok-4.20",
-      "confirmedBy": [
-        "x-ai/grok-4.20"
+        "deepseek/deepseek-v4-pro"
       ]
     },
     {
@@ -386,11 +363,11 @@
     {
       "severity": "HIGH",
       "file": "web/app/app.js",
-      "line": 1319,
-      "title": "Silent data loss on shot save when date parsing fails",
-      "issue": "Line 1319 does new Date(whenStr) but never checks isNaN(whenDate.getTime()). The guard on line 1320 only alerts and returns \u2014 it does not prevent the rest of the function from continuing if the alert is dismissed or suppressed. Later code (line 1355) will store an invalid ISO string. Combined with parseDateFlexible() being overly permissive, this can corrupt charts, streaks, level calculations, and notifications.",
-      "fix": "After line 1320 add: if (!whenDate || isNaN(whenDate.getTime())) { alert(...); return; } and consider using the already-existing localISOForInput() / zonedWallToUtc() helpers for all date handling.",
-      "slice": "c",
+      "line": 5097,
+      "title": "Base64 encoding of binary data is broken for >255 byte values",
+      "issue": "Multiple places (accountSyncPush:5097, createShareLink:6101, syncEncrypt:6143, etc.) do `btoa(String.fromCharCode(...iv))` and `btoa(String.fromCharCode(...new Uint8Array(ct)))`. When any byte >= 128, `String.fromCharCode` produces incorrect Unicode characters. `btoa` then corrupts the data. This can cause decryption failures or silent data corruption on some payloads.",
+      "fix": "Replace all binary-to-base64 conversions with the provided `b64.enc()` helper (lines 6118-6119) which correctly uses `Uint8Array`. Update accountSyncPull, syncDecrypt, and importStoredAesKey accordingly.",
+      "slice": "b",
       "model": "x-ai/grok-4.20",
       "confirmedBy": [
         "x-ai/grok-4.20"
@@ -399,11 +376,11 @@
     {
       "severity": "HIGH",
       "file": "web/app/app.js",
-      "line": 2436,
-      "title": "Notification scheduling is unreliable under concurrency and timezone changes",
-      "issue": "maybeScheduleNotification() clears existing timers and calls scheduleShotReminder() + scheduleDailyReminders(). Both functions read live settings and IndexedDB state without locking. Rapid changes (multiple devices, quick setting toggles, timezone change on line 1468) can leave stale Timeout IDs or overlapping TimestampTrigger notifications. TRIGGERS_SUPPORTED path also does not clean up old triggers reliably (only closes visible notifications).",
-      "fix": "Add a global notification revision counter that is incremented on every settings change. Only fire a notification if its revision still matches the current one. Use a single transaction when reading shots/settings for scheduling.",
-      "slice": "c",
+      "line": 5034,
+      "title": "importStoredAesKey uses legacy broken base64 decoding",
+      "issue": "importStoredAesKey() (lines 5034-5037) manually does `atob()` + `charCodeAt()` but does not handle padding or characters outside the 0-255 range safely. Combined with the broken encoding on line 5013, this is fragile and can produce wrong keys after certain browser updates or when data is copied between environments.",
+      "fix": "Replace with the robust `b64.dec()` pattern used later in the file, or better, switch to a proper ArrayBuffer \u2192 base64 library that is standards-compliant.",
+      "slice": "b",
       "model": "x-ai/grok-4.20",
       "confirmedBy": [
         "x-ai/grok-4.20"
@@ -412,14 +389,27 @@
     {
       "severity": "HIGH",
       "file": "web/app/app.js",
-      "line": 1041,
-      "title": "Premium gating is entirely client-side and trivially bypassable",
-      "issue": "isPremium() (not shown in this slice but called on lines 1837, 1971, 2926, 2965, 2989, 3023, 3046, 4150, etc.) is a client-side check. All premium UI (supplies, measurements, labs, insights, benchmark curves, PDF export, share links) is rendered and functional before any server validation. A user can simply set a local flag or edit the function in devtools.",
-      "fix": "Keep client-side optimistic UI but add a server-side enforcement gate on every premium write path (sync, PDF generation, share link creation) and re-validate on every pull. Mark the current implementation as bypassable.",
-      "slice": "c",
+      "line": 5118,
+      "title": "Decryption error leaks that the account is valid",
+      "issue": "accountSyncPull() throws 'Decryption failed \u2014 wrong password' only on AES-GCM tag failure. An attacker who can observe whether this specific error is returned can distinguish between 'account does not exist' and 'valid account, wrong password'. This enables username enumeration and confirms valid accounts.",
+      "fix": "Return a generic 'Sync failed' error for both 404 and decryption failures. Do not differentiate the error messages.",
+      "slice": "b",
       "model": "x-ai/grok-4.20",
       "confirmedBy": [
         "x-ai/grok-4.20"
+      ]
+    },
+    {
+      "severity": "HIGH",
+      "file": "web/app/app.js",
+      "line": 1307,
+      "title": "Unsafe DOM manipulation without null check can crash the app",
+      "issue": "Multiple calls to `$('#selector')` followed by direct method calls (e.g., `$('#shot-cancel').addEventListener('click', ...)` at line 1307, `$('#countdown-value')` inside renderCountdown at line 851, `$('#hero-card')` at line 4219) do not verify element existence. If any expected element is missing from the DOM, a TypeError is thrown, breaking subsequent script execution and leaving the app unusable.",
+      "fix": "Add null/undefined guards before accessing properties or calling methods on the result of `$()` throughout the codebase, or use optional chaining (`?.`).",
+      "slice": "c",
+      "model": "deepseek/deepseek-v4-pro",
+      "confirmedBy": [
+        "deepseek/deepseek-v4-pro"
       ]
     },
     {
@@ -477,40 +467,40 @@
     {
       "severity": "HIGH",
       "file": "web/app/app.js",
-      "line": 5097,
-      "title": "Stack-overflow crash when base64-encoding large ciphertexts during sync push",
-      "issue": "The code uses `btoa(String.fromCharCode(...new Uint8Array(ct)))` (line 5097, similarly in b64.enc line 6117 and syncEncrypt line 6143). When the encrypted payload is large (many entries), spreading the Uint8Array into `String.fromCharCode` arguments causes a `RangeError: Maximum call stack size exceeded`, silently aborting the sync push.",
-      "fix": "Replace the spread-based encoding with a chunked conversion (e.g., iterate over bytes, concatenate in chunks, then call `btoa`) to avoid call stack exhaustion.",
-      "slice": "b",
-      "model": "deepseek/deepseek-v4-pro",
-      "confirmedBy": [
-        "deepseek/deepseek-v4-pro"
-      ]
-    },
-    {
-      "severity": "HIGH",
-      "file": "web/app/app.js",
-      "line": 6469,
-      "title": "Empty catch blocks silently swallow sync errors, hiding failures",
-      "issue": "The auto-push interval (line 6469) and several try/catch wrappers (lines 5077, 5086, 5096\u20135103 fallbacks) have empty catch blocks or only `console.warn`. Users receive no visual indication that sync is failing, leading to a false belief that data is backed up while cloud copy becomes stale.",
-      "fix": "At minimum, log the error via a notification system; ideally surface a transient warning (e.g., \u2018Sync failed \u2014 tap to retry\u2019) so the user is aware.",
-      "slice": "b",
-      "model": "deepseek/deepseek-v4-pro",
-      "confirmedBy": [
-        "deepseek/deepseek-v4-pro"
-      ]
-    },
-    {
-      "severity": "HIGH",
-      "file": "web/app/app.js",
-      "line": 1307,
-      "title": "Unsafe DOM manipulation without null check can crash the app",
-      "issue": "Multiple calls to `$('#selector')` followed by direct method calls (e.g., `$('#shot-cancel').addEventListener('click', ...)` at line 1307, `$('#countdown-value')` inside renderCountdown at line 851, `$('#hero-card')` at line 4219) do not verify element existence. If any expected element is missing from the DOM, a TypeError is thrown, breaking subsequent script execution and leaving the app unusable.",
-      "fix": "Add null/undefined guards before accessing properties or calling methods on the result of `$()` throughout the codebase, or use optional chaining (`?.`).",
+      "line": 1319,
+      "title": "Silent data loss on shot save when date parsing fails",
+      "issue": "Line 1319 does new Date(whenStr) but never checks isNaN(whenDate.getTime()). The guard on line 1320 only alerts and returns \u2014 it does not prevent the rest of the function from continuing if the alert is dismissed or suppressed. Later code (line 1355) will store an invalid ISO string. Combined with parseDateFlexible() being overly permissive, this can corrupt charts, streaks, level calculations, and notifications.",
+      "fix": "After line 1320 add: if (!whenDate || isNaN(whenDate.getTime())) { alert(...); return; } and consider using the already-existing localISOForInput() / zonedWallToUtc() helpers for all date handling.",
       "slice": "c",
-      "model": "deepseek/deepseek-v4-pro",
+      "model": "x-ai/grok-4.20",
       "confirmedBy": [
-        "deepseek/deepseek-v4-pro"
+        "x-ai/grok-4.20"
+      ]
+    },
+    {
+      "severity": "HIGH",
+      "file": "web/app/app.js",
+      "line": 2436,
+      "title": "Notification scheduling is unreliable under concurrency and timezone changes",
+      "issue": "maybeScheduleNotification() clears existing timers and calls scheduleShotReminder() + scheduleDailyReminders(). Both functions read live settings and IndexedDB state without locking. Rapid changes (multiple devices, quick setting toggles, timezone change on line 1468) can leave stale Timeout IDs or overlapping TimestampTrigger notifications. TRIGGERS_SUPPORTED path also does not clean up old triggers reliably (only closes visible notifications).",
+      "fix": "Add a global notification revision counter that is incremented on every settings change. Only fire a notification if its revision still matches the current one. Use a single transaction when reading shots/settings for scheduling.",
+      "slice": "c",
+      "model": "x-ai/grok-4.20",
+      "confirmedBy": [
+        "x-ai/grok-4.20"
+      ]
+    },
+    {
+      "severity": "HIGH",
+      "file": "web/app/app.js",
+      "line": 1041,
+      "title": "Premium gating is entirely client-side and trivially bypassable",
+      "issue": "isPremium() (not shown in this slice but called on lines 1837, 1971, 2926, 2965, 2989, 3023, 3046, 4150, etc.) is a client-side check. All premium UI (supplies, measurements, labs, insights, benchmark curves, PDF export, share links) is rendered and functional before any server validation. A user can simply set a local flag or edit the function in devtools.",
+      "fix": "Keep client-side optimistic UI but add a server-side enforcement gate on every premium write path (sync, PDF generation, share link creation) and re-validate on every pull. Mark the current implementation as bypassable.",
+      "slice": "c",
+      "model": "x-ai/grok-4.20",
+      "confirmedBy": [
+        "x-ai/grok-4.20"
       ]
     },
     {
@@ -537,6 +527,19 @@
       "model": "x-ai/grok-4.20",
       "confirmedBy": [
         "x-ai/grok-4.20"
+      ]
+    },
+    {
+      "severity": "HIGH",
+      "file": "web/app/sw.js",
+      "line": 35,
+      "title": "Versioned shell assets not pre-cached break offline load after update",
+      "issue": "The service worker pre-caches only unversioned filenames (e.g., 'app.js'), but the HTML requests versioned URLs (e.g., 'app.js?v=411'). The fetch handler treats versioned requests as shell assets (regex matches query strings) and uses network-first with cache fallback. On first offline visit after an update, the versioned URL is not in cache, so the fallback serves 'index.html' as the JS file, breaking the entire app.",
+      "fix": "Include the versioned URLs in the SHELL array, or use a cache-first strategy for shell assets with network update, or modify the cache-match to ignore the query string (e.g., via `ignoreSearch` option).",
+      "slice": "d",
+      "model": "deepseek/deepseek-v4-pro",
+      "confirmedBy": [
+        "deepseek/deepseek-v4-pro"
       ]
     },
     {
@@ -576,123 +579,6 @@
       "model": "x-ai/grok-4.20",
       "confirmedBy": [
         "x-ai/grok-4.20"
-      ]
-    },
-    {
-      "severity": "HIGH",
-      "file": "web/app/sw.js",
-      "line": 35,
-      "title": "Versioned shell assets not pre-cached break offline load after update",
-      "issue": "The service worker pre-caches only unversioned filenames (e.g., 'app.js'), but the HTML requests versioned URLs (e.g., 'app.js?v=411'). The fetch handler treats versioned requests as shell assets (regex matches query strings) and uses network-first with cache fallback. On first offline visit after an update, the versioned URL is not in cache, so the fallback serves 'index.html' as the JS file, breaking the entire app.",
-      "fix": "Include the versioned URLs in the SHELL array, or use a cache-first strategy for shell assets with network update, or modify the cache-match to ignore the query string (e.g., via `ignoreSearch` option).",
-      "slice": "d",
-      "model": "deepseek/deepseek-v4-pro",
-      "confirmedBy": [
-        "deepseek/deepseek-v4-pro"
-      ]
-    },
-    {
-      "severity": "MEDIUM",
-      "file": "api/app.py",
-      "line": 259,
-      "title": "Session last_seen UPDATE lacks error handling and can fail silently",
-      "issue": "The `UPDATE sessions ... last_seen` + `db.commit()` in get_session_user() can raise or fail under concurrency. The exception is not caught, so the whole request can fail even though the user is authenticated.",
-      "fix": "Wrap the last_seen update in a try/except or remove it from the critical path.",
-      "slice": "a",
-      "model": "x-ai/grok-4.20",
-      "confirmedBy": [
-        "x-ai/grok-4.20"
-      ]
-    },
-    {
-      "severity": "MEDIUM",
-      "file": "api/app.py",
-      "line": 504,
-      "title": "sync_put and legacy_put use ON CONFLICT but still vulnerable to size race",
-      "issue": "Two concurrent PUTs from the same user (possible with multiple devices or retry logic) can both pass the `len(ct) > MAX_BLOB_BYTES` check before the upsert, allowing the blob to exceed the intended 2 MiB cap.",
-      "fix": "Perform the size check *after* acquiring a write lock or use a single `BEGIN IMMEDIATE` transaction that includes the size validation.",
-      "slice": "a",
-      "model": "x-ai/grok-4.20",
-      "confirmedBy": [
-        "x-ai/grok-4.20"
-      ]
-    },
-    {
-      "severity": "MEDIUM",
-      "file": "api/app.py",
-      "line": 946,
-      "title": "admin_users query uses {now_ts()} inside f-string SQL",
-      "issue": "Line 945 injects `now_ts()` via f-string into the SQL query. While currently safe (integer), this pattern is fragile and could lead to SQL injection if the function changes.",
-      "fix": "Use a parameter: `AND s.expires_at > ?` and pass `now_ts()` in the parameter list.",
-      "slice": "a",
-      "model": "x-ai/grok-4.20",
-      "confirmedBy": [
-        "x-ai/grok-4.20"
-      ]
-    },
-    {
-      "severity": "MEDIUM",
-      "file": "api/app.py",
-      "line": 173,
-      "title": "CSRF mitigation relies on Content-Type but does not reject unknown methods",
-      "issue": "`_enforce_json_for_mutations()` only checks POST/PUT/DELETE/PATCH. Other methods that mutate (e.g. future routes) would bypass the JSON requirement.",
-      "fix": "Change condition to `if request.method not in ('GET', 'HEAD', 'OPTIONS')` or explicitly list all mutating methods.",
-      "slice": "a",
-      "model": "x-ai/grok-4.20",
-      "confirmedBy": [
-        "x-ai/grok-4.20"
-      ]
-    },
-    {
-      "severity": "MEDIUM",
-      "file": "api/app.py",
-      "line": 152,
-      "title": "Schema DDL runs on every request connection, increasing lock contention",
-      "issue": "`get_db()` executes `db.executescript(SCHEMA)` and commits each time a request opens its DB connection. Even with `IF NOT EXISTS`, this repeatedly touches schema state and adds avoidable write-lock pressure under concurrency.",
-      "fix": "Run schema/migrations only at startup (`init_db`) and remove per-request `executescript(SCHEMA)` from `get_db()`.",
-      "slice": "a",
-      "model": "openai/gpt-5.3-codex",
-      "confirmedBy": [
-        "openai/gpt-5.3-codex"
-      ]
-    },
-    {
-      "severity": "MEDIUM",
-      "file": "api/app.py",
-      "line": 499,
-      "title": "Ciphertext size cap checks characters, not bytes",
-      "issue": "Payload limits compare `len(ct)` to `MAX_BLOB_BYTES` in `/api/me/sync`, `/api/share`, and legacy `/api/sync/<lookup_id>`. `len(str)` counts characters, not encoded byte size, so multi-byte input can exceed the intended 2MB storage/bandwidth cap.",
-      "fix": "Validate byte length, e.g. `len(ct.encode('utf-8'))`, and store that measured byte size. Apply consistently in all blob-writing endpoints.",
-      "slice": "a",
-      "model": "openai/gpt-5.3-codex",
-      "confirmedBy": [
-        "openai/gpt-5.3-codex"
-      ]
-    },
-    {
-      "severity": "MEDIUM",
-      "file": "api/app.py",
-      "line": 707,
-      "title": "Checkout always grants a fresh trial, enabling repeat trial abuse",
-      "issue": "Every new subscription checkout sets `trial_period_days = TRIAL_DAYS` unconditionally. A user with canceled/ended subscriptions can start another checkout and receive another trial period on the same account/customer.",
-      "fix": "Only set `trial_period_days` for first-time eligible users (e.g., no prior subscription/trial used flag in DB/Stripe). For returning users, omit trial parameters.",
-      "slice": "a",
-      "model": "openai/gpt-5.3-codex",
-      "confirmedBy": [
-        "openai/gpt-5.3-codex"
-      ]
-    },
-    {
-      "severity": "MEDIUM",
-      "file": "api/app.py",
-      "line": 89,
-      "title": "Multiple tables grow unbounded with no retention/pruning path",
-      "issue": "`sessions`, `password_resets`, `share_links` (expired), `stripe_events`, and `admin_audit` have no cleanup job or bounded retention. Under production use this causes indefinite DB growth and slower queries/backups.",
-      "fix": "Add periodic pruning (cron/background task) with explicit retention policies, e.g. delete expired sessions/resets/shares, and cap historical `stripe_events`/`admin_audit` to a defined window.",
-      "slice": "a",
-      "model": "openai/gpt-5.3-codex",
-      "confirmedBy": [
-        "openai/gpt-5.3-codex"
       ]
     },
     {
@@ -814,6 +700,136 @@
     },
     {
       "severity": "MEDIUM",
+      "file": "api/app.py",
+      "line": 152,
+      "title": "Schema DDL runs on every request connection, increasing lock contention",
+      "issue": "`get_db()` executes `db.executescript(SCHEMA)` and commits each time a request opens its DB connection. Even with `IF NOT EXISTS`, this repeatedly touches schema state and adds avoidable write-lock pressure under concurrency.",
+      "fix": "Run schema/migrations only at startup (`init_db`) and remove per-request `executescript(SCHEMA)` from `get_db()`.",
+      "slice": "a",
+      "model": "openai/gpt-5.3-codex",
+      "confirmedBy": [
+        "openai/gpt-5.3-codex"
+      ]
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "api/app.py",
+      "line": 499,
+      "title": "Ciphertext size cap checks characters, not bytes",
+      "issue": "Payload limits compare `len(ct)` to `MAX_BLOB_BYTES` in `/api/me/sync`, `/api/share`, and legacy `/api/sync/<lookup_id>`. `len(str)` counts characters, not encoded byte size, so multi-byte input can exceed the intended 2MB storage/bandwidth cap.",
+      "fix": "Validate byte length, e.g. `len(ct.encode('utf-8'))`, and store that measured byte size. Apply consistently in all blob-writing endpoints.",
+      "slice": "a",
+      "model": "openai/gpt-5.3-codex",
+      "confirmedBy": [
+        "openai/gpt-5.3-codex"
+      ]
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "api/app.py",
+      "line": 707,
+      "title": "Checkout always grants a fresh trial, enabling repeat trial abuse",
+      "issue": "Every new subscription checkout sets `trial_period_days = TRIAL_DAYS` unconditionally. A user with canceled/ended subscriptions can start another checkout and receive another trial period on the same account/customer.",
+      "fix": "Only set `trial_period_days` for first-time eligible users (e.g., no prior subscription/trial used flag in DB/Stripe). For returning users, omit trial parameters.",
+      "slice": "a",
+      "model": "openai/gpt-5.3-codex",
+      "confirmedBy": [
+        "openai/gpt-5.3-codex"
+      ]
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "api/app.py",
+      "line": 89,
+      "title": "Multiple tables grow unbounded with no retention/pruning path",
+      "issue": "`sessions`, `password_resets`, `share_links` (expired), `stripe_events`, and `admin_audit` have no cleanup job or bounded retention. Under production use this causes indefinite DB growth and slower queries/backups.",
+      "fix": "Add periodic pruning (cron/background task) with explicit retention policies, e.g. delete expired sessions/resets/shares, and cap historical `stripe_events`/`admin_audit` to a defined window.",
+      "slice": "a",
+      "model": "openai/gpt-5.3-codex",
+      "confirmedBy": [
+        "openai/gpt-5.3-codex"
+      ]
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "api/app.py",
+      "line": 259,
+      "title": "Session last_seen UPDATE lacks error handling and can fail silently",
+      "issue": "The `UPDATE sessions ... last_seen` + `db.commit()` in get_session_user() can raise or fail under concurrency. The exception is not caught, so the whole request can fail even though the user is authenticated.",
+      "fix": "Wrap the last_seen update in a try/except or remove it from the critical path.",
+      "slice": "a",
+      "model": "x-ai/grok-4.20",
+      "confirmedBy": [
+        "x-ai/grok-4.20"
+      ]
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "api/app.py",
+      "line": 504,
+      "title": "sync_put and legacy_put use ON CONFLICT but still vulnerable to size race",
+      "issue": "Two concurrent PUTs from the same user (possible with multiple devices or retry logic) can both pass the `len(ct) > MAX_BLOB_BYTES` check before the upsert, allowing the blob to exceed the intended 2 MiB cap.",
+      "fix": "Perform the size check *after* acquiring a write lock or use a single `BEGIN IMMEDIATE` transaction that includes the size validation.",
+      "slice": "a",
+      "model": "x-ai/grok-4.20",
+      "confirmedBy": [
+        "x-ai/grok-4.20"
+      ]
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "api/app.py",
+      "line": 946,
+      "title": "admin_users query uses {now_ts()} inside f-string SQL",
+      "issue": "Line 945 injects `now_ts()` via f-string into the SQL query. While currently safe (integer), this pattern is fragile and could lead to SQL injection if the function changes.",
+      "fix": "Use a parameter: `AND s.expires_at > ?` and pass `now_ts()` in the parameter list.",
+      "slice": "a",
+      "model": "x-ai/grok-4.20",
+      "confirmedBy": [
+        "x-ai/grok-4.20"
+      ]
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "api/app.py",
+      "line": 173,
+      "title": "CSRF mitigation relies on Content-Type but does not reject unknown methods",
+      "issue": "`_enforce_json_for_mutations()` only checks POST/PUT/DELETE/PATCH. Other methods that mutate (e.g. future routes) would bypass the JSON requirement.",
+      "fix": "Change condition to `if request.method not in ('GET', 'HEAD', 'OPTIONS')` or explicitly list all mutating methods.",
+      "slice": "a",
+      "model": "x-ai/grok-4.20",
+      "confirmedBy": [
+        "x-ai/grok-4.20"
+      ]
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "web/app/app.js",
+      "line": 6238,
+      "title": "Downgrade to an older payload version can silently drop newer data types",
+      "issue": "`applyPulledPayload` rejects payloads with version > 7 but accepts any lower version (e.g., v5). After clearing all stores, records of data types introduced after v5 (measurements, labs, cycles, etc.) present locally are erased and not replaced because the older payload lacks those fields.",
+      "fix": "Add a guard that warns the user or refuses to apply payloads with a version less than the minimum supported if local stores contain data from those newer schemas, preventing accidental data loss.",
+      "slice": "b",
+      "model": "deepseek/deepseek-v4-pro",
+      "confirmedBy": [
+        "deepseek/deepseek-v4-pro"
+      ]
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "web/app/app.js",
+      "line": 5069,
+      "title": "Auto-pull on login discards unsynced local data without confirmation",
+      "issue": "`tryRestoreAccount` pulls the cloud copy if it is newer than the locally-stored `syncLastUpdatedAt` and overwrites local data without prompting. This can silently discard offline edits made on the device since the last sync.",
+      "fix": "Either show a confirmation dialog before the auto-pull when local data exists (similar to the manual flow), or introduce a merge strategy that preserves local changes that are newer than the cloud timestamp.",
+      "slice": "b",
+      "model": "deepseek/deepseek-v4-pro",
+      "confirmedBy": [
+        "deepseek/deepseek-v4-pro"
+      ]
+    },
+    {
+      "severity": "MEDIUM",
       "file": "web/app/app.js",
       "line": 4966,
       "title": "Session token stored in localStorage (Bearer fallback)",
@@ -854,27 +870,40 @@
     {
       "severity": "MEDIUM",
       "file": "web/app/app.js",
-      "line": 322,
-      "title": "Unhandled promise rejection in async INFO_TOPICS.body functions",
-      "issue": "showInfo() does try { body = await body(); } catch (e) { ... } but many INFO_TOPICS.body functions (e.g. 'level-chart', 'plateau', 'spending') call async data getters without their own error handling. A single IndexedDB failure will silently replace the entire info dialog with the fallback string, losing all context.",
-      "fix": "Make each async body() function individually robust or wrap the entire await in a more specific error handler that still renders the static explanatory text.",
+      "line": 4173,
+      "title": "Insight card body rendered without HTML escaping creates future XSS risk",
+      "issue": "renderInsights sets `innerHTML` with `<p>${i.body}</p>`. Although current insight functions return hardcoded strings without user data, no escaping is applied. If any future insight function (especially premium ones) incorporates user-provided text (e.g., custom site names, medication names, notes), this becomes a direct DOM XSS vulnerability.",
+      "fix": "Wrap `i.body` with `escapeHTML(i.body)` or use `textContent` for the paragraph content to prevent injection even if developers later include user data.",
       "slice": "c",
-      "model": "x-ai/grok-4.20",
+      "model": "deepseek/deepseek-v4-pro",
       "confirmedBy": [
-        "x-ai/grok-4.20"
+        "deepseek/deepseek-v4-pro"
       ]
     },
     {
       "severity": "MEDIUM",
       "file": "web/app/app.js",
-      "line": 824,
-      "title": "migrateWeightDatesToCanonical() runs on every boot with no debounce",
-      "issue": "Called unconditionally on DOMContentLoaded (line 1262). It does a full table scan + potential write for every weight row on every page load. Under real concurrency or with thousands of weights this creates unnecessary IndexedDB contention and can delay app startup.",
-      "fix": "Store a 'weightsNormalized' flag in settings or a dedicated store and only run once per database lifetime.",
+      "line": 572,
+      "title": "IndexedDB upgrade handler cannot add indexes to existing stores",
+      "issue": "The onupgradeneeded callback only creates object stores if they do not already exist (`if (!db.objectStoreNames.contains(store)) \u2026`). It does not handle the case where a store already exists but needs a new index. A future schema version that adds an index to, for example, the 'shots' store will not apply to users upgrading from a version where the store already exists, leading to missing indexes and potential query failures or performance degradation.",
+      "fix": "Track the current version and, on upgrade, explicitly create missing indexes on existing stores (e.g., `if (e.oldVersion < expected)` calls to `createIndex`) or check for index existence before creating.",
       "slice": "c",
-      "model": "x-ai/grok-4.20",
+      "model": "deepseek/deepseek-v4-pro",
       "confirmedBy": [
-        "x-ai/grok-4.20"
+        "deepseek/deepseek-v4-pro"
+      ]
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "web/app/app.js",
+      "line": 2964,
+      "title": "Client-only premium feature gates can be bypassed",
+      "issue": "Premium features (supplies, measurements, labs, expenses, doctor share, premium insights) are gated solely by calling `isPremium()` on the client. A user can trivially override `isPremium = () => true` in the console to unlock all premium functionality without payment, circumventing the 14-day trial and recurring subscription. This has direct revenue impact and undermines the billing model.",
+      "fix": "Move premium authorization checks to server-side API endpoints for any feature that involves server data (sync, share, smart import). For client-only premium features that cannot rely on server, consider obfuscation or a periodic server-side entitlement refresh, but treat client-check bypass as a known risk with reduced revenue impact.",
+      "slice": "c",
+      "model": "deepseek/deepseek-v4-pro",
+      "confirmedBy": [
+        "deepseek/deepseek-v4-pro"
       ]
     },
     {
@@ -919,63 +948,37 @@
     {
       "severity": "MEDIUM",
       "file": "web/app/app.js",
-      "line": 6238,
-      "title": "Downgrade to an older payload version can silently drop newer data types",
-      "issue": "`applyPulledPayload` rejects payloads with version > 7 but accepts any lower version (e.g., v5). After clearing all stores, records of data types introduced after v5 (measurements, labs, cycles, etc.) present locally are erased and not replaced because the older payload lacks those fields.",
-      "fix": "Add a guard that warns the user or refuses to apply payloads with a version less than the minimum supported if local stores contain data from those newer schemas, preventing accidental data loss.",
-      "slice": "b",
-      "model": "deepseek/deepseek-v4-pro",
-      "confirmedBy": [
-        "deepseek/deepseek-v4-pro"
-      ]
-    },
-    {
-      "severity": "MEDIUM",
-      "file": "web/app/app.js",
-      "line": 5069,
-      "title": "Auto-pull on login discards unsynced local data without confirmation",
-      "issue": "`tryRestoreAccount` pulls the cloud copy if it is newer than the locally-stored `syncLastUpdatedAt` and overwrites local data without prompting. This can silently discard offline edits made on the device since the last sync.",
-      "fix": "Either show a confirmation dialog before the auto-pull when local data exists (similar to the manual flow), or introduce a merge strategy that preserves local changes that are newer than the cloud timestamp.",
-      "slice": "b",
-      "model": "deepseek/deepseek-v4-pro",
-      "confirmedBy": [
-        "deepseek/deepseek-v4-pro"
-      ]
-    },
-    {
-      "severity": "MEDIUM",
-      "file": "web/app/app.js",
-      "line": 4173,
-      "title": "Insight card body rendered without HTML escaping creates future XSS risk",
-      "issue": "renderInsights sets `innerHTML` with `<p>${i.body}</p>`. Although current insight functions return hardcoded strings without user data, no escaping is applied. If any future insight function (especially premium ones) incorporates user-provided text (e.g., custom site names, medication names, notes), this becomes a direct DOM XSS vulnerability.",
-      "fix": "Wrap `i.body` with `escapeHTML(i.body)` or use `textContent` for the paragraph content to prevent injection even if developers later include user data.",
+      "line": 322,
+      "title": "Unhandled promise rejection in async INFO_TOPICS.body functions",
+      "issue": "showInfo() does try { body = await body(); } catch (e) { ... } but many INFO_TOPICS.body functions (e.g. 'level-chart', 'plateau', 'spending') call async data getters without their own error handling. A single IndexedDB failure will silently replace the entire info dialog with the fallback string, losing all context.",
+      "fix": "Make each async body() function individually robust or wrap the entire await in a more specific error handler that still renders the static explanatory text.",
       "slice": "c",
-      "model": "deepseek/deepseek-v4-pro",
+      "model": "x-ai/grok-4.20",
       "confirmedBy": [
-        "deepseek/deepseek-v4-pro"
+        "x-ai/grok-4.20"
       ]
     },
     {
       "severity": "MEDIUM",
       "file": "web/app/app.js",
-      "line": 572,
-      "title": "IndexedDB upgrade handler cannot add indexes to existing stores",
-      "issue": "The onupgradeneeded callback only creates object stores if they do not already exist (`if (!db.objectStoreNames.contains(store)) \u2026`). It does not handle the case where a store already exists but needs a new index. A future schema version that adds an index to, for example, the 'shots' store will not apply to users upgrading from a version where the store already exists, leading to missing indexes and potential query failures or performance degradation.",
-      "fix": "Track the current version and, on upgrade, explicitly create missing indexes on existing stores (e.g., `if (e.oldVersion < expected)` calls to `createIndex`) or check for index existence before creating.",
+      "line": 824,
+      "title": "migrateWeightDatesToCanonical() runs on every boot with no debounce",
+      "issue": "Called unconditionally on DOMContentLoaded (line 1262). It does a full table scan + potential write for every weight row on every page load. Under real concurrency or with thousands of weights this creates unnecessary IndexedDB contention and can delay app startup.",
+      "fix": "Store a 'weightsNormalized' flag in settings or a dedicated store and only run once per database lifetime.",
       "slice": "c",
-      "model": "deepseek/deepseek-v4-pro",
+      "model": "x-ai/grok-4.20",
       "confirmedBy": [
-        "deepseek/deepseek-v4-pro"
+        "x-ai/grok-4.20"
       ]
     },
     {
       "severity": "MEDIUM",
-      "file": "web/app/app.js",
-      "line": 2964,
-      "title": "Client-only premium feature gates can be bypassed",
-      "issue": "Premium features (supplies, measurements, labs, expenses, doctor share, premium insights) are gated solely by calling `isPremium()` on the client. A user can trivially override `isPremium = () => true` in the console to unlock all premium functionality without payment, circumventing the 14-day trial and recurring subscription. This has direct revenue impact and undermines the billing model.",
-      "fix": "Move premium authorization checks to server-side API endpoints for any feature that involves server data (sync, share, smart import). For client-only premium features that cannot rely on server, consider obfuscation or a periodic server-side entitlement refresh, but treat client-check bypass as a known risk with reduced revenue impact.",
-      "slice": "c",
+      "file": "web/app/index.html",
+      "line": 50,
+      "title": "Third-party analytics script loaded without user consent in a health-data app",
+      "issue": "The page loads a script from `analytics.willhitestrategy.org`. Even if the analytics are privacy-respecting, the mere fact that a user visits a GLP-1 injection tracker can be considered health-related information. No consent mechanism is presented, and the privacy policy may not adequately disclose this. This risks violating Play Store privacy requirements and user trust.",
+      "fix": "Implement a consent banner before loading analytics, or switch to a self-hosted, cookieless analytics solution that does not transmit any personal data, and update the privacy policy accordingly.",
+      "slice": "d",
       "model": "deepseek/deepseek-v4-pro",
       "confirmedBy": [
         "deepseek/deepseek-v4-pro"
@@ -1009,11 +1012,11 @@
     },
     {
       "severity": "MEDIUM",
-      "file": "web/app/index.html",
-      "line": 50,
-      "title": "Third-party analytics script loaded without user consent in a health-data app",
-      "issue": "The page loads a script from `analytics.willhitestrategy.org`. Even if the analytics are privacy-respecting, the mere fact that a user visits a GLP-1 injection tracker can be considered health-related information. No consent mechanism is presented, and the privacy policy may not adequately disclose this. This risks violating Play Store privacy requirements and user trust.",
-      "fix": "Implement a consent banner before loading analytics, or switch to a self-hosted, cookieless analytics solution that does not transmit any personal data, and update the privacy policy accordingly.",
+      "file": "web/app/manifest.webmanifest",
+      "line": 1,
+      "title": "Missing related_applications for Play Store TWA association",
+      "issue": "The manifest lacks `prefer_related_applications` and `related_applications` fields. For a Trusted Web Activity published on Google Play, these are required to link the PWA to the Android app. Without them, the Play Store review may reject the listing or the 'open in app' behavior will not work.",
+      "fix": "Add `\"prefer_related_applications\": true` and `\"related_applications\": [{\"platform\": \"play\", \"id\": \"com.myglpshot.app\"}]` (with the actual package name).",
       "slice": "d",
       "model": "deepseek/deepseek-v4-pro",
       "confirmedBy": [
@@ -1031,19 +1034,6 @@
       "model": "x-ai/grok-4.20",
       "confirmedBy": [
         "x-ai/grok-4.20"
-      ]
-    },
-    {
-      "severity": "MEDIUM",
-      "file": "web/app/manifest.webmanifest",
-      "line": 1,
-      "title": "Missing related_applications for Play Store TWA association",
-      "issue": "The manifest lacks `prefer_related_applications` and `related_applications` fields. For a Trusted Web Activity published on Google Play, these are required to link the PWA to the Android app. Without them, the Play Store review may reject the listing or the 'open in app' behavior will not work.",
-      "fix": "Add `\"prefer_related_applications\": true` and `\"related_applications\": [{\"platform\": \"play\", \"id\": \"com.myglpshot.app\"}]` (with the actual package name).",
-      "slice": "d",
-      "model": "deepseek/deepseek-v4-pro",
-      "confirmedBy": [
-        "deepseek/deepseek-v4-pro"
       ]
     },
     {
@@ -1166,32 +1156,6 @@
     {
       "severity": "LOW",
       "file": "web/app/app.js",
-      "line": 105,
-      "title": "Null/undefined DOM references in mixing calculator info topic",
-      "issue": "Lines 104-106: parseFloat(($('#recon-vial') || {}).value) will throw if $() returns null (querySelector returns null, not an object with .value). Same for other three fields. This happens inside an async info body that is rendered via innerHTML.",
-      "fix": "Use optional chaining or guard with existence checks: const v = parseFloat($('#recon-vial')?.value || 0);",
-      "slice": "c",
-      "model": "x-ai/grok-4.20",
-      "confirmedBy": [
-        "x-ai/grok-4.20"
-      ]
-    },
-    {
-      "severity": "LOW",
-      "file": "web/app/app.js",
-      "line": 3067,
-      "title": "Unhandled promise rejection on clipboard copy failure",
-      "issue": "`navigator.clipboard.writeText(url).then(...)` has no `.catch(...)`. In contexts where clipboard is denied/unavailable, this produces unhandled promise rejections and no user feedback.",
-      "fix": "Add `.catch(...)` to handle failures (show toast/alert and avoid unhandled rejections).",
-      "slice": "c",
-      "model": "openai/gpt-5.3-codex",
-      "confirmedBy": [
-        "openai/gpt-5.3-codex"
-      ]
-    },
-    {
-      "severity": "LOW",
-      "file": "web/app/app.js",
       "line": 1219,
       "title": "Unhandled promise from async event handler may swallow errors",
       "issue": "In wireCriticalUI, the 'submit' event listener calls `handleAuthSubmit()` without awaiting or attaching a `.catch()`. Although the async function internally uses try/catch, any synchronous error thrown before entering the try block (e.g., unexpected variable reassignment) would result in an unhandled promise rejection, potentially hiding failures.",
@@ -1217,6 +1181,32 @@
     },
     {
       "severity": "LOW",
+      "file": "web/app/app.js",
+      "line": 3067,
+      "title": "Unhandled promise rejection on clipboard copy failure",
+      "issue": "`navigator.clipboard.writeText(url).then(...)` has no `.catch(...)`. In contexts where clipboard is denied/unavailable, this produces unhandled promise rejections and no user feedback.",
+      "fix": "Add `.catch(...)` to handle failures (show toast/alert and avoid unhandled rejections).",
+      "slice": "c",
+      "model": "openai/gpt-5.3-codex",
+      "confirmedBy": [
+        "openai/gpt-5.3-codex"
+      ]
+    },
+    {
+      "severity": "LOW",
+      "file": "web/app/app.js",
+      "line": 105,
+      "title": "Null/undefined DOM references in mixing calculator info topic",
+      "issue": "Lines 104-106: parseFloat(($('#recon-vial') || {}).value) will throw if $() returns null (querySelector returns null, not an object with .value). Same for other three fields. This happens inside an async info body that is rendered via innerHTML.",
+      "fix": "Use optional chaining or guard with existence checks: const v = parseFloat($('#recon-vial')?.value || 0);",
+      "slice": "c",
+      "model": "x-ai/grok-4.20",
+      "confirmedBy": [
+        "x-ai/grok-4.20"
+      ]
+    },
+    {
+      "severity": "LOW",
       "file": "web/app/manifest.webmanifest",
       "line": 1,
       "title": "Manifest missing stable `id`",
@@ -1231,19 +1221,6 @@
     {
       "severity": "LOW",
       "file": "web/app/sw.js",
-      "line": 45,
-      "title": "API routes bypassed by origin check only",
-      "issue": "The SW returns early for any URL whose pathname starts with `/api/`. However the check is done *after* `if (url.origin !== self.location.origin) return;`. A same-origin /api/ request is never cached (correct), but the comment and architecture assume the backend is the only source of /api/. If a future change adds a same-origin static asset under /api/ it would be incorrectly excluded.",
-      "fix": "Move the /api/ check before the origin check or make the condition more precise (`url.pathname.startsWith('/api/') && url.origin === self.location.origin`).",
-      "slice": "d",
-      "model": "x-ai/grok-4.20",
-      "confirmedBy": [
-        "x-ai/grok-4.20"
-      ]
-    },
-    {
-      "severity": "LOW",
-      "file": "web/app/sw.js",
       "line": 20,
       "title": "Silent pre-cache failures may leave offline shell incomplete",
       "issue": "The install event uses `c.add(u).catch(() => null)` for each shell asset. If any asset fails to cache (e.g., 404 due to a missing file), the error is swallowed. The service worker still activates, but the missing asset will not be available offline, potentially causing partial breakage.",
@@ -1252,6 +1229,19 @@
       "model": "deepseek/deepseek-v4-pro",
       "confirmedBy": [
         "deepseek/deepseek-v4-pro"
+      ]
+    },
+    {
+      "severity": "LOW",
+      "file": "web/app/sw.js",
+      "line": 45,
+      "title": "API routes bypassed by origin check only",
+      "issue": "The SW returns early for any URL whose pathname starts with `/api/`. However the check is done *after* `if (url.origin !== self.location.origin) return;`. A same-origin /api/ request is never cached (correct), but the comment and architecture assume the backend is the only source of /api/. If a future change adds a same-origin static asset under /api/ it would be incorrectly excluded.",
+      "fix": "Move the /api/ check before the origin check or make the condition more precise (`url.pathname.startsWith('/api/') && url.origin === self.location.origin`).",
+      "slice": "d",
+      "model": "x-ai/grok-4.20",
+      "confirmedBy": [
+        "x-ai/grok-4.20"
       ]
     }
   ]

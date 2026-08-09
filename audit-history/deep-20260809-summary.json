@@ -1,0 +1,637 @@
+{
+  "models": [],
+  "slices": [],
+  "total": 48,
+  "bySeverity": {
+    "CRITICAL": 7,
+    "HIGH": 18,
+    "MEDIUM": 18,
+    "LOW": 5
+  },
+  "findings": [
+    {
+      "severity": "CRITICAL",
+      "file": "api/app.py",
+      "line": 215,
+      "title": "SQLite connection created per-request without WAL reuse or statement cache",
+      "issue": "get_db() does one sqlite3.connect() per request (and per thread in the 8-thread gunicorn pool). WAL mode is set, but each connection is independent; there is no connection pooling or reuse. Under real concurrency (especially with the many admin queries that do sub-selects and the purge_expired DELETEs), this leads to frequent 'database is locked' errors, transaction rollbacks, and silent data loss on COMMIT.",
+      "fix": "Use a thread-local pool (e.g. queue.SimpleQueue of pre-warmed connections limited to ~8) or switch to a proper connection manager that reuses the same connection object per gunicorn worker thread. Remove the per-request connect pattern.",
+      "slice": "a",
+      "model": "x-ai/grok-4.20",
+      "confirmedBy": [
+        "x-ai/grok-4.20"
+      ]
+    },
+    {
+      "severity": "CRITICAL",
+      "file": "api/app.py",
+      "line": 326,
+      "title": "Unconditional db.commit() inside get_session_user on every 5-minute touch",
+      "issue": "Every authenticated request that hasn't touched a session in the last 300s performs an UPDATE + db.commit() even though the rest of the request may later fail or raise. With 8 concurrent threads this creates massive write contention on the WAL and can cause lost updates or locked database errors for sync_put, webhook processing, etc.",
+      "fix": "Remove the commit from get_session_user(). Let the caller decide when to commit, or batch the last_seen update into the main transaction of the endpoint.",
+      "slice": "a",
+      "model": "x-ai/grok-4.20",
+      "confirmedBy": [
+        "x-ai/grok-4.20"
+      ]
+    },
+    {
+      "severity": "CRITICAL",
+      "file": "web/app/app.js",
+      "line": 5507,
+      "title": "Login flow can overwrite cloud backup with stale local data",
+      "issue": "After successful login, the code pushes local data to `/api/me/sync` before pulling cloud data (`shots.length && account.encryptionKey` block at lines 5507-5510). If this device has older/offline data and the server has newer data from another device, this unconditional push replaces the server blob first. The subsequent pull then reads the just-overwritten blob, so newer remote records are silently lost.",
+      "fix": "In `handleAccountSubmit`, for `mode === 'login'`, always pull first, merge locally, then push once. Remove the pre-pull `accountSyncPush()` block. Reuse the merge path used in `tryRestoreAccount` (`accountSyncPull` -> `applyPulledPayload` merge -> `accountSyncPush`) so remote-only records cannot be clobbered.",
+      "slice": "b",
+      "model": "openai/gpt-5.3-codex",
+      "confirmedBy": [
+        "openai/gpt-5.3-codex"
+      ]
+    },
+    {
+      "severity": "CRITICAL",
+      "file": "web/app/app.js",
+      "line": 5448,
+      "title": "AES-GCM tag truncation / missing authentication tag verification",
+      "issue": "crypto.subtle.decrypt() is called with only {name: 'AES-GCM', iv} but no tagLength. The Web Crypto spec defaults to 128-bit tags, but the code never explicitly sets or verifies it. Combined with the fact that the server returns raw ciphertext that an attacker could truncate or modify, this can lead to successful decryption of tampered data (silent data corruption).",
+      "fix": "Change decrypt call to: crypto.subtle.decrypt({ name: 'AES-GCM', iv, tagLength: 128 }, account.encryptionKey, ct)",
+      "slice": "b",
+      "model": "x-ai/grok-4.20",
+      "confirmedBy": [
+        "x-ai/grok-4.20"
+      ]
+    },
+    {
+      "severity": "CRITICAL",
+      "file": "web/app/app.js",
+      "line": 5425,
+      "title": "No authentication of server-returned updatedAt / sync metadata",
+      "issue": "accountSyncPush() and accountSyncPull() trust j.updatedAt and settings.syncLastUpdatedAt without any MAC or signature. A malicious server (or MITM) can rollback the blob to an old encrypted version. Because the client merges on pull but still trusts the server's timestamp, an attacker can force repeated rollback of new records.",
+      "fix": "Have the server return a signed or HMAC'd (lookupId + updatedAt) value that the client verifies before updating settings.syncLastUpdatedAt.",
+      "slice": "b",
+      "model": "x-ai/grok-4.20",
+      "confirmedBy": [
+        "x-ai/grok-4.20"
+      ]
+    },
+    {
+      "severity": "CRITICAL",
+      "file": "web/app/app.js",
+      "line": 325,
+      "title": "XSS via innerHTML in showInfo()",
+      "issue": "document.getElementById('info-dialog-body').innerHTML = body; is called with fully dynamic content. INFO_TOPICS.*.body (lines 39, 61, 113, 197, 219, 265, etc.) interpolate user-controlled values (settings.medication, latest.dose, weights, shots, lost, etc.) through template literals before escapeHTML is applied in only a few places. escapeHTML is defined but not used on every interpolated value (e.g. yourLine, lost, weeks, delta).",
+      "fix": "Change to textContent + explicit DOM construction, or pass every interpolated value through escapeHTML(). Never use innerHTML with data that touches user records.",
+      "slice": "c",
+      "model": "x-ai/grok-4.20",
+      "confirmedBy": [
+        "x-ai/grok-4.20"
+      ]
+    },
+    {
+      "severity": "CRITICAL",
+      "file": "web/app/app.js",
+      "line": 3967,
+      "title": "XSS via innerHTML in openGuidance()",
+      "issue": "openGuidance() does $('#guidance-body').innerHTML = renderGuidance(sectionId);. renderGuidance() returns raw HTML constructed from GUIDANCE objects that contain user-controlled strings (side effect labels, notes, etc.) with no escaping.",
+      "fix": "Replace innerHTML with a safe DOM builder or ensure every value passed into the template is run through escapeHTML().",
+      "slice": "c",
+      "model": "x-ai/grok-4.20",
+      "confirmedBy": [
+        "x-ai/grok-4.20"
+      ]
+    },
+    {
+      "severity": "HIGH",
+      "file": "api/app.py",
+      "line": 517,
+      "title": "Account deletion leaves push tables undeleted",
+      "issue": "`DELETE /api/me` removes users, sessions, sync blobs, share links, and resets, but does not delete `push_subscriptions` or `push_reminders` rows for that user. After account deletion, reminder schedule metadata and push endpoints remain stored and orphaned, violating stated hard-delete/GDPR intent and retaining health-adjacent data.",
+      "fix": "In `delete_account()`, add `DELETE FROM push_reminders WHERE user_id = ?` and `DELETE FROM push_subscriptions WHERE user_id = ?` before deleting the user row, then commit.",
+      "slice": "a",
+      "model": "openai/gpt-5.3-codex",
+      "confirmedBy": [
+        "openai/gpt-5.3-codex"
+      ]
+    },
+    {
+      "severity": "HIGH",
+      "file": "api/app.py",
+      "line": 1704,
+      "title": "Admin user deletion also leaves push data behind",
+      "issue": "`DELETE /api/admin/users/<id>` performs a hard delete of core tables but also omits `push_subscriptions` and `push_reminders`. This leaves orphaned reminder and endpoint data for deleted accounts, causing incomplete deletion and unbounded orphan growth.",
+      "fix": "In `admin_delete_user()`, add deletes for `push_reminders` and `push_subscriptions` by `user_id` in the same transaction as other user cleanup.",
+      "slice": "a",
+      "model": "openai/gpt-5.3-codex",
+      "confirmedBy": [
+        "openai/gpt-5.3-codex"
+      ]
+    },
+    {
+      "severity": "HIGH",
+      "file": "api/app.py",
+      "line": 900,
+      "title": "Stripe webhook state can be corrupted by out-of-order events",
+      "issue": "`_apply_subscription()` applies each `customer.subscription.*` payload directly with no monotonic ordering check (event creation time/version). Stripe can deliver events out of order; an older `updated/deleted` event arriving late can overwrite newer subscription state (`subscription_status`, `premium_until`, `stripe_subscription_id`) and silently demote or stale a paying user.",
+      "fix": "Persist and compare Stripe event ordering metadata (e.g., `event.created` and `event.id` per subscription/customer). Ignore events older than the last applied one. Pass event metadata into `_apply_subscription()` and gate updates on recency.",
+      "slice": "a",
+      "model": "openai/gpt-5.3-codex",
+      "confirmedBy": [
+        "openai/gpt-5.3-codex"
+      ]
+    },
+    {
+      "severity": "HIGH",
+      "file": "api/app.py",
+      "line": 1016,
+      "title": "Stripe webhook idempotency claim is deleted on any handler exception",
+      "issue": "If _apply_subscription or any downstream code raises (including the explicit except Exception at line 1009), the code deletes the stripe_events row (lines 1016-1018). A subsequent retry of the same event is then allowed to re-process, but because the previous partial UPDATEs may have already been written, this can cause duplicate state transitions or lost premium_until values.",
+      "fix": "Never delete the idempotency row on error. Return 500 and let Stripe retry. Only delete after successful processing or after the TTL window.",
+      "slice": "a",
+      "model": "x-ai/grok-4.20",
+      "confirmedBy": [
+        "x-ai/grok-4.20"
+      ]
+    },
+    {
+      "severity": "HIGH",
+      "file": "api/app.py",
+      "line": 978,
+      "title": "Stripe event idempotency uses INSERT OR IGNORE but still processes on duplicate in test webhook",
+      "issue": "The test webhook (line 1564) uses the same stripe_events table but prefixes the ID with 'TEST:'. However, the live webhook does not. A test event ID that collides with a live event ID (possible because Stripe test/live event IDs are in separate namespaces but the prefix is only added for the INSERT) can be incorrectly deduplicated.",
+      "fix": "Use separate tables (stripe_events_live, stripe_events_test) or always prefix test events with a guaranteed unique marker before the INSERT.",
+      "slice": "a",
+      "model": "x-ai/grok-4.20",
+      "confirmedBy": [
+        "x-ai/grok-4.20"
+      ]
+    },
+    {
+      "severity": "HIGH",
+      "file": "api/app.py",
+      "line": 507,
+      "title": "Account deletion does not cancel subscriptions in test mode when using live keys",
+      "issue": "delete_account() only calls stripe.Subscription.delete with STRIPE_API_KEY_TEST if STRIPE_API_KEY_TEST is set AND the test column is populated. If an admin has both live and test keys but the user only has a test subscription, the live key path is taken and the test subscription is never cancelled.",
+      "fix": "Always attempt cancellation against both keys when the corresponding *_test columns are populated, regardless of which STRIPE_API_KEY_* is primary.",
+      "slice": "a",
+      "model": "x-ai/grok-4.20",
+      "confirmedBy": [
+        "x-ai/grok-4.20"
+      ]
+    },
+    {
+      "severity": "HIGH",
+      "file": "web/app/app.js",
+      "line": 5427,
+      "title": "Sync writes are last-write-wins with no revision guard",
+      "issue": "`accountSyncPush()` always PUTs a full encrypted blob without any concurrency precondition (no `updatedAt`/ETag check sent). If two devices diverge and both push, whichever push arrives last overwrites the other, dropping records not present in the last writer\u2019s payload.",
+      "fix": "Include a server-validated revision precondition on push (e.g., send last seen `updatedAt`/version and have server return `409` on mismatch). On conflict, client should pull, merge, and retry push.",
+      "slice": "b",
+      "model": "openai/gpt-5.3-codex",
+      "confirmedBy": [
+        "openai/gpt-5.3-codex"
+      ]
+    },
+    {
+      "severity": "HIGH",
+      "file": "web/app/app.js",
+      "line": 5455,
+      "title": "Cloud-backup delete does not verify success",
+      "issue": "`accountSyncDelete()` issues `DELETE /api/me/sync` but never checks `r.ok` or status. Any server-side failure (5xx/4xx) is treated as success by this function, which can leave encrypted health data on the server when the user believes deletion succeeded.",
+      "fix": "Capture the response from `accountFetch`, check `r.ok`, and throw/display an error on failure. Only show success UX after confirmed 2xx response.",
+      "slice": "b",
+      "model": "openai/gpt-5.3-codex",
+      "confirmedBy": [
+        "openai/gpt-5.3-codex"
+      ]
+    },
+    {
+      "severity": "HIGH",
+      "file": "web/app/app.js",
+      "line": 5388,
+      "title": "Stored AES key is extractable and persisted in plaintext in localStorage",
+      "issue": "rememberSignedIn() does crypto.subtle.exportKey('raw') then bytesToBase64 and stores it directly in localStorage under 'account.cred'. Any XSS or localStorage exfiltration immediately gives the attacker the master encryption key for all health data.",
+      "fix": "Do not persist the raw AES key. Require password re-entry on every new browser session (or use WebAuthn/Passkey). If persistence is kept, at minimum encrypt the stored key with a device-bound key (e.g. from CryptoKey in IndexedDB with non-extractable flag).",
+      "slice": "b",
+      "model": "x-ai/grok-4.20",
+      "confirmedBy": [
+        "x-ai/grok-4.20"
+      ]
+    },
+    {
+      "severity": "HIGH",
+      "file": "web/app/app.js",
+      "line": 5518,
+      "title": "Silent data loss on cross-device sync when user declines merge",
+      "issue": "In handleAccountSubmit() for login when local shots exist, the code shows a confirm() asking whether to replace local data with cloud. If user clicks Cancel, the cloud data is discarded and never merged. The comment at lines 5393-5397 claims merge logic exists, but this path bypasses it.",
+      "fix": "Always call a merge function (applyPulledPayload with conflict resolution) instead of offering a destructive 'replace' choice. Remove the confirm() path or make it non-destructive.",
+      "slice": "b",
+      "model": "x-ai/grok-4.20",
+      "confirmedBy": [
+        "x-ai/grok-4.20"
+      ]
+    },
+    {
+      "severity": "HIGH",
+      "file": "web/app/app.js",
+      "line": 5450,
+      "title": "Decryption error is treated as 'wrong password' even after successful login",
+      "issue": "accountSyncPull() throws 'Decryption failed \u2014 wrong password' on any AES-GCM failure. This is shown to the user after they have already authenticated with the authToken. This leaks that the ciphertext was tampered with and gives a confusing error.",
+      "fix": "Distinguish between auth errors and decryption errors. On decrypt failure after successful /me, show 'Sync data appears corrupted' and offer to wipe cloud copy.",
+      "slice": "b",
+      "model": "x-ai/grok-4.20",
+      "confirmedBy": [
+        "x-ai/grok-4.20"
+      ]
+    },
+    {
+      "severity": "HIGH",
+      "file": "web/app/app.js",
+      "line": 2466,
+      "title": "Wipe can silently fail because DB connections are never closed and delete result is ignored",
+      "issue": "wipeAll() calls indexedDB.deleteDatabase(DB_NAME) and reloads after 300ms without waiting for onsuccess/onerror/onblocked. Because open DB connections are still alive, deleteDatabase can be blocked/failed, but the app reloads anyway, leaving health data on device while user believes it was erased.",
+      "fix": "Before delete, await openDB() and call db.close(); then issue indexedDB.deleteDatabase with explicit onsuccess/onerror/onblocked handlers and only reload on success. Surface an error if blocked/failed.",
+      "slice": "c",
+      "model": "openai/gpt-5.3-codex",
+      "confirmedBy": [
+        "openai/gpt-5.3-codex"
+      ]
+    },
+    {
+      "severity": "HIGH",
+      "file": "web/app/app.js",
+      "line": 574,
+      "title": "IndexedDB open can hang indefinitely during version upgrade contention",
+      "issue": "openDB() does not handle req.onblocked (or db.onversionchange). If another tab keeps an older connection open during a DB_VERSION upgrade, this promise may never resolve/reject, and all data operations await forever (app appears broken, writes not possible).",
+      "fix": "Add req.onblocked to reject with a user-visible message, and set db.onversionchange in onsuccess to close old connections automatically.",
+      "slice": "c",
+      "model": "openai/gpt-5.3-codex",
+      "confirmedBy": [
+        "openai/gpt-5.3-codex"
+      ]
+    },
+    {
+      "severity": "HIGH",
+      "file": "web/app/app.js",
+      "line": 4815,
+      "title": "Imported side-effect keys can trigger XSS in summary rendering",
+      "issue": "sanitizeShot() preserves arbitrary sideEffects keys (line 2228). Later, renderSideEffectsSummary() falls back to raw key text for unknown keys and injects it into innerHTML without escaping (`${labelOf(k)}`). A crafted import JSON can store a key like `<img src=x onerror=...>` and execute script when summary renders.",
+      "fix": "Escape label text before HTML insertion (e.g., `${escapeHTML(labelOf(k))}`), and/or whitelist sideEffects keys to SIDE_EFFECTS during sanitizeShot instead of accepting arbitrary keys.",
+      "slice": "c",
+      "model": "openai/gpt-5.3-codex",
+      "confirmedBy": [
+        "openai/gpt-5.3-codex"
+      ]
+    },
+    {
+      "severity": "HIGH",
+      "file": "web/app/app.js",
+      "line": 2834,
+      "title": "Settings import allows attribute-injection XSS via daily reminder time",
+      "issue": "sanitizeSettings() copies nested object values as-is for object-typed settings (line 2255), including dailyReminders. renderDailyReminderRows() interpolates `entry.time` directly into an HTML attribute via innerHTML. A malicious imported settings file can inject quotes/handlers into the `value` attribute and run script.",
+      "fix": "Deep-sanitize dailyReminders on import (validate keys and enforce `time` format `^\\d{2}:\\d{2}$`, booleans for enabled), and escape interpolated attribute values when building HTML.",
+      "slice": "c",
+      "model": "openai/gpt-5.3-codex",
+      "confirmedBy": [
+        "openai/gpt-5.3-codex"
+      ]
+    },
+    {
+      "severity": "HIGH",
+      "file": "web/app/app.js",
+      "line": 574,
+      "title": "IndexedDB upgrade is not defensive / can lose data on failure",
+      "issue": "onupgradeneeded creates stores but never calls e.oldVersion checks or data migrations (except the one-off weight migration at line 895). A failed upgrade (e.g. quota exceeded, disk error, concurrent access) leaves the database at an inconsistent version. DB_VERSION = 9 but no version-by-version migration path exists.",
+      "fix": "Implement explicit per-version migration blocks (if (e.oldVersion < 1) \u2026 else if (e.oldVersion < 2) \u2026) with try/catch and user-visible error if migration cannot complete.",
+      "slice": "c",
+      "model": "x-ai/grok-4.20",
+      "confirmedBy": [
+        "x-ai/grok-4.20"
+      ]
+    },
+    {
+      "severity": "HIGH",
+      "file": "web/app/app.js",
+      "line": 1059,
+      "title": "Premium gating is entirely client-side and trivially bypassable",
+      "issue": "isPremium() (not shown but implied by calls at 1916, 2050, 3270, 3309, 3390, 3452, etc.) and the UI checks (if (!isPremium() && account.user)) can be bypassed by editing the function in devtools or patching the bundle. No server-side enforcement on rendered premium features (supplies, measurements, labs, insights, benchmarks, PDF, share links).",
+      "fix": "Keep client-side gating for UX only. All premium data paths and export/share endpoints must be enforced server-side after decrypting the blob.",
+      "slice": "c",
+      "model": "x-ai/grok-4.20",
+      "confirmedBy": [
+        "x-ai/grok-4.20"
+      ]
+    },
+    {
+      "severity": "HIGH",
+      "file": "web/app/app.js",
+      "line": 773,
+      "title": "nextDailyTriggerAt() and zonedWallToUtc() can schedule in the past or skip days on DST transitions",
+      "issue": "The iterative correction loop only runs 3 times and can converge to a time in the past when crossing a DST boundary (especially spring-forward). The fallback logic in scheduleDailyReminders() then treats it as already fired, silently dropping the reminder for that day.",
+      "fix": "After the convergence loop, if the returned fire time is in the past, explicitly add 24h (in wall time, not ms) and re-normalize.",
+      "slice": "c",
+      "model": "x-ai/grok-4.20",
+      "confirmedBy": [
+        "x-ai/grok-4.20"
+      ]
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "api/app.py",
+      "line": 979,
+      "title": "Webhook idempotency claim can drop events on worker crash",
+      "issue": "The webhook inserts into `stripe_events` (claim) and commits before processing. If the process dies after commit but before applying subscription changes, retries see `duplicate=True` and skip processing forever. The claim is only released on caught exceptions, not hard crashes/timeouts.",
+      "fix": "Use a two-phase processing state in `stripe_events` (e.g., `processing`/`done` with timestamps). On receipt, atomically claim as `processing`; only mark `done` after successful handler. Allow retries to reprocess stale `processing` claims older than a timeout.",
+      "slice": "a",
+      "model": "openai/gpt-5.3-codex",
+      "confirmedBy": [
+        "openai/gpt-5.3-codex"
+      ]
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "api/app.py",
+      "line": 781,
+      "title": "Concurrent checkout can create duplicate Stripe customers for one user",
+      "issue": "`_ensure_customer()` checks `user['stripe_customer_id']` and creates a Stripe customer if empty, then updates DB. Two concurrent checkout requests for the same user can both observe empty value, both create customers, and race to write. This creates orphan Stripe customers and inconsistent billing linkage.",
+      "fix": "Serialize customer creation per user: start `BEGIN IMMEDIATE`, re-read the user row, and only create when still null; after create, `UPDATE ... WHERE id=? AND stripe_customer_id IS NULL` and if update fails, use the existing stored customer and optionally clean up the extra one.",
+      "slice": "a",
+      "model": "openai/gpt-5.3-codex",
+      "confirmedBy": [
+        "openai/gpt-5.3-codex"
+      ]
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "api/app.py",
+      "line": 366,
+      "title": "Expired data purge is not scheduled during normal runtime",
+      "issue": "Retention cleanup (`purge_expired`) runs only at startup (`init_db`) and via admin-only `/api/admin/purge`. If the service runs for long periods without restart/admin action, expired sessions, share links, reset tokens, old Stripe event IDs, and legacy blobs accumulate indefinitely, contradicting retention goals and causing unbounded growth between restarts.",
+      "fix": "Add automatic periodic purge in-app (e.g., time-gated call in `before_request` or a background scheduler/cron container) so expiry cleanup runs continuously without manual admin intervention.",
+      "slice": "a",
+      "model": "openai/gpt-5.3-codex",
+      "confirmedBy": [
+        "openai/gpt-5.3-codex"
+      ]
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "api/app.py",
+      "line": 1116,
+      "title": "SQL injection in admin_users query via f-string",
+      "issue": "The admin_users endpoint builds SQL with an f-string that includes {now_ts()} inside the query (lines 1116 and 1124). Although now_ts() is an integer, this is still dynamic SQL construction. A future change that adds another dynamic value could introduce real SQL injection.",
+      "fix": "Use a parameter for the current timestamp instead of injecting it via f-string. Replace the two occurrences with a bound parameter.",
+      "slice": "a",
+      "model": "x-ai/grok-4.20",
+      "confirmedBy": [
+        "x-ai/grok-4.20"
+      ]
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "api/app.py",
+      "line": 368,
+      "title": "purge_expired is called without transaction wrapping in high-concurrency paths",
+      "issue": "purge_expired() performs five DELETE statements followed by one commit. It is called from the healthcheck-adjacent admin_purge, from init_db at boot, and could be called from a cron. Under the current 8-thread model these DELETEs + commit can block writers for a long time and cause 'database is locked' on sync_put and webhook paths.",
+      "fix": "Wrap the entire purge in a single transaction (BEGIN IMMEDIATE) and consider running it only from a single worker or via a separate maintenance process.",
+      "slice": "a",
+      "model": "x-ai/grok-4.20",
+      "confirmedBy": [
+        "x-ai/grok-4.20"
+      ]
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "api/app.py",
+      "line": 481,
+      "title": "logout() clears cookie but does not invalidate Bearer token fallback",
+      "issue": "The client can fall back to a Bearer token stored in localStorage. logout() only deletes the session row when the cookie is used; if the client sends the Bearer token instead, the session row is not deleted, allowing continued access after logout.",
+      "fix": "In logout(), after get_session_user(), always delete the session row regardless of whether it came from cookie or Bearer.",
+      "slice": "a",
+      "model": "x-ai/grok-4.20",
+      "confirmedBy": [
+        "x-ai/grok-4.20"
+      ]
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "web/app/app.js",
+      "line": 5240,
+      "title": "User-initiated sync failures are silently swallowed",
+      "issue": "Multiple sync paths ignore exceptions with empty catches (`setupPullToRefresh` at line 5240, login-time push at 5509, login-time pull at 5522). On network/auth/decryption failures, the UI gives no failure signal, creating false confidence that backup/restore worked and increasing risk of unnoticed data loss.",
+      "fix": "Replace empty catch blocks with explicit error handling: set `settings.syncLastError`, persist it, and show a visible toast/banner. For login flow, abort subsequent steps when sync fails instead of continuing silently.",
+      "slice": "b",
+      "model": "openai/gpt-5.3-codex",
+      "confirmedBy": [
+        "openai/gpt-5.3-codex"
+      ]
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "web/app/app.js",
+      "line": 5293,
+      "title": "Bearer token stored in localStorage with no protection",
+      "issue": "localStorage.getItem('mgs_session_token') is used as fallback auth. localStorage is readable by any script on the origin (including analytics, injected scripts, or XSS). The httpOnly cookie is the only secure credential.",
+      "fix": "Remove the localStorage bearer token entirely or store it only in memory (session-only). The httpOnly cookie should be the sole auth mechanism.",
+      "slice": "b",
+      "model": "x-ai/grok-4.20",
+      "confirmedBy": [
+        "x-ai/grok-4.20"
+      ]
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "web/app/app.js",
+      "line": 5570,
+      "title": "isPremium() checks only client-side account.user.isPremium flag",
+      "issue": "isPremium() returns account.user?.isPremium. This flag is set from /api/me and can be manipulated by the user in devtools. Premium features (PDF export, doctor share, etc.) are not re-validated server-side on every use.",
+      "fix": "Critical premium actions (createShareLink, runPdfExport, etc.) must re-check subscription status server-side on every call.",
+      "slice": "b",
+      "model": "x-ai/grok-4.20",
+      "confirmedBy": [
+        "x-ai/grok-4.20"
+      ]
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "web/app/app.js",
+      "line": 6428,
+      "title": "Doctor share link uses client-generated AES key sent in URL fragment",
+      "issue": "createShareLink() generates a new AES key, encrypts the payload, sends only the ciphertext to the server, then puts the raw key (as hex) in the URL fragment (#t=...&k=...). URL fragments are sent to the server on navigation in some cases and are easily leaked via Referer, copy-paste, browser history.",
+      "fix": "Derive the share key from the token on the server side, or use a short-lived server-issued key. Never put a 256-bit key in a URL.",
+      "slice": "b",
+      "model": "x-ai/grok-4.20",
+      "confirmedBy": [
+        "x-ai/grok-4.20"
+      ]
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "web/app/app.js",
+      "line": 2755,
+      "title": "Push daily schedule drifts across DST due to fixed +86400000 increments",
+      "issue": "computeUpcomingReminders() calculates future daily reminders by taking one trigger and adding `d * 86400000`. Across DST changes, wall-clock reminders shift by an hour because local days are not always 24h.",
+      "fix": "For each future day, recompute using timezone-aware wall-clock conversion (e.g., call nextDailyTriggerAt-equivalent for each date in user TZ) instead of adding fixed milliseconds.",
+      "slice": "c",
+      "model": "openai/gpt-5.3-codex",
+      "confirmedBy": [
+        "openai/gpt-5.3-codex"
+      ]
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "web/app/app.js",
+      "line": 3551,
+      "title": "Appetite/Food-noise trend buckets use UTC dates instead of user timezone",
+      "issue": "renderAppetiteTrend() and renderFoodNoiseTrend() build cutoff/day keys with `toISOString().slice(0,10)`, which is UTC. Users near day boundaries or with non-UTC settings.timezone can see entries shifted/missing by one day.",
+      "fix": "Use timezone-aware date keys (same source as todayISODate/getUserTz) for cutoff and per-day iteration instead of UTC ISO slicing.",
+      "slice": "c",
+      "model": "openai/gpt-5.3-codex",
+      "confirmedBy": [
+        "openai/gpt-5.3-codex"
+      ]
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "web/app/app.js",
+      "line": 839,
+      "title": "Date parsing/range filtering ignores user-selected timezone",
+      "issue": "parseDateFlexible() anchors bare dates to device-local midnight (`new Date(y,m,d)`), and weight range cutoff uses device local midnight (line 1845). This conflicts with the explicit settings.timezone model, causing inconsistent 'today/range' behavior when user timezone differs from device timezone.",
+      "fix": "Normalize date anchoring and cutoff calculations through timezone-aware helpers based on getUserTz (not device local Date constructors).",
+      "slice": "c",
+      "model": "openai/gpt-5.3-codex",
+      "confirmedBy": [
+        "openai/gpt-5.3-codex"
+      ]
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "web/app/app.js",
+      "line": 1378,
+      "title": "Boot sequence has unguarded DOM references that can abort initialization",
+      "issue": "Inside DOMContentLoaded, many direct calls like `$('#shot-cancel').addEventListener(...)` assume elements exist. If any expected node is missing (stale cached HTML, partial rollout, template mismatch), a null dereference throws and stops the rest of initialization (reminders/charts/sync UI may never wire).",
+      "fix": "Guard all bindings (`const el = ...; if (el) el.addEventListener(...)`) or use a helper that no-ops on missing elements so one missing node cannot kill startup.",
+      "slice": "c",
+      "model": "openai/gpt-5.3-codex",
+      "confirmedBy": [
+        "openai/gpt-5.3-codex"
+      ]
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "web/app/app.js",
+      "line": 3270,
+      "title": "Premium feature gates are bypassed by signing out/local mode",
+      "issue": "Multiple premium checks are written as `if (!isPremium() && account.user) { ...block... }`. When `account.user` is null (signed out or forced locally), gate is skipped and premium-only local features open (supplies/measurements/labs/expenses).",
+      "fix": "Gate on premium status alone for premium-only features (`if (!isPremium()) ...`), or explicitly define and enforce a separate anonymous entitlement policy.",
+      "slice": "c",
+      "model": "openai/gpt-5.3-codex",
+      "confirmedBy": [
+        "openai/gpt-5.3-codex"
+      ]
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "web/app/app.js",
+      "line": 628,
+      "title": "Unhandled promise rejections and swallowed transaction errors in withStore",
+      "issue": "withStore() sets req.onerror and t.onerror but many callers (dbAll, dbGet, render functions, etc.) do not await or .catch the returned promise. A transaction abort (e.g. quota, locked DB) fails silently.",
+      "fix": "Add top-level window.addEventListener('unhandledrejection', \u2026) handler that logs to console and shows a user-visible toast. Make critical paths explicitly catch and surface errors.",
+      "slice": "c",
+      "model": "x-ai/grok-4.20",
+      "confirmedBy": [
+        "x-ai/grok-4.20"
+      ]
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "web/app/app.js",
+      "line": 989,
+      "title": "DOM references used before null-check in renderShots() and many other render functions",
+      "issue": "Lines 986\u20131009 (recent, full, empty-shots, etc.) and similar patterns throughout (e.g. renderWeights line 1832, renderMood line 4837, etc.) assume elements exist. If the HTML changes or a view is not yet mounted, this throws and halts later rendering.",
+      "fix": "Guard every DOM access: const recent = $('#recent-shots'); if (!recent) return; (or use optional chaining where possible).",
+      "slice": "c",
+      "model": "x-ai/grok-4.20",
+      "confirmedBy": [
+        "x-ai/grok-4.20"
+      ]
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "web/app/app.js",
+      "line": 2531,
+      "title": "Notification cleanup only removes tags starting with 'shot-' or 'daily-' \u2014 leaks old notifications",
+      "issue": "getNotifications({ includeTriggered: true }) then n.close() is limited to specific prefixes. Old notifications from previous versions or test notifications stay in the OS tray forever.",
+      "fix": "Either use a broader prefix or clear all notifications owned by the app on every schedule cycle.",
+      "slice": "c",
+      "model": "x-ai/grok-4.20",
+      "confirmedBy": [
+        "x-ai/grok-4.20"
+      ]
+    },
+    {
+      "severity": "LOW",
+      "file": "api/app.py",
+      "line": 692,
+      "title": "share_fetch increments views without checking premium status or rate limiting",
+      "issue": "Any unauthenticated user can repeatedly call a valid share token. Each call does an UPDATE + COMMIT on share_links.views. This both leaks that the link is still valid (side-channel) and creates write contention under load.",
+      "fix": "Move the views increment to a separate non-blocking table or remove the view counter entirely if it is not critical.",
+      "slice": "a",
+      "model": "x-ai/grok-4.20",
+      "confirmedBy": [
+        "x-ai/grok-4.20"
+      ]
+    },
+    {
+      "severity": "LOW",
+      "file": "docker/docker-compose.yml",
+      "line": 22,
+      "title": "Container runs with read_only: true but writes to /data via volume",
+      "issue": "The compose file sets read_only: true and only mounts a tmpfs on /tmp, yet the app writes to /data/api.db (and creates directories in init_db). This works only because the volume is mounted read-write after the read_only rootfs, but it is fragile and breaks the intended hardening.",
+      "fix": "Remove read_only or explicitly mount the volume with :rw. Better: keep read_only and use a dedicated writable volume only for /data.",
+      "slice": "a",
+      "model": "x-ai/grok-4.20",
+      "confirmedBy": [
+        "x-ai/grok-4.20"
+      ]
+    },
+    {
+      "severity": "LOW",
+      "file": "web/app/app.js",
+      "line": 5240,
+      "title": "Pull-to-refresh silently swallows all sync errors",
+      "issue": "setupPullToRefresh() does try { await syncPushNow() } catch (e) {} with no user feedback or retry. A user pulling to refresh gets no indication that their data was not backed up.",
+      "fix": "Remove the empty catch or at minimum set settings.syncLastError and call saveSettings() so the error surface is shown.",
+      "slice": "b",
+      "model": "x-ai/grok-4.20",
+      "confirmedBy": [
+        "x-ai/grok-4.20"
+      ]
+    },
+    {
+      "severity": "LOW",
+      "file": "web/app/app.js",
+      "line": 1335,
+      "title": "Async interval callback can produce unhandled promise rejections",
+      "issue": "`setInterval(async () => renderCountdown(await getShotsSorted()), 60000)` has no internal catch. If getShotsSorted/openDB rejects, the interval callback promise rejects unhandled repeatedly.",
+      "fix": "Wrap interval body in try/catch (or append `.catch(...)`) to absorb/report failures without unhandledrejection noise.",
+      "slice": "c",
+      "model": "openai/gpt-5.3-codex",
+      "confirmedBy": [
+        "openai/gpt-5.3-codex"
+      ]
+    },
+    {
+      "severity": "LOW",
+      "file": "web/app/app.js",
+      "line": 104,
+      "title": "Dead / unreachable code in INFO_TOPICS.mixing-calc",
+      "issue": "$('#recon-vial') etc. are queried but the mixing calculator UI was removed; the async body function is never called.",
+      "fix": "Remove the dead INFO_TOPICS entry and associated code.",
+      "slice": "c",
+      "model": "x-ai/grok-4.20",
+      "confirmedBy": [
+        "x-ai/grok-4.20"
+      ]
+    }
+  ]
+}

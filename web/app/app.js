@@ -9,7 +9,7 @@ const DB_NAME = 'shotclock';
 // v8 bump: 'cycles' store added — opt-in menstrual cycle tracking (period start/end, flow, symptoms).
 // v9 bump: 'medChanges' store added — medication switches as discrete events so charts stay readable across drug changes.
 const DB_VERSION = 9;
-const APP_VERSION = '0.48.0';
+const APP_VERSION = '0.49.0';
 
 // Umami event tracker. Aggregates only — no PII (no email, no IDs). Safe to call before umami loads.
 function track(event, props) {
@@ -571,6 +571,14 @@ function openDB() {
   if (_dbPromise) return _dbPromise;
   _dbPromise = new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
+    // An open that needs to upgrade is blocked until every other tab holding
+    // the old version closes its connection. Without this handler the promise
+    // never settles, every `await openDB()` hangs, and the app just sits there
+    // — no error, no spinner, nothing to report. Tell the user what to do.
+    req.onblocked = () => {
+      console.warn('[mgs] database upgrade blocked by another open tab');
+      toast('My GLP Shot is open in another tab. Close it so the update can finish.');
+    };
     req.onupgradeneeded = (e) => {
       const db = e.target.result;
       if (!db.objectStoreNames.contains(STORES.shots)) {
@@ -612,8 +620,23 @@ function openDB() {
         db.createObjectStore('medChanges', { keyPath: 'id', autoIncrement: true });
       }
     };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
+    req.onsuccess = () => {
+      const db = req.result;
+      // The mirror of onblocked: if another tab loads a newer version, hold the
+      // connection open and we become the thing blocking it. Close and stand
+      // aside, then force the next openDB() to reconnect.
+      db.onversionchange = () => {
+        console.warn('[mgs] newer version opened elsewhere — closing this connection');
+        try { db.close(); } catch (_) {}
+        _dbPromise = null;
+        toast('My GLP Shot updated in another tab. Reload this one to continue.');
+      };
+      // A connection closed underneath us (browser eviction, "clear site data")
+      // must not leave a dead handle cached for the rest of the session.
+      db.onclose = () => { _dbPromise = null; };
+      resolve(db);
+    };
+    req.onerror = () => { _dbPromise = null; reject(req.error); };
   });
   return _dbPromise;
 }
@@ -847,10 +870,15 @@ function parseDateFlexible(d) {
     const n = parseInt(s, 10);
     return n > 1e12 ? n : n * 1000;
   }
-  // YYYY-MM-DD (bare): anchor to local midnight, ignoring whatever time follows.
+  // YYYY-MM-DD (bare): a calendar-day label, not an instant. Anchor to local
+  // NOON, not midnight. A midnight anchor sits within a few hours of the day
+  // boundary, so re-reading it in any other timezone — the user's configured
+  // one, or their device's after they travel — lands on the previous or next
+  // day. Noon has ~12 hours of slack in both directions, which no real offset
+  // crosses, so the day label survives the round trip.
   const ymd = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
   if (ymd) {
-    const t = new Date(+ymd[1], +ymd[2] - 1, +ymd[3]).getTime();
+    const t = new Date(+ymd[1], +ymd[2] - 1, +ymd[3], 12, 0, 0).getTime();
     return Number.isFinite(t) ? t : NaN;
   }
   // M/D/YYYY or D/M/YYYY (best-effort: assume month-first US format, then fall through to Date.parse).
@@ -874,11 +902,13 @@ function parseDateFlexible(d) {
 function toCanonicalDate(d) {
   const t = parseDateFlexible(d);
   if (!Number.isFinite(t)) return null;
-  const x = new Date(t);
-  const yyyy = x.getFullYear();
-  const mm = String(x.getMonth() + 1).padStart(2, '0');
-  const dd = String(x.getDate()).padStart(2, '0');
-  return `${yyyy}-${mm}-${dd}`;
+  // Bucket by the user's configured timezone, the same basis todayISODate()
+  // uses. These used to disagree — this read the device clock while "today"
+  // read the setting — so anyone whose device timezone differed from their
+  // setting could log an entry and have it filed under a different day than
+  // the one the app was calling today.
+  const p = _tzParts(new Date(t), getUserTz());
+  return `${p.year}-${p.month}-${p.day}`;
 }
 
 async function getWeightsSorted() {
@@ -2224,8 +2254,17 @@ function sanitizeShot(s) {
     notes: safeText(s.notes, 2000),
   };
   if (s.sideEffects && typeof s.sideEffects === 'object' && !Array.isArray(s.sideEffects)) {
+    // Keys are rendered as labels when they aren't in our taxonomy, so restrict
+    // them to a safe charset rather than merely truncating. Values must be one
+    // of the four severity levels.
+    const LEVELS = new Set(SE_LEVELS.map(l => l[0]));
     const se = {};
-    for (const [k, v] of Object.entries(s.sideEffects).slice(0, 40)) se[safeText(k, 40)] = safeText(v, 40);
+    for (const [k, v] of Object.entries(s.sideEffects).slice(0, 40)) {
+      const key = String(k).slice(0, 40).replace(/[^A-Za-z0-9 _-]/g, '');
+      if (!key) continue;
+      const val = String(v ?? '').toLowerCase();
+      se[key] = LEVELS.has(val) ? val : '';
+    }
     out.sideEffects = se;
   }
   return out;
@@ -2252,7 +2291,23 @@ function sanitizeSettings(raw) {
     else if (typeof def === 'boolean') { if (typeof v === 'boolean') out[k] = v; }
     else if (typeof def === 'string') out[k] = safeText(v, 200);
     else if (Array.isArray(def) && Array.isArray(v)) out[k] = v.slice(0, 50);
+    else if (k === 'dailyReminders') { const dr = sanitizeDailyReminders(v); if (dr) out[k] = dr; }
     else if (def && typeof def === 'object' && v && typeof v === 'object') out[k] = v;
+  }
+  return out;
+}
+
+// dailyReminders was the one nested object passed through untouched, and its
+// `time` is interpolated straight into a value="" attribute. An imported file
+// could close the attribute and add an event handler from there.
+function sanitizeDailyReminders(v) {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return null;
+  const out = {};
+  for (const r of DAILY_REMINDERS) {
+    const e = v[r.key];
+    if (!e || typeof e !== 'object') continue;
+    const time = /^([01]\d|2[0-3]):[0-5]\d$/.test(String(e.time || '')) ? String(e.time) : '08:00';
+    out[r.key] = { enabled: e.enabled === true, time };
   }
   return out;
 }
@@ -2831,7 +2886,7 @@ function renderDailyReminderRows() {
         </label>
         <label class="daily-reminder-time">
           <span class="muted small">at</span>
-          <input type="time" id="${id}-time" data-rkey="${r.key}" value="${entry.time || '08:00'}">
+          <input type="time" id="${id}-time" data-rkey="${r.key}" value="${escapeHTML(entry.time || '08:00')}">
         </label>
       </div>`;
   }).join('');
@@ -4812,7 +4867,10 @@ function renderSideEffectsSummary(shots) {
       const total = c.mild + c.moderate + c.severe;
       const cls = c.severe > 0 ? 'severe' : '';
       const dots = '●'.repeat(Math.min(3, c.severe)) + '◐'.repeat(Math.min(3, c.moderate)) + '○'.repeat(Math.min(3, c.mild));
-      return `<span class="se-pill ${cls}"><span class="se-count">${total}</span>${labelOf(k)} <span class="muted small">${dots}</span></span>`;
+      // labelOf falls back to the raw key when it isn't in the taxonomy, and
+      // keys come from imported files — so this is a sink for attacker-chosen
+      // text, not just our own labels.
+      return `<span class="se-pill ${escapeHTML(cls)}"><span class="se-count">${escapeHTML(total)}</span>${escapeHTML(labelOf(k))} <span class="muted small">${escapeHTML(dots)}</span></span>`;
     }).join('');
     return `<div class="se-group-row"><h4 class="se-group-title">${gname}</h4><div class="se-pills">${pills}</div></div>`;
   }).join('');
@@ -5237,7 +5295,7 @@ function setupPullToRefresh() {
   document.addEventListener('touchend', async () => {
     if (indicator) {
       indicator.textContent = 'Syncing…';
-      try { if (syncCreds && settings.syncEnabled) await syncPushNow(); } catch (e) {}
+      try { if (account.user && account.encryptionKey) await accountSyncPush(); } catch (e) { noteSyncFailure(e); }
       setTimeout(() => { indicator?.remove(); indicator = null; }, 600);
     }
     pulling = false;
@@ -5453,7 +5511,10 @@ async function accountSyncPull() {
 }
 
 async function accountSyncDelete() {
-  if (account.user) await accountFetch('me/sync', { method: 'DELETE' });
+  if (!account.user) return;
+  const r = await accountFetch('me/sync', { method: 'DELETE' });
+  // Callers tell the user the cloud copy is gone. Make that true before they do.
+  if (!r.ok) throw new Error(`Could not delete the cloud copy (${r.status}).`);
 }
 
 // ----- Doctor share link (premium) -----
@@ -6467,12 +6528,6 @@ async function deriveSyncCreds(username, passphrase) {
   return { username: username.trim(), aesKey, lookupId };
 }
 
-async function syncEncrypt(creds, payload) {
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const plaintext = new TextEncoder().encode(JSON.stringify(payload));
-  const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, creds.aesKey, plaintext);
-  return { iv: b64.enc(iv), ciphertext: b64.enc(ct) };
-}
 
 async function syncDecrypt(creds, iv_b64, ct_b64) {
   const iv = b64.dec(iv_b64);
@@ -6481,17 +6536,6 @@ async function syncDecrypt(creds, iv_b64, ct_b64) {
   return JSON.parse(new TextDecoder().decode(plaintext));
 }
 
-function suggestPassphrase() {
-  // 4 groups of 4 base32-style chars (excluding ambiguous 0/O/1/I/L) ≈ 80 bits.
-  const alpha = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
-  const buf = crypto.getRandomValues(new Uint8Array(16));
-  let out = '';
-  for (let i = 0; i < 16; i++) {
-    out += alpha[buf[i] % alpha.length];
-    if (i % 4 === 3 && i < 15) out += '-';
-  }
-  return out;
-}
 
 async function buildPayload(opts) {
   const all = !opts || !opts.sections || !opts.sections.length;
@@ -6524,22 +6568,6 @@ async function buildPayload(opts) {
   };
 }
 
-async function syncPushNow() {
-  if (!syncCreds) throw new Error('Not signed in to sync');
-  const payload = await buildPayload();
-  const { iv, ciphertext } = await syncEncrypt(syncCreds, payload);
-  const res = await fetch(`${SYNC_API}/${syncCreds.lookupId}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ iv, ciphertext }),
-  });
-  if (!res.ok) throw new Error(`Sync server returned ${res.status}`);
-  const j = await res.json();
-  settings.syncLastPushAt = new Date().toISOString();
-  settings.syncLastUpdatedAt = j.updated_at;
-  await saveSettings();
-  return j;
-}
 
 async function syncPullNow() {
   if (!syncCreds) throw new Error('Not signed in to sync');
@@ -6556,11 +6584,6 @@ async function syncPullNow() {
   return { payload, updatedAt: updated_at };
 }
 
-async function syncCloudExists(creds) {
-  const res = await fetch(`${SYNC_API}/${creds.lookupId}/exists`);
-  if (!res.ok) return { exists: false };
-  return res.json();
-}
 
 // ---------- Sync merge ----------
 // Records get a stable `uid` on write so the same shot logged on a phone and
@@ -6703,34 +6726,6 @@ function clearStoredCreds() {
   try { localStorage.removeItem('sync.creds'); } catch (e) {}
 }
 
-async function handleEnableSync() {
-  const u = $('#sync-user').value.trim();
-  const p = $('#sync-pass').value;
-  if (!u || !p) { syncStatus('#sync-setup-status', 'Username and passphrase are required.', 'err'); return; }
-  if (p.length < 12) { syncStatus('#sync-setup-status', 'Passphrase must be at least 12 characters.', 'err'); return; }
-  syncStatus('#sync-setup-status', 'Deriving keys (this takes a few seconds)…');
-  try {
-    const creds = await deriveSyncCreds(u, p);
-    const exists = await syncCloudExists(creds);
-    if (exists.exists) {
-      syncStatus('#sync-setup-status', 'An account with this username + passphrase already exists. Use "Restore from cloud" to pull its data, or sign in to overwrite.', 'err');
-      // Allow continuing as enable+overwrite via confirm
-      if (!confirm('A cloud copy already exists for this account. Continue and OVERWRITE it with your local data? Choose Cancel and use Restore instead if you want to pull the cloud copy down.')) return;
-    }
-    syncCreds = creds;
-    settings.syncEnabled = true;
-    settings.syncUsername = creds.username;
-    await saveSettings();
-    persistCreds(u, p);
-    syncStatus('#sync-setup-status', 'Encrypting and uploading…');
-    await syncPushNow();
-    syncStatus('#sync-setup-status', '');
-    renderSyncUI();
-    alert('Sync enabled. Your local data has been encrypted and uploaded.');
-  } catch (e) {
-    syncStatus('#sync-setup-status', 'Failed: ' + e.message, 'err');
-  }
-}
 
 async function handleRestoreSync() {
   const u = $('#sync-user').value.trim();
@@ -6747,7 +6742,7 @@ async function handleRestoreSync() {
       syncStatus('#sync-setup-status', 'No cloud copy found for those credentials.', 'err');
       return;
     }
-    if (!confirm(`Cloud copy found (${(result.payload.shots || []).length} shots). REPLACE local data with cloud copy?`)) {
+    if (!confirm(`Found ${(result.payload.shots || []).length} shots in your legacy backup. Bring them across? They are merged in — nothing already on this device is removed.`)) {
       syncCreds = null;
       syncStatus('#sync-setup-status', 'Cancelled.');
       return;
@@ -6756,32 +6751,23 @@ async function handleRestoreSync() {
     settings.syncEnabled = true;
     settings.syncUsername = creds.username;
     await saveSettings();
-    persistCreds(u, p);
+    // Deliberately NOT persisting the passphrase: this is a one-off recovery
+    // path now, and keeping a passphrase in localStorage is exactly what the
+    // account system moved away from.
     syncStatus('#sync-setup-status', '');
     renderSyncUI();
-    alert('Restored. Your local data now matches the cloud copy.');
+    const st = (window._lastMergeStats && window._lastMergeStats.shots) || null;
+    alert(st ? `Restored. ${st.added} entries added, ${st.skipped} already here.` : 'Restored — your legacy entries have been merged in.');
   } catch (e) {
     syncCreds = null;
     syncStatus('#sync-setup-status', 'Failed: ' + e.message, 'err');
   }
 }
 
-async function handleSyncNow() {
-  if (!syncCreds) return;
-  syncStatus('#sync-status', 'Syncing…');
-  try {
-    await syncPushNow();
-    renderSyncUI();
-    syncStatus('#sync-status', '✓ Pushed', 'ok');
-    setTimeout(() => syncStatus('#sync-status', ''), 2500);
-  } catch (e) {
-    syncStatus('#sync-status', 'Failed: ' + e.message, 'err');
-  }
-}
 
 async function handleSyncPull() {
   if (!syncCreds) return;
-  if (!confirm('Pull cloud copy and REPLACE your local data?')) return;
+  if (!confirm('Pull your legacy backup across? Entries are merged in — nothing on this device is removed.')) return;
   syncStatus('#sync-status', 'Pulling…');
   try {
     const result = await syncPullNow();
@@ -6796,7 +6782,7 @@ async function handleSyncPull() {
 }
 
 async function handleSyncDisable() {
-  if (!confirm('Sign out of sync on this device? Local data is kept. Cloud copy is NOT deleted.')) return;
+  if (!confirm('Forget the legacy backup on this device? Your local data is kept, and the backup itself is untouched.')) return;
   syncCreds = null;
   settings.syncEnabled = false;
   await saveSettings();
@@ -6804,35 +6790,19 @@ async function handleSyncDisable() {
   renderSyncUI();
 }
 
-async function handleSyncDeleteCloud() {
-  if (!syncCreds) return;
-  if (!confirm('Permanently delete the encrypted cloud copy? This cannot be undone. Your local data is kept.')) return;
-  if (!confirm('Are you absolutely sure?')) return;
-  try {
-    await fetch(`${SYNC_API}/${syncCreds.lookupId}`, { method: 'DELETE' });
-    syncStatus('#sync-status', '✓ Cloud copy deleted', 'ok');
-  } catch (e) {
-    syncStatus('#sync-status', 'Failed: ' + e.message, 'err');
-  }
-}
 
 async function initSyncUI() {
   // Pre-fill known username if we've used sync before
   if (settings.syncUsername) $('#sync-user').value = settings.syncUsername;
 
-  $('#sync-suggest-pass').addEventListener('click', () => {
-    const pp = suggestPassphrase();
-    $('#sync-pass').value = pp;
-    const dis = $('#sync-suggested');
-    dis.textContent = pp;
-    dis.classList.remove('hidden');
-  });
-  $('#sync-enable').addEventListener('click', handleEnableSync);
-  $('#sync-restore').addEventListener('click', handleRestoreSync);
-  $('#sync-now').addEventListener('click', handleSyncNow);
-  $('#sync-pull').addEventListener('click', handleSyncPull);
-  $('#sync-disable').addEventListener('click', handleSyncDisable);
-  $('#sync-delete-cloud').addEventListener('click', handleSyncDeleteCloud);
+  // Legacy sync is recovery-only since 2026-08-09: the server rejects writes to
+  // it, because the lookup id travelled in the URL and was the only credential.
+  // The enable / push / delete controls are gone from the markup, so bind
+  // defensively rather than assuming they exist.
+  const on = (sel, fn) => { const el = $(sel); if (el) el.addEventListener('click', fn); };
+  on('#sync-restore', handleRestoreSync);
+  on('#sync-pull', handleSyncPull);
+  on('#sync-disable', handleSyncDisable);
 
   if (settings.syncEnabled) {
     const ok = await attemptUnlockFromStored();
@@ -6844,12 +6814,17 @@ async function initSyncUI() {
   }
   renderSyncUI();
 
-  // Auto-push debounced after each shot/weight change. Hook is in the form
-  // submit handlers; here we just register a passive interval as a safety net.
+  // Safety net for account sync: markSyncDirty debounces a push after each
+  // change, but a push that failed (offline, server blip) would otherwise sit
+  // unretried until the next edit. Legacy sync no longer pushes at all.
   setInterval(async () => {
-    if (!syncCreds || !settings.syncEnabled) return;
-    if (!settings.syncAutoPush) return;
-    if (!settings.syncDirty) return;
-    try { await syncPushNow(); settings.syncDirty = false; await saveSettings(); renderSyncUI(); } catch (e) {}
+    if (!window._syncDirty) return;
+    if (!account.user || !account.encryptionKey) return;
+    try {
+      await accountSyncPush();
+      window._syncDirty = false;
+    } catch (e) {
+      noteSyncFailure(e);
+    }
   }, 60000);
 }

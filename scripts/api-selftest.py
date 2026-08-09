@@ -174,6 +174,40 @@ def main():
         st, j = call(b, '/api/admin/purge', 'POST', {}, admin=args.admin_token)
         check('admin purge works', st == 200 and 'deleted' in j, f'{st} {str(j)[:150]}')
 
+    # --- legacy sync is read-only ------------------------------------------
+    lookup = 'a' * 64
+    st, j = call(b, f'/api/sync/{lookup}', 'PUT', {'iv': 'AAAA', 'ciphertext': 'QUJD'})
+    check('legacy sync PUT is closed', st == 410, f'{st} {j}')
+    st, j = call(b, f'/api/sync/{lookup}', 'DELETE')
+    check('legacy sync DELETE is closed', st == 410, f'{st} {j}')
+    st, j = call(b, f'/api/sync/{lookup}')
+    check('legacy sync GET still readable for recovery', st == 404, f'{st} {j}')
+    st, j = call(b, f'/api/sync/{lookup}/exists')
+    check('legacy exists still answers', st == 200 and j.get('exists') is False, f'{st} {j}')
+
+    # --- per-account throttling --------------------------------------------
+    # nginx limits by IP; these limits are per identifier, so a spread-out
+    # attempt against one account is what they exist to stop.
+    victim = f'throttle-{secrets.token_hex(6)}@example.com'
+    call(b, '/api/signup', 'POST', {'email': victim, 'authToken': secrets.token_hex(32)})
+    codes = []
+    for _ in range(13):
+        st, _ = call(b, '/api/login', 'POST', {'email': victim, 'authToken': secrets.token_hex(32)})
+        codes.append(st)
+    check('repeated wrong passwords eventually 429', 429 in codes, f'codes={codes}')
+    check('throttle does not trip immediately', codes[0] == 401, f'first={codes[0]}')
+
+    # A different account must be unaffected by that one being throttled.
+    st, _ = call(b, '/api/login', 'POST', {'email': email, 'authToken': secrets.token_hex(32)})
+    check('throttle is per-account, not global', st == 401, f'got {st}')
+
+    forgot_codes = []
+    fmail = f'forgot-{secrets.token_hex(6)}@example.com'
+    for _ in range(6):
+        st, _ = call(b, '/api/forgot', 'POST', {'email': fmail})
+        forgot_codes.append(st)
+    check('forgot always returns ok (no enumeration)', set(forgot_codes) == {200}, f'codes={forgot_codes}')
+
     # --- concurrency: the SQLite locking case -------------------------------
     errors = []
 

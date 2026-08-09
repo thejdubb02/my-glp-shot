@@ -206,12 +206,20 @@ def call_model(model, prompt, key):
 
 
 def parse_json_findings(text):
-    """Models sometimes wrap JSON in fences or prose. Recover the object."""
+    """Recover findings from a model response.
+
+    Handles three shapes, in order: clean JSON, JSON wrapped in a code fence, and
+    a response cut off mid-array by the token limit. The last case is why this
+    exists — Gemini's replies were valid and useful but truncated, so a strict
+    json.loads threw and an entire model's findings were silently discarded from
+    every run. A truncated array still contains complete objects; salvage them.
+    """
     if not text:
         return []
     t = text.strip()
     t = re.sub(r'^```(?:json)?\s*', '', t)
     t = re.sub(r'\s*```$', '', t)
+
     try:
         return json.loads(t).get('findings', [])
     except Exception:
@@ -222,7 +230,40 @@ def parse_json_findings(text):
             return json.loads(m.group(0)).get('findings', [])
         except Exception:
             pass
-    return []
+
+    # Salvage. The findings sit INSIDE a {"findings": [ ... wrapper whose closing
+    # brace was cut off, so scanning only for balanced objects at depth 0 finds
+    # nothing — the outer brace never closes and everything real is at depth 1.
+    # Track a stack instead and test every object that closes, at any depth.
+    # String-aware, so a brace inside a quoted description can't skew the count.
+    out = []
+    stack = []
+    in_str = False
+    esc = False
+    for i, ch in enumerate(t):
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == '\\':
+                esc = True
+            elif ch == '"':
+                in_str = False
+            continue
+        if ch == '"':
+            in_str = True
+        elif ch == '{':
+            stack.append(i)
+        elif ch == '}' and stack:
+            start = stack.pop()
+            try:
+                obj = json.loads(t[start:i + 1])
+            except Exception:
+                continue
+            # Only finding-shaped objects. The complete-wrapper case is already
+            # handled above, so taking it again here would double-count.
+            if isinstance(obj, dict) and {'severity', 'issue', 'title'} & set(obj):
+                out.append(obj)
+    return out
 
 
 def norm(f):
@@ -237,15 +278,34 @@ def main():
     ap.add_argument('--out', default='')
     ap.add_argument('--slices', default='a,b,c,d')
     ap.add_argument('--models', default=','.join(MODELS))
+    ap.add_argument('--reparse', action='store_true',
+                    help='Rebuild summary.json from saved .raw.txt files. Calls no model, '
+                         'costs nothing — use after improving the parser, or to recover a run '
+                         'that was interrupted.')
     args = ap.parse_args()
 
     repo = Path(args.repo)
+    out_dir = Path(args.out) if args.out else repo / 'audit-history' / 'deep'
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    if args.reparse:
+        results = []
+        for raw in sorted(out_dir.glob('*.raw.txt')):
+            slug = raw.name[:-len('.raw.txt')]
+            sk, _, model = slug.partition('__')
+            found = parse_json_findings(raw.read_text(errors='replace'))
+            print(f'[reparse] {slug}: {len(found)} findings', file=sys.stderr)
+            for f in found:
+                if isinstance(f, dict):
+                    f['slice'] = sk
+                    f['model'] = model.replace('_', '/')
+                    results.append(f)
+        summarize(results, out_dir, [], [])
+        return
+
     key = envkey('MYGLPSHOT_OR_KEY')
     if not key:
         sys.exit('MYGLPSHOT_OR_KEY not found in /opt/or-keys/secrets/keys.env')
-
-    out_dir = Path(args.out) if args.out else repo / 'audit-history' / 'deep'
-    out_dir.mkdir(parents=True, exist_ok=True)
 
     models = [m.strip() for m in args.models.split(',') if m.strip()]
     slice_keys = [s.strip() for s in args.slices.split(',') if s.strip() in SLICES]
@@ -283,6 +343,10 @@ def main():
                 f['model'] = m
                 results.append(f)
 
+    summarize(results, out_dir, models, slice_keys)
+
+
+def summarize(results, out_dir, models, slice_keys):
     # Merge: same finding from several models is stronger evidence, not noise.
     rank = {'CRITICAL': 4, 'HIGH': 3, 'MEDIUM': 2, 'LOW': 1}
     merged = {}

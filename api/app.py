@@ -125,6 +125,16 @@ CREATE TABLE IF NOT EXISTS password_resets (
     expires_at  INTEGER NOT NULL,
     used_at     INTEGER
 );
+-- Per-identifier throttling. nginx already limits by IP, which does nothing
+-- against a spread-out attempt on ONE account from many addresses, and nothing
+-- to stop someone's inbox being flooded with reset mails.
+CREATE TABLE IF NOT EXISTS auth_attempts (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    scope       TEXT NOT NULL,      -- 'login' | 'forgot'
+    identifier  TEXT NOT NULL,      -- normalised email
+    ts          INTEGER NOT NULL,
+    ok          INTEGER NOT NULL DEFAULT 0
+);
 CREATE TABLE IF NOT EXISTS stripe_events (
     id          TEXT PRIMARY KEY,
     type        TEXT NOT NULL,
@@ -187,6 +197,7 @@ CREATE INDEX IF NOT EXISTS users_customer_idx     ON users(stripe_customer_id);
 CREATE INDEX IF NOT EXISTS users_customer_test_idx ON users(stripe_customer_id_test);
 CREATE INDEX IF NOT EXISTS users_created_idx      ON users(created_at);
 CREATE INDEX IF NOT EXISTS stripe_events_ts_idx   ON stripe_events(received_at);
+CREATE INDEX IF NOT EXISTS auth_attempts_idx      ON auth_attempts(scope, identifier, ts);
 """
 
 
@@ -256,6 +267,41 @@ def _enforce_json_for_mutations():
 
 def normalize_email(email):
     return (email or '').strip().lower()
+
+
+# Per-account throttles. nginx's limit_req is keyed on IP, so it does not slow a
+# credential-stuffing run spread across many addresses against one account, and
+# it does not stop someone triggering a reset mail to a victim's inbox on repeat.
+LOGIN_WINDOW = 900          # 15 minutes
+LOGIN_MAX_FAILURES = 10     # failed logins per account per window
+FORGOT_WINDOW = 3600        # 1 hour
+FORGOT_MAX = 3              # reset mails per address per window
+
+
+def _record_attempt(scope, identifier, ok=False):
+    try:
+        db = get_db()
+        db.execute(
+            'INSERT INTO auth_attempts (scope, identifier, ts, ok) VALUES (?, ?, ?, ?)',
+            (scope, identifier[:200], now_ts(), 1 if ok else 0),
+        )
+        db.commit()
+    except Exception as e:
+        app.logger.warning('auth_attempts write failed: %s', e)
+
+
+def _too_many_attempts(scope, identifier, window, limit, failures_only=True):
+    """True if `identifier` is over the limit for `scope` inside `window`."""
+    try:
+        sql = 'SELECT COUNT(*) AS c FROM auth_attempts WHERE scope = ? AND identifier = ? AND ts > ?'
+        params = [scope, identifier[:200], now_ts() - window]
+        if failures_only:
+            sql += ' AND ok = 0'
+        return get_db().execute(sql, params).fetchone()['c'] >= limit
+    except Exception as e:
+        # A throttle that errors must not lock everyone out of their account.
+        app.logger.warning('auth_attempts read failed: %s', e)
+        return False
 
 
 def is_premium_now(user_row):
@@ -376,6 +422,9 @@ def purge_expired(db=None):
     deleted['stripe_events'] = db.execute(
         'DELETE FROM stripe_events WHERE received_at < ?', (now - STRIPE_EVENT_TTL_DAYS * 86400,)
     ).rowcount
+    deleted['auth_attempts'] = db.execute(
+        'DELETE FROM auth_attempts WHERE ts < ?', (now - 86400,)
+    ).rowcount
     # Legacy blobs carry no user_id — a content-addressed lookup_id is the only
     # handle — so age is the only retention lever available for them.
     deleted['legacy_blobs'] = db.execute(
@@ -452,6 +501,9 @@ def login():
     auth_token = (data.get('authToken') or '').strip()
     if not EMAIL_RE.match(email) or not auth_token:
         return err('invalid_credentials', 'Email or password incorrect.', 401)
+    if _too_many_attempts('login', email, LOGIN_WINDOW, LOGIN_MAX_FAILURES):
+        return err('too_many_attempts',
+                   'Too many failed sign-in attempts for this account. Try again in 15 minutes.', 429)
 
     db = get_db()
     user = db.execute('SELECT * FROM users WHERE email = ?', (email,)).fetchone()
@@ -463,7 +515,11 @@ def login():
     except Exception:
         ok = False
     if not user or not ok:
+        _record_attempt('login', email, ok=False)
         return err('invalid_credentials', 'Email or password incorrect.', 401)
+    # Clear the run of failures so a successful sign-in resets the counter.
+    get_db().execute('DELETE FROM auth_attempts WHERE scope = ? AND identifier = ?', ('login', email))
+    get_db().commit()
 
     sess_token = _create_session(user['id'])
     resp = make_response(jsonify(user=public_user(user), token=sess_token))
@@ -518,6 +574,12 @@ def delete_account():
     db.execute('DELETE FROM sync_blobs WHERE user_id = ?', (uid,))
     db.execute('DELETE FROM sessions WHERE user_id = ?', (uid,))
     db.execute('DELETE FROM password_resets WHERE user_id = ?', (uid,))
+    # Push rows are a per-device identifier and a reminder schedule — personal
+    # data, and they outlived the account when push was added. Delete-account
+    # has to cover every table that keys on user_id.
+    db.execute('DELETE FROM push_subscriptions WHERE user_id = ?', (uid,))
+    db.execute('DELETE FROM push_reminders WHERE user_id = ?', (uid,))
+    db.execute('DELETE FROM auth_attempts WHERE identifier = ?', (user['email'],))
     db.execute('DELETE FROM users WHERE id = ?', (uid,))
     db.commit()
     resp = make_response(jsonify(deleted=True))
@@ -531,6 +593,13 @@ def forgot_password():
     email = normalize_email(data.get('email'))
     if not EMAIL_RE.match(email):
         return err('invalid_email', 'Please enter a valid email.')
+    # Cap reset mails per address. Still returns ok either way — saying "you are
+    # rate limited" would confirm the address exists, which is exactly what the
+    # generic response below is protecting against.
+    if _too_many_attempts('forgot', email, FORGOT_WINDOW, FORGOT_MAX, failures_only=False):
+        app.logger.warning('forgot-password throttled for %s', email)
+        return jsonify(ok=True)
+    _record_attempt('forgot', email, ok=True)
     db = get_db()
     user = db.execute('SELECT * FROM users WHERE email = ?', (email,)).fetchone()
     # Always return ok to avoid email enumeration
@@ -732,33 +801,22 @@ def legacy_get(lookup_id):
     return jsonify(iv=row['iv'], ciphertext=row['ciphertext'], updated_at=row['updated_at'])
 
 
-@app.route('/api/sync/<lookup_id>', methods=['PUT'])
-def legacy_put(lookup_id):
-    if not LOOKUP_RE.match(lookup_id):
-        return err('invalid_lookup_id', 'Bad lookup id.', 400)
-    data = request.get_json(silent=True) or {}
-    iv = data.get('iv') or ''
-    ct = data.get('ciphertext') or ''
-    if not iv or not ct or len(ct) > MAX_BLOB_BYTES:
-        return err('invalid_payload', 'Missing or oversized payload.')
-    db = get_db()
-    db.execute(
-        """INSERT INTO legacy_blobs (lookup_id, iv, ciphertext, updated_at, created_at, size)
-           VALUES (?, ?, ?, ?, ?, ?)
-           ON CONFLICT(lookup_id) DO UPDATE SET iv=excluded.iv, ciphertext=excluded.ciphertext, updated_at=excluded.updated_at, size=excluded.size""",
-        (lookup_id, iv, ct, now_ts(), now_ts(), len(ct)),
+# Writes to this path are CLOSED (2026-08-09). The lookup_id is the only
+# credential, it travels in the URL — so it lands in access logs, browser
+# history and referrer headers — and there was no ownership check, meaning
+# anyone who ever saw one could overwrite or destroy that person's cloud copy.
+#
+# Read stays open so anyone still holding a legacy id can recover their data
+# into an account; a read exposes ciphertext they cannot decrypt without the
+# passphrase. Rows untouched for LEGACY_BLOB_TTL_DAYS are swept by purge_expired.
+@app.route('/api/sync/<lookup_id>', methods=['PUT', 'DELETE'])
+def legacy_write_closed(lookup_id):
+    return err(
+        'legacy_sync_closed',
+        'Legacy sync is read-only. Sign in with an account to back up — open the app '
+        'and use "Restore from legacy sync" to bring your old data across.',
+        410,
     )
-    db.commit()
-    return jsonify(updated_at=now_ts())
-
-
-@app.route('/api/sync/<lookup_id>', methods=['DELETE'])
-def legacy_delete(lookup_id):
-    if not LOOKUP_RE.match(lookup_id):
-        return err('invalid_lookup_id', 'Bad lookup id.', 400)
-    get_db().execute('DELETE FROM legacy_blobs WHERE lookup_id = ?', (lookup_id,))
-    get_db().commit()
-    return jsonify(deleted=True)
 
 
 @app.route('/api/sync/<lookup_id>/exists')
@@ -1705,6 +1763,9 @@ def admin_delete_user(user_id):
     db.execute('DELETE FROM sync_blobs WHERE user_id = ?', (user_id,))
     db.execute('DELETE FROM sessions WHERE user_id = ?', (user_id,))
     db.execute('DELETE FROM password_resets WHERE user_id = ?', (user_id,))
+    db.execute('DELETE FROM push_subscriptions WHERE user_id = ?', (user_id,))
+    db.execute('DELETE FROM push_reminders WHERE user_id = ?', (user_id,))
+    db.execute('DELETE FROM auth_attempts WHERE identifier = ?', (u['email'],))
     db.execute('DELETE FROM users WHERE id = ?', (user_id,))
     db.commit()
     _audit('delete_user', user_id, {'email': u['email']})
