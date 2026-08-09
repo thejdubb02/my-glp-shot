@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+# SUPERSEDED 2026-08-09 by scripts/build-social-cards.py. Do not run this: it
+# overwrites the four share cards with an AI-generated hero that carries no brand
+# mark and differs on every run. The two cards it had produced showed two
+# different logos, neither of which was the app icon.
+#
+# Kept only for the Pillow compositing reference. Delete once nothing needs it.
+#
 # Generate the My GLP Shot social-share Open Graph image.
 #
 # Pipeline: Imagen 4 produces a 1280x720 hero illustration with NO text (Imagen
