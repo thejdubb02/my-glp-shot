@@ -1,5 +1,5 @@
 // My GLP Shot service worker — network-first for app shell so updates are picked up on every visit; cache fallback for offline.
-const CACHE = 'mglp-v0.49.0';
+const CACHE = 'mglp-v0.49.1';
 // Without these three the app cannot boot offline at all, so a failure to cache
 // them must fail the install rather than leaving a service worker that claims
 // offline support it can't deliver.

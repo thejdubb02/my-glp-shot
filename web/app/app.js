@@ -9,7 +9,7 @@ const DB_NAME = 'shotclock';
 // v8 bump: 'cycles' store added — opt-in menstrual cycle tracking (period start/end, flow, symptoms).
 // v9 bump: 'medChanges' store added — medication switches as discrete events so charts stay readable across drug changes.
 const DB_VERSION = 9;
-const APP_VERSION = '0.49.0';
+const APP_VERSION = '0.49.1';
 
 // Umami event tracker. Aggregates only — no PII (no email, no IDs). Safe to call before umami loads.
 function track(event, props) {
@@ -900,6 +900,14 @@ function parseDateFlexible(d) {
 // Convert any flexible date input to a canonical local YYYY-MM-DD string.
 // Returns null if unparseable.
 function toCanonicalDate(d) {
+  // A bare YYYY-MM-DD is already a calendar day — it has no timezone to
+  // interpret. Round-tripping it through a timestamp shifts it: anchoring at
+  // local noon then reformatting in a zone 14 hours away (Pacific/Kiritimati,
+  // say) lands on the next day. Return it as-is.
+  if (typeof d === 'string') {
+    const bare = d.trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (bare) return `${bare[1]}-${bare[2]}-${bare[3]}`;
+  }
   const t = parseDateFlexible(d);
   if (!Number.isFinite(t)) return null;
   // Bucket by the user's configured timezone, the same basis todayISODate()
@@ -2225,8 +2233,21 @@ async function smartImport(e) {
 // got right — every renderer downstream then gets a number where it expects one.
 const MAX_TEXT_FIELD = 500;
 
+// Real exports write "7.5", "7.5 mg", "180 lb". They do not write prose, and
+// they certainly do not write markup. Stripping every non-digit was too
+// forgiving: it turned an injected string into a plausible-looking number and
+// imported it as a dose. Match a number with an optional unit, reject the rest.
+const NUMERIC_RE = /^\s*(-?\d+(?:[.,]\d+)?)\s*(mg|mcg|ml|cc|units?|iu|u|lbs?|kgs?|kilos?|pounds?|%)?\s*$/i;
+
 function safeNum(v, { min = -1e9, max = 1e9, dp = 4 } = {}) {
-  const n = typeof v === 'number' ? v : parseFloat(String(v ?? '').replace(/[^\d.\-]/g, ''));
+  let n;
+  if (typeof v === 'number') {
+    n = v;
+  } else {
+    const m = NUMERIC_RE.exec(String(v ?? ''));
+    if (!m) return null;
+    n = parseFloat(m[1].replace(',', '.'));
+  }
   if (!Number.isFinite(n)) return null;
   return Math.min(max, Math.max(min, Number(n.toFixed(dp))));
 }
@@ -2484,8 +2505,10 @@ async function importShotsyCSV(text) {
   }
   if (!confirm(`Import ${dedupedShots.length} shots and ${dedupedWeights.length} weight entries? This will MERGE with existing data.`)) return;
 
-  for (const s of dedupedShots) await dbAdd(STORES.shots, s);
-  for (const w of dedupedWeights) await dbAdd(STORES.weights, w);
+  // A CSV is untrusted input like any other file, so it goes through the same
+  // door as the JSON and LLM paths rather than straight into the database.
+  for (const s of dedupedShots) { const c = sanitizeShot(s); if (c) await dbAdd(STORES.shots, c); }
+  for (const w of dedupedWeights) { const c = sanitizeWeight(w); if (c) await dbAdd(STORES.weights, c); }
   await ensurePersisted();
   await renderShots();
   await renderWeights();
