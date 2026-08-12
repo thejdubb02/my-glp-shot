@@ -19,6 +19,7 @@ services:
       - ./api.env
     networks:
       - mgs-net
+      - litellm
     read_only: true
     tmpfs:
       - /tmp
@@ -35,6 +36,11 @@ services:
 networks:
   mgs-net:
     driver: bridge
+  # The LiteLLM gateway's own compose network. It listens on 127.0.0.1:4000 on the
+  # host, so there is no host-IP route into it from a container — joining its network
+  # and resolving `litellm-gateway` by name is the only path.
+  litellm:
+    external: true
 
 volumes:
   mgs-data:

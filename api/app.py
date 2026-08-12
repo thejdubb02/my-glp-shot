@@ -43,7 +43,11 @@ STRIPE_PRICE_MONTHLY_TEST = os.environ.get('STRIPE_PRICE_MONTHLY_TEST', '')
 STRIPE_PRICE_YEARLY_TEST = os.environ.get('STRIPE_PRICE_YEARLY_TEST', '')
 # Admin bearer token. If unset, admin endpoints are disabled.
 MGS_ADMIN_TOKEN = os.environ.get('MGS_ADMIN_TOKEN', '')
-GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '')
+# Smart Import goes through the LiteLLM gateway, not Google directly: the gateway
+# holds the spend cap, the fallback chain, and the only key that appears in the
+# fleet's registry. Google's own API is deliberately no longer reachable from here.
+LITELLM_BASE_URL = os.environ.get('LITELLM_BASE_URL', 'http://litellm-gateway:4000')
+LITELLM_API_KEY = os.environ.get('LITELLM_API_KEY', '')
 # Web Push (VAPID). Generate once with scripts/gen-vapid-keys.py and put both in
 # docker/api.env. Without them the push endpoints report unavailable and the
 # client falls back to in-page timers.
@@ -2002,7 +2006,7 @@ def import_parse():
     user = require_user()
     if not user:
         return err('unauthorized', 'Not signed in.', 401)
-    if not GEMINI_API_KEY:
+    if not LITELLM_API_KEY:
         return err('llm_unavailable', 'LLM import is not configured on this server.', 503)
     data = request.get_json(silent=True) or {}
     text = (data.get('text') or '')
@@ -2033,33 +2037,33 @@ def import_parse():
     all_shots, all_weights = [], []
     for idx, chunk in enumerate(chunks):
         body = {
-            'contents': [{'parts': [{'text': IMPORT_PROMPT + chunk}]}],
-            'generationConfig': {
-                'temperature': 0.0,
-                'maxOutputTokens': 32768,
-                'responseMimeType': 'application/json',
-            },
+            'model': 'gemini-2.5-flash',
+            'messages': [{'role': 'user', 'content': IMPORT_PROMPT + chunk}],
+            'temperature': 0.0,
+            'max_tokens': 32768,
+            'response_format': {'type': 'json_object'},
         }
         try:
             # The key goes in a header, not the query string: URLs end up in
             # nginx access logs, proxy logs and error traces.
             r = _r.post(
-                'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent',
-                headers={'x-goog-api-key': GEMINI_API_KEY, 'Content-Type': 'application/json'},
+                f'{LITELLM_BASE_URL}/v1/chat/completions',
+                headers={'Authorization': f'Bearer {LITELLM_API_KEY}',
+                         'Content-Type': 'application/json'},
                 json=body, timeout=150,
             )
         except Exception as e:
-            app.logger.exception('Gemini call failed (chunk %d/%d): %s', idx + 1, len(chunks), e)
+            app.logger.exception('LLM call failed (chunk %d/%d): %s', idx + 1, len(chunks), e)
             return err('llm_error', f'AI parser timed out on chunk {idx + 1}/{len(chunks)}. Try a smaller file.', 502)
         if r.status_code != 200:
-            app.logger.warning('Gemini %s (chunk %d/%d): %s', r.status_code, idx + 1, len(chunks), r.text[:300])
+            app.logger.warning('LLM %s (chunk %d/%d): %s', r.status_code, idx + 1, len(chunks), r.text[:300])
             return err('llm_error', f'AI parser returned {r.status_code} on chunk {idx + 1}/{len(chunks)}.', 502)
         try:
             out = r.json()
-            raw = out['candidates'][0]['content']['parts'][0]['text']
+            raw = out['choices'][0]['message']['content']
             parsed = json.loads(raw)
         except (KeyError, IndexError, ValueError, TypeError) as e:
-            app.logger.warning('Gemini malformed (chunk %d/%d): %s — %s', idx + 1, len(chunks), e, r.text[:300])
+            app.logger.warning('LLM malformed (chunk %d/%d): %s — %s', idx + 1, len(chunks), e, r.text[:300])
             # Don't fail the whole import on one bad chunk — log + skip.
             continue
         shots = parsed.get('shots') if isinstance(parsed, dict) else None
