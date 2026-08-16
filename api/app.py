@@ -70,7 +70,11 @@ UMAMI_WEBSITE_ID_LANDING = os.environ.get('UMAMI_WEBSITE_ID_LANDING', '')
 UMAMI_WEBSITE_ID_PWA = os.environ.get('UMAMI_WEBSITE_ID_PWA', '')
 # Mattermost incoming webhook for operator notifications (new signups, first
 # paid conversion). Optional — unset means the notifier is a silent no-op.
+# The target channel is shared with other apps' signup feeds, so every message
+# leads with this emoji + name to say which app it came from.
 MATTERMOST_WEBHOOK_URL = os.environ.get('MATTERMOST_WEBHOOK_URL', '')
+MGS_EMOJI = '💉'
+MGS_APP_NAME = 'My GLP Shot'
 if STRIPE_API_KEY:
     stripe.api_key = STRIPE_API_KEY
 
@@ -531,13 +535,23 @@ def signup():
     user = db.execute('SELECT * FROM users WHERE id = ?', (user_id,)).fetchone()
 
     try:
-        total = db.execute('SELECT COUNT(*) AS c FROM users').fetchone()['c']
-        notify_mattermost(
-            f"🎉 **New My GLP Shot signup** — `{email}`\n"
-            f"Account #{user_id} · {TRIAL_DAYS}-day trial runs to "
-            f"{datetime.fromtimestamp(trial_ends, timezone.utc).strftime('%Y-%m-%d')} · "
-            f"{total} accounts total."
-        )
+        # Shares the #app-signups channel with Daily Deck, so the shape matches
+        # its lines and the leading emoji + app name is what tells them apart.
+        # Admin accounts are excluded from both counts, same as /api/admin/metrics.
+        midnight = int(datetime.now(timezone.utc).replace(
+            hour=0, minute=0, second=0, microsecond=0).timestamp())
+        today = db.execute(
+            'SELECT COUNT(*) AS c FROM users WHERE created_at >= ? AND COALESCE(is_admin, 0) = 0',
+            (midnight,),
+        ).fetchone()['c']
+        total = db.execute(
+            'SELECT COUNT(*) AS c FROM users WHERE COALESCE(is_admin, 0) = 0'
+        ).fetchone()['c']
+        if not is_admin:
+            notify_mattermost(
+                f"{MGS_EMOJI} **{MGS_APP_NAME}** · new signup — {email}\n"
+                f"{today} today · {total} total"
+            )
     except Exception as e:
         # A notification problem is never a reason to fail a signup.
         app.logger.warning('signup notify failed: %s', e)
@@ -1056,7 +1070,9 @@ def _apply_subscription(sub):
         # Only on the transition into paid — renewals fire this same webhook every
         # billing period and shouldn't ping.
         if new_status == 'premium' and not was_paid:
-            notify_mattermost(f"💳 **My GLP Shot — paid subscription** — `{user['email']}` (account #{user['id']}).")
+            notify_mattermost(
+                f"{MGS_EMOJI} **{MGS_APP_NAME}** · 💳 paid subscription — {user['email']}"
+            )
     elif status in ('canceled', 'unpaid', 'incomplete_expired'):
         # Don't yank premium mid-period — keep premium_until, just flip status when it lapses.
         db.execute(
