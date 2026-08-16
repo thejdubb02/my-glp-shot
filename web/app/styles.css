@@ -280,6 +280,25 @@ canvas{width:100% !important;height:auto !important;max-height:200px}
 .foodnoise-logged-graphic{font-size:2.2rem;font-weight:700;color:var(--bronze-dk);font-variant-numeric:tabular-nums;display:flex;align-items:baseline;gap:2px}
 .foodnoise-logged-suffix{font-size:1rem;color:var(--muted);font-weight:500}
 
+/* Catch-up (fill in a past day) */
+.catchup-link-row{margin:2px 14px 0;text-align:center}
+.catchup-modal{max-width:460px}
+.catchup-modal form{max-height:86vh;overflow-y:auto}
+.catchup-section{margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}
+.catchup-section-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+.catchup-section .mood-picker,.catchup-section .foodnoise-slider-row{margin-top:6px}
+.catchup-section .foodnoise-readout{font-size:1.1rem;margin-top:6px}
+.catchup-status:empty{display:none}
+.catchup-status{margin-top:10px;color:var(--bronze-dk)}
+.catchup-clear{color:var(--muted)}
+/* Trend bars double as the edit handle for their day. */
+.mood-trend-bars .mood-bar{cursor:pointer}
+
+/* Toast — sits above the bottom nav, never blocks input. */
+.app-toast{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom) + 78px);transform:translate(-50%,12px);z-index:120;max-width:88vw;padding:11px 18px;border-radius:999px;background:var(--ink);color:var(--surface);font-size:.92rem;font-weight:600;text-align:center;box-shadow:0 10px 30px rgba(0,0,0,.35);opacity:0;pointer-events:none;transition:opacity .18s ease,transform .18s ease}
+.app-toast.show{opacity:1;transform:translate(-50%,0)}
+@media (prefers-reduced-motion:reduce){.app-toast{transition:none}}
+
 /* Guidance (titration & missed-dose reference) */
 .guidance-hint{margin:8px 14px 0;padding:10px 14px;background:rgba(199,145,91,.1);border:1px solid var(--bronze-dk);border-radius:10px;font-size:.9rem}
 .guidance-hint a{color:var(--bronze-dk);font-weight:600;text-decoration:none}

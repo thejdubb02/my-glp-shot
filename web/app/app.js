@@ -9,7 +9,7 @@ const DB_NAME = 'shotclock';
 // v8 bump: 'cycles' store added — opt-in menstrual cycle tracking (period start/end, flow, symptoms).
 // v9 bump: 'medChanges' store added — medication switches as discrete events so charts stay readable across drug changes.
 const DB_VERSION = 9;
-const APP_VERSION = '0.49.1';
+const APP_VERSION = '0.50.0';
 
 // Umami event tracker. Aggregates only — no PII (no email, no IDs). Safe to call before umami loads.
 function track(event, props) {
@@ -1682,12 +1682,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   });
 
-  // Mood picker
-  $$('.mood-btn').forEach(btn => btn.addEventListener('click', async () => {
+  // Mood picker. Scoped to the home card — the catch-up dialog reuses .mood-btn
+  // for its styling and must not inherit the today-only click handler.
+  $$('#mood-picker .mood-btn').forEach(btn => btn.addEventListener('click', async () => {
     const v = parseInt(btn.dataset.mood, 10);
     await saveMood(todayISODate(), v);
     delete $('#mood-card').dataset.editing;
     await renderMood();
+    markSyncDirty();
     track('mood_logged', { value: v });
   }));
   $('#mood-change').addEventListener('click', (e) => {
@@ -1774,6 +1776,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupAppetiteUI();
   await renderFoodNoise();
   setupFoodNoiseUI();
+  setupCatchupUI();
   setupCycleUI();
   await renderCycleCard();
   setupMedChangeUI();
@@ -3596,7 +3599,7 @@ async function renderAppetite() {
   const logged = $('#appetite-logged');
   const saved = $('#appetite-saved');
   const heading = $('#appetite-heading');
-  $$('.appetite-btn').forEach(b => b.classList.toggle('selected', todayAppetite && +b.dataset.appetite === todayAppetite.value));
+  $$('#appetite-picker .appetite-btn').forEach(b => b.classList.toggle('selected', todayAppetite && +b.dataset.appetite === todayAppetite.value));
   if (todayAppetite && !card.dataset.editing) {
     picker.classList.add('hidden');
     logged.classList.remove('hidden');
@@ -3640,9 +3643,9 @@ async function renderAppetiteTrend(appetites) {
     if (v) {
       // Color by suppression: 1-2 = strong (good for GLP-1) = teal, 3 = mid = grey, 4-5 = elevated = warning
       const cls = v <= 2 ? 'good' : v === 3 ? 'mid' : 'high';
-      bars.push(`<div class="mood-bar ${cls}" style="height:${v * 18}%" title="${key}: ${APPETITE_LABELS[v]}"></div>`);
+      bars.push(`<div class="mood-bar ${cls}" data-date="${key}" style="height:${v * 18}%" title="${key}: ${APPETITE_LABELS[v]} — tap to edit"></div>`);
     } else {
-      bars.push('<div class="mood-bar empty" title="' + key + ': not logged"></div>');
+      bars.push(`<div class="mood-bar empty" data-date="${key}" title="${key}: not logged — tap to fill in"></div>`);
     }
   }
   wrap.innerHTML = bars.join('');
@@ -3652,7 +3655,9 @@ async function renderAppetiteTrend(appetites) {
 }
 
 function setupAppetiteUI() {
-  $$('.appetite-btn').forEach(btn => btn.addEventListener('click', async () => {
+  // Scoped to the home card — see the mood picker note; the catch-up dialog
+  // reuses .appetite-btn purely for styling.
+  $$('#appetite-picker .appetite-btn').forEach(btn => btn.addEventListener('click', async () => {
     const v = parseInt(btn.dataset.appetite, 10);
     await saveAppetite(todayISODate(), v);
     delete $('#appetite-card').dataset.editing;
@@ -3748,9 +3753,9 @@ async function renderFoodNoiseTrend(entries) {
     if (v) {
       // Color by quietness: 1-3 = good (quiet), 4-6 = mid, 7-10 = high (loud)
       const cls = v <= 3 ? 'good' : v <= 6 ? 'mid' : 'high';
-      bars.push(`<div class="mood-bar ${cls}" style="height:${v * 9}%" title="${key}: ${v}/10 — ${foodNoiseDescriptor(v)}"></div>`);
+      bars.push(`<div class="mood-bar ${cls}" data-date="${key}" style="height:${v * 9}%" title="${key}: ${v}/10 — ${foodNoiseDescriptor(v)} — tap to edit"></div>`);
     } else {
-      bars.push('<div class="mood-bar empty" title="' + key + ': not logged"></div>');
+      bars.push(`<div class="mood-bar empty" data-date="${key}" title="${key}: not logged — tap to fill in"></div>`);
     }
   }
   wrap.innerHTML = bars.join('');
@@ -3783,6 +3788,191 @@ function setupFoodNoiseUI() {
     $('#foodnoise-card').dataset.editing = '1';
     renderFoodNoise();
   });
+}
+
+// ---------- Catch-up: mood / appetite / food noise for a past day ----------
+// The three home cards are today-only on purpose — one tap, no date picker, so
+// the daily check-in stays a two-second job. This dialog is the escape hatch for
+// the day you forgot, and doubles as the edit path for a day you got wrong.
+// Reached from the home-tab link or by tapping any bar in the 30-day trend strips.
+const CATCHUP_MAX_AGE_DAYS = 730;
+
+// Pure day-key arithmetic. Both ends are wall-clock day keys, so this deliberately
+// works in UTC and never touches the user's timezone — the anchor comes from
+// todayISODate(), which is already tz-aware.
+function shiftISODate(key, deltaDays) {
+  const [y, m, d] = (key || '').split('-').map(Number);
+  if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) return key;
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  dt.setUTCDate(dt.getUTCDate() + deltaDays);
+  return dt.toISOString().slice(0, 10);
+}
+
+async function deleteMood(date)      { return withStore(STORES.moods, 'readwrite', s => s.delete(date)); }
+async function deleteAppetite(date)  { return withStore('appetites', 'readwrite', s => s.delete(date)); }
+async function deleteFoodNoise(date) { return withStore('foodNoise', 'readwrite', s => s.delete(date)); }
+
+// null = "leave this one alone"; a number = write it. Saving only touches the
+// stores the user actually set, so filling in mood never wipes an existing
+// appetite entry for the same day.
+const catchupDraft = { mood: null, appetite: null, foodNoise: null };
+
+function catchupPaint() {
+  $$('#catchup-mood-picker .mood-btn').forEach(b =>
+    b.classList.toggle('selected', +b.dataset.mood === catchupDraft.mood));
+  $$('#catchup-appetite-picker .appetite-btn').forEach(b =>
+    b.classList.toggle('selected', +b.dataset.appetite === catchupDraft.appetite));
+
+  const moodState = $('#catchup-mood-state');
+  if (moodState) moodState.textContent = catchupDraft.mood ? MOOD_LABELS[catchupDraft.mood] : 'not logged';
+  const appState = $('#catchup-appetite-state');
+  if (appState) appState.textContent = catchupDraft.appetite ? APPETITE_LABELS[catchupDraft.appetite] : 'not logged';
+
+  const fnState = $('#catchup-foodnoise-state');
+  const fnVal = $('#catchup-foodnoise-value');
+  const fnDesc = $('#catchup-foodnoise-descriptor');
+  const slider = $('#catchup-foodnoise');
+  if (catchupDraft.foodNoise) {
+    if (slider) slider.value = String(catchupDraft.foodNoise);
+    if (fnVal) fnVal.textContent = String(catchupDraft.foodNoise);
+    if (fnDesc) fnDesc.textContent = foodNoiseDescriptor(catchupDraft.foodNoise);
+    if (fnState) fnState.textContent = `${catchupDraft.foodNoise}/10`;
+  } else {
+    if (slider) slider.value = '5';
+    if (fnVal) fnVal.textContent = '—';
+    if (fnDesc) fnDesc.textContent = 'drag to set';
+    if (fnState) fnState.textContent = 'not logged';
+  }
+}
+
+// Pull whatever is already stored for `date` into the draft, so the dialog opens
+// as an edit of that day rather than a blank form.
+async function catchupLoadDay(date) {
+  const [moods, appetites, foodNoise] = await Promise.all([
+    getMoodsSorted(), getAppetitesSorted(), getFoodNoiseSorted(),
+  ]);
+  catchupDraft.mood = (moods.find(m => m.date === date) || {}).value || null;
+  catchupDraft.appetite = (appetites.find(a => a.date === date) || {}).value || null;
+  catchupDraft.foodNoise = (foodNoise.find(f => f.date === date) || {}).value || null;
+  catchupPaint();
+}
+
+async function openCatchup(date) {
+  const dlg = $('#catchup-dialog');
+  if (!dlg) return;
+  const today = todayISODate();
+  const input = $('#catchup-date');
+  input.max = today;
+  input.min = shiftISODate(today, -CATCHUP_MAX_AGE_DAYS);
+  input.value = date && date <= today ? date : shiftISODate(today, -1);
+  $('#catchup-status').textContent = '';
+  await catchupLoadDay(input.value);
+  dlg.showModal();
+}
+
+function setupCatchupUI() {
+  const dlg = $('#catchup-dialog');
+  if (!dlg) return;
+
+  $('#catchup-open')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    openCatchup(shiftISODate(todayISODate(), -1));
+  });
+
+  // Every bar in the three trend strips is a handle on that day.
+  ['#mood-trend-bars', '#appetite-trend-bars', '#foodnoise-trend-bars'].forEach(sel => {
+    const wrap = $(sel);
+    if (!wrap) return;
+    wrap.addEventListener('click', (e) => {
+      const bar = e.target.closest('.mood-bar');
+      if (bar && bar.dataset.date) openCatchup(bar.dataset.date);
+    });
+  });
+
+  $('#catchup-date').addEventListener('change', async (e) => {
+    $('#catchup-status').textContent = '';
+    await catchupLoadDay(e.target.value);
+  });
+
+  $$('#catchup-mood-picker .mood-btn').forEach(btn => btn.addEventListener('click', () => {
+    const v = parseInt(btn.dataset.mood, 10);
+    catchupDraft.mood = catchupDraft.mood === v ? null : v;  // tap again to unset
+    catchupPaint();
+  }));
+  $$('#catchup-appetite-picker .appetite-btn').forEach(btn => btn.addEventListener('click', () => {
+    const v = parseInt(btn.dataset.appetite, 10);
+    catchupDraft.appetite = catchupDraft.appetite === v ? null : v;
+    catchupPaint();
+  }));
+  $('#catchup-foodnoise').addEventListener('input', (e) => {
+    catchupDraft.foodNoise = parseInt(e.target.value, 10);
+    catchupPaint();
+  });
+
+  $('#catchup-cancel').addEventListener('click', () => dlg.close());
+
+  $('#catchup-clear').addEventListener('click', async () => {
+    const date = $('#catchup-date').value;
+    if (!date) return;
+    if (!confirm(`Remove the mood, appetite and food-noise entries for ${date}?`)) return;
+    await Promise.all([deleteMood(date), deleteAppetite(date), deleteFoodNoise(date)]);
+    catchupDraft.mood = catchupDraft.appetite = catchupDraft.foodNoise = null;
+    catchupPaint();
+    await refreshDailyCards();
+    markSyncDirty();
+    dlg.close();
+    toast(`Cleared ${date}`);
+    track('catchup_cleared', {});
+  });
+
+  $('#catchup-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const status = $('#catchup-status');
+    const date = $('#catchup-date').value;
+    const today = todayISODate();
+    if (!date) { status.textContent = 'Pick a day first.'; return; }
+    if (date > today) { status.textContent = "That day hasn't happened yet."; return; }
+    if (date < shiftISODate(today, -CATCHUP_MAX_AGE_DAYS)) {
+      status.textContent = 'That day is too far back.';
+      return;
+    }
+    if (!catchupDraft.mood && !catchupDraft.appetite && !catchupDraft.foodNoise) {
+      status.textContent = 'Nothing to save — set at least one of the three.';
+      return;
+    }
+    const writes = [];
+    if (catchupDraft.mood) writes.push(saveMood(date, catchupDraft.mood));
+    if (catchupDraft.appetite) writes.push(saveAppetite(date, catchupDraft.appetite));
+    if (catchupDraft.foodNoise) writes.push(saveFoodNoise(date, catchupDraft.foodNoise));
+    try {
+      await Promise.all(writes);
+      await ensurePersisted();
+    } catch (ex) {
+      status.textContent = 'Could not save: ' + (ex && ex.message ? ex.message : 'unknown error');
+      return;
+    }
+    await refreshDailyCards();
+    markSyncDirty();
+    dlg.close();
+    toast(date === today ? 'Saved for today' : `Saved for ${date}`);
+    track('catchup_saved', {
+      backdated: date !== today,
+      fields: [
+        catchupDraft.mood ? 'mood' : null,
+        catchupDraft.appetite ? 'appetite' : null,
+        catchupDraft.foodNoise ? 'foodNoise' : null,
+      ].filter(Boolean).join('+'),
+    });
+  });
+}
+
+// Re-render the three daily cards and their trend strips together — a catch-up
+// write can land on today (which changes the cards) or on any past day (which
+// only changes the strips), and the caller shouldn't have to know which.
+async function refreshDailyCards() {
+  try { await renderMood(); } catch (_) {}
+  try { await renderAppetite(); } catch (_) {}
+  try { await renderFoodNoise(); } catch (_) {}
 }
 
 // ---------- Cycle tracking (opt-in) ----------
@@ -4913,7 +5103,7 @@ async function renderMood() {
   const today = todayISODate();
   const moods = await getMoodsSorted();
   const todayMood = moods.find(m => m.date === today);
-  $$('.mood-btn').forEach(b => b.classList.toggle('selected', todayMood && +b.dataset.mood === todayMood.value));
+  $$('#mood-picker .mood-btn').forEach(b => b.classList.toggle('selected', todayMood && +b.dataset.mood === todayMood.value));
   // Collapse the picker once today is logged. User can tap "change" to bring it back.
   const card = $('#mood-card');
   const picker = $('#mood-picker');
@@ -4968,8 +5158,8 @@ async function renderMoodTrend(moods) {
     bars.push({ iso, v });
   }
   const html = bars.map(b => {
-    if (b.v == null) return `<div class="mood-bar empty" title="${b.iso}: not logged"></div>`;
-    return `<div class="mood-bar v${b.v}" style="height:${20 + b.v * 16}%" title="${b.iso}: ${MOOD_LABELS[b.v]}"></div>`;
+    if (b.v == null) return `<div class="mood-bar empty" data-date="${b.iso}" title="${b.iso}: not logged — tap to fill in"></div>`;
+    return `<div class="mood-bar v${b.v}" data-date="${b.iso}" style="height:${20 + b.v * 16}%" title="${b.iso}: ${MOOD_LABELS[b.v]} — tap to edit"></div>`;
   }).join('');
   $('#mood-trend-bars').innerHTML = html;
   const avg = count ? (sum / count) : null;

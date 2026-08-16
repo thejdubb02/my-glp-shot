@@ -43,6 +43,13 @@ STRIPE_PRICE_MONTHLY_TEST = os.environ.get('STRIPE_PRICE_MONTHLY_TEST', '')
 STRIPE_PRICE_YEARLY_TEST = os.environ.get('STRIPE_PRICE_YEARLY_TEST', '')
 # Admin bearer token. If unset, admin endpoints are disabled.
 MGS_ADMIN_TOKEN = os.environ.get('MGS_ADMIN_TOKEN', '')
+# Addresses that get is_admin=1 the moment they sign up. The operator's own
+# account is otherwise a chicken-and-egg problem: the in-app admin view needs a
+# signed-in admin, and promoting one by hand means a shell on the box every time.
+# Server-side env only — never anything a request can influence.
+MGS_ADMIN_EMAILS = {
+    e.strip().lower() for e in os.environ.get('MGS_ADMIN_EMAILS', '').split(',') if e.strip()
+}
 # Smart Import goes through the LiteLLM gateway, not Google directly: the gateway
 # holds the spend cap, the fallback chain, and the only key that appears in the
 # fleet's registry. Google's own API is deliberately no longer reachable from here.
@@ -61,6 +68,9 @@ UMAMI_USERNAME = os.environ.get('UMAMI_USERNAME', '')
 UMAMI_PASSWORD = os.environ.get('UMAMI_PASSWORD', '')
 UMAMI_WEBSITE_ID_LANDING = os.environ.get('UMAMI_WEBSITE_ID_LANDING', '')
 UMAMI_WEBSITE_ID_PWA = os.environ.get('UMAMI_WEBSITE_ID_PWA', '')
+# Mattermost incoming webhook for operator notifications (new signups, first
+# paid conversion). Optional — unset means the notifier is a silent no-op.
+MATTERMOST_WEBHOOK_URL = os.environ.get('MATTERMOST_WEBHOOK_URL', '')
 if STRIPE_API_KEY:
     stripe.api_key = STRIPE_API_KEY
 
@@ -404,6 +414,32 @@ def send_email(to, subject, html, text=None):
         return False
 
 
+def notify_mattermost(text):
+    """Best-effort operator ping to Mattermost. No-op if unset.
+
+    Fired on a daemon thread: a slow or down Mattermost must never add latency to
+    a signup, and must never fail one. Nothing here is retried — a missed
+    notification is a missed notification, not a reason to hold up a user.
+    """
+    if not MATTERMOST_WEBHOOK_URL:
+        return False
+
+    def _post():
+        try:
+            import requests as _r
+            _r.post(MATTERMOST_WEBHOOK_URL, json={'text': text}, timeout=6)
+        except Exception as e:
+            app.logger.warning('mattermost notify failed: %s', e)
+
+    try:
+        import threading
+        threading.Thread(target=_post, daemon=True).start()
+        return True
+    except Exception as e:
+        app.logger.warning('mattermost notify could not start: %s', e)
+        return False
+
+
 # ---------- Retention ----------
 # Expired rows used to accumulate forever: dead sessions, spent reset tokens,
 # lapsed share links and every Stripe event ever seen. That is both unbounded
@@ -478,11 +514,12 @@ def signup():
 
     pw_hash = bcrypt.hashpw(auth_token.encode('utf-8'), bcrypt.gensalt(rounds=12)).decode()
     trial_ends = now_ts() + TRIAL_DAYS * 86400
+    is_admin = 1 if email in MGS_ADMIN_EMAILS else 0
     try:
         cur = db.execute(
-            """INSERT INTO users (email, password_hash, created_at, subscription_status, trial_ends_at)
-               VALUES (?, ?, ?, 'trial', ?)""",
-            (email, pw_hash, now_ts(), trial_ends),
+            """INSERT INTO users (email, password_hash, created_at, subscription_status, trial_ends_at, is_admin)
+               VALUES (?, ?, ?, 'trial', ?, ?)""",
+            (email, pw_hash, now_ts(), trial_ends, is_admin),
         )
     except sqlite3.IntegrityError:
         # Two signups for the same address in flight at once — the UNIQUE index is
@@ -492,6 +529,19 @@ def signup():
     user_id = cur.lastrowid
     db.commit()
     user = db.execute('SELECT * FROM users WHERE id = ?', (user_id,)).fetchone()
+
+    try:
+        total = db.execute('SELECT COUNT(*) AS c FROM users').fetchone()['c']
+        notify_mattermost(
+            f"🎉 **New My GLP Shot signup** — `{email}`\n"
+            f"Account #{user_id} · {TRIAL_DAYS}-day trial runs to "
+            f"{datetime.fromtimestamp(trial_ends, timezone.utc).strftime('%Y-%m-%d')} · "
+            f"{total} accounts total."
+        )
+    except Exception as e:
+        # A notification problem is never a reason to fail a signup.
+        app.logger.warning('signup notify failed: %s', e)
+
     sess_token = _create_session(user_id)
     resp = make_response(jsonify(user=public_user(user), token=sess_token))
     _set_session_cookie(resp, sess_token)
@@ -993,6 +1043,7 @@ def _apply_subscription(sub):
         new_status = 'premium' if status == 'active' else 'trial'
         # premium_until is "paid through" — for trialing, use trial_end; for active, current_period_end.
         until = trial_end if status == 'trialing' else current_period_end
+        was_paid = (user['subscription_status'] or '').lower() == 'premium'
         db.execute(
             """UPDATE users
                SET subscription_status = ?,
@@ -1002,6 +1053,10 @@ def _apply_subscription(sub):
                WHERE id = ?""",
             (new_status, until, trial_end, sub_id, user['id']),
         )
+        # Only on the transition into paid — renewals fire this same webhook every
+        # billing period and shouldn't ping.
+        if new_status == 'premium' and not was_paid:
+            notify_mattermost(f"💳 **My GLP Shot — paid subscription** — `{user['email']}` (account #{user['id']}).")
     elif status in ('canceled', 'unpaid', 'incomplete_expired'):
         # Don't yank premium mid-period — keep premium_until, just flip status when it lapses.
         db.execute(
