@@ -657,3 +657,34 @@ body.tab-more #view-home > [data-tab]:not([data-tab="more"]){display:none}
 #view-admin .sub-header{display:flex;align-items:center;gap:8px}
 #view-admin .sub-header h1{flex:1;margin:0}
 #admin-refresh{font-size:1.1rem;line-height:1;padding:6px 10px;border-radius:8px}
+
+/* ---------- Daily notes ---------- */
+/* Visually hidden but read by screen readers — the notes search has a visible
+   placeholder but needs a real label. */
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+
+.note-text{width:100%;box-sizing:border-box;margin:6px 0 0;padding:10px 12px;font:inherit;font-size:.95rem;line-height:1.5;color:var(--text);background:var(--surface-alt);border:1px solid var(--line);border-radius:10px;resize:vertical;min-height:72px;transition:border-color .15s,box-shadow .15s}
+.note-text:focus{outline:none;border-color:var(--bronze);box-shadow:0 0 0 3px rgba(199,145,91,.16)}
+.note-text::placeholder{color:var(--muted);opacity:.8}
+.note-foot{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-top:6px}
+.note-hint{margin:0;flex:1}
+.note-count{font-variant-numeric:tabular-nums;white-space:nowrap;opacity:.65}
+
+/* A day with a note gets a dot under its bar on every trend strip, so the
+   context is discoverable from the chart rather than only from the list. */
+.mood-trend-bars{padding-bottom:12px}
+.mood-bar{position:relative}
+.mood-bar.has-note::after{content:"";position:absolute;bottom:-7px;left:50%;transform:translateX(-50%);width:4px;height:4px;border-radius:50%;background:var(--bronze-dk)}
+.mood-bar.empty.has-note::after{background:var(--muted);opacity:.9}
+
+.note-search-label{display:block;margin:8px 0 0}
+.note-search{width:100%;box-sizing:border-box;margin:0;padding:8px 12px;font:inherit;font-size:.9rem;color:var(--text);background:var(--surface-alt);border:1px solid var(--line);border-radius:999px}
+.note-search:focus{outline:none;border-color:var(--bronze)}
+.note-journal{display:flex;flex-direction:column;gap:8px;margin:10px 0 6px;max-height:520px;overflow-y:auto}
+.note-entry{display:block;width:100%;text-align:left;background:var(--surface-alt);border:1px solid var(--line);border-radius:10px;padding:10px 12px;cursor:pointer;font:inherit;color:var(--text);transition:border-color .15s,transform .1s}
+.note-entry:hover{border-color:var(--bronze);transform:translateY(-1px)}
+.note-entry-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:4px;font-size:.92rem}
+.note-mood{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+/* Notes are free text and often multi-line — preserve the breaks the user typed
+   rather than collapsing their paragraphs into one run-on line. */
+.note-entry-text{font-size:.88rem;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}

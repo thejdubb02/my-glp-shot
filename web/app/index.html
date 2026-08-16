@@ -19,7 +19,7 @@
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="icon" type="image/png" sizes="512x512" href="icons/icon-512.png">
 <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png">
-<link rel="stylesheet" href="styles.css?v=412">
+<link rel="stylesheet" href="styles.css?v=413">
 <script>
 (function(){
   // Apply saved theme synchronously to avoid flash. Settings live in IndexedDB; theme also mirrored to localStorage for fast read.
@@ -251,6 +251,15 @@
     <p class="muted small foodnoise-hint">"Food noise" = the mental chatter about food (intrusive thoughts, food obsession). Distinct from physical hunger/appetite.</p>
   </section>
 
+  <section class="card note-card" data-tab="home" id="note-card">
+    <div class="card-head"><h2 id="note-heading">Anything worth remembering about today? <button class="info-btn" type="button" data-info="daily-note" aria-label="About this">i</button></h2><span id="note-saved" class="mood-saved muted small"></span></div>
+    <textarea id="note-text" class="note-text" rows="3" placeholder="e.g. house hunting all week — stressed, but not about food"></textarea>
+    <div class="note-foot">
+      <p class="muted small note-hint">Saves as you type. The numbers above say what kind of day it was; this says why.</p>
+      <span id="note-count" class="muted small note-count">0/2000</span>
+    </div>
+  </section>
+
   <p class="catchup-link-row muted small" data-tab="home">Missed a day? <a href="#" id="catchup-open" class="link">Fill in a past day</a></p>
 
   <section class="card" data-tab="home">
@@ -414,7 +423,16 @@
   <section id="mood-trend-card" class="card hidden" data-tab="insights">
     <div class="card-head"><h2>Mood trend <button class="info-btn" type="button" data-info="mood-trend" aria-label="About this">i</button></h2><span id="mood-trend-summary" class="muted small"></span></div>
     <div id="mood-trend-bars" class="mood-trend-bars"></div>
-    <p class="muted small" id="mood-trend-hint">Each bar is one day. Taller = better. Tap any bar to fill in or change that day.</p>
+    <p class="muted small" id="mood-trend-hint">Each bar is one day. Taller = better. A dot underneath means you wrote a note that day. Tap any bar to fill in or change that day.</p>
+  </section>
+
+  <section id="note-journal-card" class="card hidden" data-tab="insights">
+    <div class="card-head"><h2>Notes <button class="info-btn" type="button" data-info="daily-note" aria-label="About this">i</button></h2><span id="note-journal-summary" class="muted small"></span></div>
+    <label class="note-search-label"><span class="sr-only">Search your notes</span>
+      <input id="note-search" type="search" class="note-search" placeholder="Search your notes…" autocomplete="off">
+    </label>
+    <div id="note-journal" class="note-journal"></div>
+    <p class="muted small">Tap any note to edit that day.</p>
   </section>
 
 <section class="card" data-tab="insights">
@@ -908,6 +926,7 @@
       <label class="check"><input type="checkbox" data-section="labs" checked> Labs</label>
       <label class="check"><input type="checkbox" data-section="moods"> Mood log</label>
       <label class="check"><input type="checkbox" data-section="appetites"> Appetite log</label>
+      <label class="check"><input type="checkbox" data-section="notes"> Daily notes <span class="muted small">— your own words about each day</span></label>
       <label class="check"><input type="checkbox" data-section="supplies"> Pens & vials</label>
       <label class="check"><input type="checkbox" data-section="expenses"> Spending</label>
     </fieldset>
@@ -944,6 +963,7 @@
       <label class="check"><input type="checkbox" data-pdf-section="labs" checked> Labs</label>
       <label class="check"><input type="checkbox" data-pdf-section="moods"> Mood log</label>
       <label class="check"><input type="checkbox" data-pdf-section="appetites"> Appetite log</label>
+      <label class="check"><input type="checkbox" data-pdf-section="notes"> Daily notes <span class="muted small">— your own words about each day</span></label>
       <label class="check"><input type="checkbox" data-pdf-section="sideEffects" checked> Side-effect summary</label>
     </fieldset>
     <div class="modal-actions">
@@ -1118,6 +1138,11 @@
       <div class="foodnoise-readout"><span id="catchup-foodnoise-value">—</span><span class="muted small">/10</span> · <span id="catchup-foodnoise-descriptor" class="muted small">drag to set</span></div>
     </div>
 
+    <div class="catchup-section">
+      <div class="catchup-section-head"><strong>Note</strong><span id="catchup-note-state" class="muted small">not written</span></div>
+      <textarea id="catchup-note" class="note-text" rows="3" placeholder="What was going on that day?"></textarea>
+    </div>
+
     <p id="catchup-status" class="catchup-status muted small"></p>
     <div class="modal-actions">
       <button type="button" id="catchup-clear" class="btn-ghost catchup-clear">Clear day</button>
@@ -1151,6 +1176,6 @@
 <div id="app-toast" class="app-toast" role="status" aria-live="polite"></div>
 
 <script src="lib/chart.min.js"></script>
-<script src="app.js?v=412"></script>
+<script src="app.js?v=413"></script>
 </body>
 </html>

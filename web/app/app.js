@@ -8,8 +8,9 @@ const DB_NAME = 'shotclock';
 // v7 bump: 'foodNoise' store added — 1-10 daily slider for the mental chatter about food, distinct from physical appetite.
 // v8 bump: 'cycles' store added — opt-in menstrual cycle tracking (period start/end, flow, symptoms).
 // v9 bump: 'medChanges' store added — medication switches as discrete events so charts stay readable across drug changes.
-const DB_VERSION = 9;
-const APP_VERSION = '0.50.0';
+// v10 bump: 'notes' store added — a free-text line per day, so a number in a chart can carry the reason behind it.
+const DB_VERSION = 10;
+const APP_VERSION = '0.51.0';
 
 // Umami event tracker. Aggregates only — no PII (no email, no IDs). Safe to call before umami loads.
 function track(event, props) {
@@ -77,6 +78,21 @@ const INFO_TOPICS = {
     body: `<p>Tap a face to log how you're feeling today. One mood per day; tap "change" to update it.</p>
       <p>Tracking mood alongside doses helps you spot patterns — for example, if you tend to feel low in the days right after a higher dose.</p>
       <p>Change the emoji style on the <strong>Premium</strong> tab.</p>`,
+  },
+  'daily-note': {
+    title: 'Today\'s note',
+    body: `<p>A line about what was actually going on today. It saves as you type — there's no button to press.</p>
+      <h3>Why it matters</h3>
+      <p>Mood, appetite and food noise tell you <em>what</em> a day was like. They can't tell you <em>why</em>. A rough week in the middle of a house move looks identical to a rough week caused by a dose increase — until you read it back six months later and have no idea which it was.</p>
+      <p>Anything is worth writing: a stressful week at work, a bad night's sleep, a holiday, a new dose, a bug going round the family.</p>
+      <h3>Where it comes back</h3>
+      <ul>
+        <li>Days with a note get a dot under the bar on every trend strip, and the note shows in the tooltip.</li>
+        <li>The <strong>Notes</strong> section on the Insights tab lists them all newest-first, each with that day's mood, and is searchable.</li>
+        <li>Tap any entry — or any trend bar — to edit that day.</li>
+      </ul>
+      <h3>Privacy</h3>
+      <p>Notes are encrypted on this device with everything else, and are <strong>never</strong> included in a doctor share or PDF unless you tick "Daily notes" yourself. They're off by default because a note about your life isn't a clinical record.</p>`,
   },
   'appetite': {
     title: 'Daily appetite',
@@ -618,6 +634,9 @@ function openDB() {
       }
       if (!db.objectStoreNames.contains('medChanges')) {
         db.createObjectStore('medChanges', { keyPath: 'id', autoIncrement: true });
+      }
+      if (!db.objectStoreNames.contains('notes')) {
+        db.createObjectStore('notes', { keyPath: 'date' });
       }
     };
     req.onsuccess = () => {
@@ -1776,6 +1795,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupAppetiteUI();
   await renderFoodNoise();
   setupFoodNoiseUI();
+  await renderNote();
+  setupNoteUI();
   setupCatchupUI();
   setupCycleUI();
   await renderCycleCard();
@@ -2302,6 +2323,20 @@ function sanitizeWeight(w) {
   return { date, value, unit: w.unit === 'kg' ? 'kg' : 'lb' };
 }
 
+// A note is free text, so it is never interpreted — only length-capped and, at
+// every render site, escaped. `updatedAt` is kept because the merge needs it to
+// decide which side of a conflict is newer.
+function sanitizeNote(n) {
+  if (!n || typeof n !== 'object') return null;
+  const date = toCanonicalDate(n.date);
+  const text = safeText(n.text, NOTE_MAX).trim();
+  if (!date || !text) return null;
+  const out = { date, text };
+  const ts = Date.parse(n.updatedAt);
+  if (Number.isFinite(ts)) out.updatedAt = new Date(ts).toISOString();
+  return out;
+}
+
 // Settings from a file may only overwrite keys we know about, with the type we
 // expect. Anything else — including sync credentials — is ignored.
 function sanitizeSettings(raw) {
@@ -2443,6 +2478,10 @@ async function importShotsyCSV(text) {
 
   const shotsToAdd = [];
   const weightsToAdd = [];
+  // Shotsy's "Day notes" is a note about the day, not about the injection. It used
+  // to be appended to the first shot's notes, which buried it and dropped it
+  // entirely on days with no shot. It now lands in the notes store where it belongs.
+  const dayNotesToAdd = new Map();
 
   for (let r = 1; r < rows.length; r++) {
     const row = rows[r];
@@ -2465,8 +2504,6 @@ async function importShotsyCSV(text) {
       if (isNaN(when.getTime())) continue;
       const noteParts = [];
       if (notesCells[k]) noteParts.push(notesCells[k]);
-      const dayNote = cDayNotes >= 0 ? (row[cDayNotes] || '').trim() : '';
-      if (dayNote && k === 0) noteParts.push(dayNote);
       const pain = painCells[k] || painCells[0];
       if (pain && parseFloat(pain) > 0) noteParts.push(`Pain: ${pain}/10`);
       shotsToAdd.push({
@@ -2483,6 +2520,18 @@ async function importShotsyCSV(text) {
       if (w && !isNaN(parseFloat(w))) {
         const canon = toCanonicalDate(date);
         if (canon) weightsToAdd.push({ value: parseFloat(w), unit: 'lb', date: canon });
+      }
+    }
+
+    // Collected per row, not per shot, so a note on a day with no injection
+    // survives the import instead of being silently dropped.
+    if (cDayNotes >= 0) {
+      const dayNote = (row[cDayNotes] || '').trim();
+      const canon = dayNote ? toCanonicalDate(date) : null;
+      if (canon) {
+        const prev = dayNotesToAdd.get(canon);
+        // Two rows can share a date in a multi-shot export; keep both lines.
+        dayNotesToAdd.set(canon, prev && prev !== dayNote ? `${prev}\n${dayNote}` : dayNote);
       }
     }
   }
@@ -2503,19 +2552,29 @@ async function importShotsyCSV(text) {
     return true;
   });
 
-  if (!dedupedShots.length && !dedupedWeights.length) {
-    throw new Error('No shots or weight entries found in CSV');
+  if (!dedupedShots.length && !dedupedWeights.length && !dayNotesToAdd.size) {
+    throw new Error('No shots, weight entries or notes found in CSV');
   }
-  if (!confirm(`Import ${dedupedShots.length} shots and ${dedupedWeights.length} weight entries? This will MERGE with existing data.`)) return;
+  const notePart = dayNotesToAdd.size ? ` and ${dayNotesToAdd.size} daily notes` : '';
+  if (!confirm(`Import ${dedupedShots.length} shots, ${dedupedWeights.length} weight entries${notePart}? This will MERGE with existing data.`)) return;
 
   // A CSV is untrusted input like any other file, so it goes through the same
   // door as the JSON and LLM paths rather than straight into the database.
   for (const s of dedupedShots) { const c = sanitizeShot(s); if (c) await dbAdd(STORES.shots, c); }
   for (const w of dedupedWeights) { const c = sanitizeWeight(w); if (c) await dbAdd(STORES.weights, c); }
+  // Imported notes go through the same merge as a sync pull, so re-importing the
+  // same file doesn't duplicate text and an existing note is never overwritten.
+  let notesImported = 0;
+  if (dayNotesToAdd.size) {
+    const rows = [...dayNotesToAdd].map(([date, text]) => ({ date, text, updatedAt: new Date(0).toISOString() }));
+    const st = await mergeNotes(rows);
+    notesImported = st.added + st.updated + st.combined;
+  }
   await ensurePersisted();
   await renderShots();
   await renderWeights();
-  alert(`Imported ${shotsToAdd.length} shots and ${weightsToAdd.length} weight entries.`);
+  if (notesImported) { try { await refreshDailyCards(); } catch (_) {} }
+  alert(`Imported ${dedupedShots.length} shots, ${dedupedWeights.length} weight entries${notesImported ? ` and ${notesImported} daily notes` : ''}.`);
 }
 function updateBackupLabel() {
   const el = $('#last-backup');
@@ -3635,17 +3694,21 @@ async function renderAppetiteTrend(appetites) {
   if (!wrap) return;
   const byDate = {};
   inWindow.forEach(a => { byDate[a.date] = a.value; });
+  const noteByDate = new Map((await getNotesSorted()).map(n => [n.date, n.text]));
   const bars = [];
   for (let i = days - 1; i >= 0; i--) {
     const d = new Date(); d.setDate(d.getDate() - i);
     const key = d.toISOString().slice(0, 10);
     const v = byDate[key];
+    const note = noteByDate.get(key) || '';
+    const noteCls = note ? ' has-note' : '';
+    const noteTip = note ? ` — ${noteSnippet(note)}` : '';
     if (v) {
       // Color by suppression: 1-2 = strong (good for GLP-1) = teal, 3 = mid = grey, 4-5 = elevated = warning
       const cls = v <= 2 ? 'good' : v === 3 ? 'mid' : 'high';
-      bars.push(`<div class="mood-bar ${cls}" data-date="${key}" style="height:${v * 18}%" title="${key}: ${APPETITE_LABELS[v]} — tap to edit"></div>`);
+      bars.push(`<div class="mood-bar ${cls}${noteCls}" data-date="${key}" style="height:${v * 18}%" title="${escapeHTML(`${key}: ${APPETITE_LABELS[v]} — tap to edit${noteTip}`)}"></div>`);
     } else {
-      bars.push(`<div class="mood-bar empty" data-date="${key}" title="${key}: not logged — tap to fill in"></div>`);
+      bars.push(`<div class="mood-bar empty${noteCls}" data-date="${key}" title="${escapeHTML(`${key}: not logged — tap to fill in${noteTip}`)}"></div>`);
     }
   }
   wrap.innerHTML = bars.join('');
@@ -3745,17 +3808,21 @@ async function renderFoodNoiseTrend(entries) {
   if (!wrap) return;
   const byDate = {};
   inWindow.forEach(a => { byDate[a.date] = a.value; });
+  const noteByDate = new Map((await getNotesSorted()).map(n => [n.date, n.text]));
   const bars = [];
   for (let i = days - 1; i >= 0; i--) {
     const d = new Date(); d.setDate(d.getDate() - i);
     const key = d.toISOString().slice(0, 10);
     const v = byDate[key];
+    const note = noteByDate.get(key) || '';
+    const noteCls = note ? ' has-note' : '';
+    const noteTip = note ? ` — ${noteSnippet(note)}` : '';
     if (v) {
       // Color by quietness: 1-3 = good (quiet), 4-6 = mid, 7-10 = high (loud)
       const cls = v <= 3 ? 'good' : v <= 6 ? 'mid' : 'high';
-      bars.push(`<div class="mood-bar ${cls}" data-date="${key}" style="height:${v * 9}%" title="${key}: ${v}/10 — ${foodNoiseDescriptor(v)} — tap to edit"></div>`);
+      bars.push(`<div class="mood-bar ${cls}${noteCls}" data-date="${key}" style="height:${v * 9}%" title="${escapeHTML(`${key}: ${v}/10 — ${foodNoiseDescriptor(v)} — tap to edit${noteTip}`)}"></div>`);
     } else {
-      bars.push(`<div class="mood-bar empty" data-date="${key}" title="${key}: not logged — tap to fill in"></div>`);
+      bars.push(`<div class="mood-bar empty${noteCls}" data-date="${key}" title="${escapeHTML(`${key}: not logged — tap to fill in${noteTip}`)}"></div>`);
     }
   }
   wrap.innerHTML = bars.join('');
@@ -3790,11 +3857,179 @@ function setupFoodNoiseUI() {
   });
 }
 
-// ---------- Catch-up: mood / appetite / food noise for a past day ----------
+// ---------- Daily notes (free text) ----------
+// Mood, appetite and food noise record *what* a day was like. None of them record
+// *why*, so a run of low days reads as a medication signal when it may have been
+// a house move. A note is the context line that stops the numbers being misread
+// months later, and it is the only free text in the daily check-in — so it is
+// merged rather than overwritten (see mergeNotes) and never shared by default.
+const NOTE_MAX = 2000;
+const NOTE_AUTOSAVE_MS = 700;
+
+async function getNotesSorted() {
+  const all = (await dbAll('notes')) || [];
+  return all.filter(n => n && n.date && n.text).sort((a, b) => a.date.localeCompare(b.date));
+}
+async function getNote(date) {
+  try { return await dbGet('notes', date); } catch (_) { return null; }
+}
+// Clearing the box deletes the day rather than storing an empty string, so an
+// emptied note doesn't linger as a blank row in the journal or the export.
+async function saveNote(date, text) {
+  const clean = String(text == null ? '' : text).slice(0, NOTE_MAX).trim();
+  if (!clean) return deleteNote(date);
+  return dbPut('notes', { date, text: clean, updatedAt: new Date().toISOString() });
+}
+async function deleteNote(date) { return withStore('notes', 'readwrite', s => s.delete(date)); }
+
+// The set of days that have a note, for the trend strips to mark.
+async function noteDateSet() {
+  try { return new Set((await getNotesSorted()).map(n => n.date)); } catch (_) { return new Set(); }
+}
+
+function noteSnippet(text, max = 80) {
+  const t = String(text || '').replace(/\s+/g, ' ').trim();
+  return t.length > max ? `${t.slice(0, max - 1)}…` : t;
+}
+
+let _noteSaveTimer = null;
+let _noteLastSaved = '';
+
+async function renderNote() {
+  const card = $('#note-card');
+  if (!card) return;
+  const box = $('#note-text');
+  const saved = $('#note-saved');
+  const count = $('#note-count');
+  if (!box) return;
+  const existing = await getNote(todayISODate());
+  const text = (existing && existing.text) || '';
+  // Never stomp on what someone is mid-sentence into. A re-render can be
+  // triggered by a sync pull or a tab switch while the box has focus.
+  if (document.activeElement !== box) box.value = text;
+  _noteLastSaved = text;
+  if (saved) saved.textContent = text ? '✓ saved' : '';
+  if (count) count.textContent = `${box.value.length}/${NOTE_MAX}`;
+  await renderNoteJournal();
+}
+
+// Commit whatever is in the box. Safe to call repeatedly — a no-op when the text
+// hasn't changed, so blur-after-autosave doesn't write twice.
+async function flushNote(reason) {
+  const box = $('#note-text');
+  if (!box) return;
+  const val = box.value.slice(0, NOTE_MAX).trim();
+  if (val === _noteLastSaved) return;
+  await saveNote(todayISODate(), val);
+  _noteLastSaved = val;
+  const saved = $('#note-saved');
+  if (saved) saved.textContent = val ? '✓ saved' : '';
+  markSyncDirty();
+  track('note_saved', { via: reason || 'auto', length: val.length });
+  await renderNoteJournal();
+  await renderMood();
+}
+
+function setupNoteUI() {
+  const box = $('#note-text');
+  if (!box) return;
+  box.setAttribute('maxlength', String(NOTE_MAX));
+
+  box.addEventListener('input', () => {
+    const count = $('#note-count');
+    if (count) count.textContent = `${box.value.length}/${NOTE_MAX}`;
+    const saved = $('#note-saved');
+    if (saved) saved.textContent = 'saving…';
+    clearTimeout(_noteSaveTimer);
+    _noteSaveTimer = setTimeout(() => flushNote('auto'), NOTE_AUTOSAVE_MS);
+  });
+
+  // Belt and braces: leaving the field, backgrounding the tab, or closing it all
+  // commit immediately. An autosave timer that never fires because the phone was
+  // locked would otherwise lose the note.
+  box.addEventListener('blur', () => { clearTimeout(_noteSaveTimer); flushNote('blur'); });
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') { clearTimeout(_noteSaveTimer); flushNote('hide'); }
+  });
+
+  const journal = $('#note-journal');
+  if (journal) {
+    journal.addEventListener('click', (e) => {
+      const row = e.target.closest('[data-note-date]');
+      if (row && row.dataset.noteDate) openCatchup(row.dataset.noteDate);
+    });
+  }
+  const search = $('#note-search');
+  if (search) search.addEventListener('input', () => renderNoteJournal());
+}
+
+// The looking-back half of the feature. A note is only worth writing if it comes
+// back to you next to the day it belongs to, so each entry carries that day's
+// mood alongside it.
+async function renderNoteJournal() {
+  const card = $('#note-journal-card');
+  if (!card) return;
+  const notes = (await getNotesSorted()).slice().reverse();
+  if (!notes.length) {
+    card.classList.add('hidden');
+    return;
+  }
+  card.classList.remove('hidden');
+  const q = ($('#note-search')?.value || '').trim().toLowerCase();
+  const shown = q ? notes.filter(n => n.text.toLowerCase().includes(q)) : notes;
+  const moods = await getMoodsSorted();
+  const moodByDate = {};
+  moods.forEach(m => { moodByDate[m.date] = m.value; });
+  const styleId = settings.moodStyle || 'classic';
+  const style = (MOOD_STYLES || []).find(x => x.id === styleId) || (MOOD_STYLES || [])[0];
+
+  const summary = $('#note-journal-summary');
+  if (summary) {
+    summary.textContent = q
+      ? `${shown.length} of ${notes.length} ${notes.length === 1 ? 'note' : 'notes'}`
+      : `${notes.length} ${notes.length === 1 ? 'note' : 'notes'}`;
+  }
+
+  const wrap = $('#note-journal');
+  if (!wrap) return;
+  if (!shown.length) {
+    wrap.innerHTML = `<p class="empty small">No notes match "${escapeHTML(q)}".</p>`;
+    return;
+  }
+  wrap.innerHTML = shown.slice(0, 200).map(n => {
+    const mv = moodByDate[n.date];
+    const emoji = mv && style && style.emojis ? (style.emojis[mv - 1] || '') : '';
+    const moodBit = mv
+      ? `<span class="note-mood" title="Mood that day: ${escapeHTML(MOOD_LABELS[mv] || '')}">${emoji || ''}<span class="muted small">${escapeHTML(MOOD_LABELS[mv] || '')}</span></span>`
+      : '';
+    return `<button type="button" class="note-entry" data-note-date="${escapeHTML(n.date)}">
+      <div class="note-entry-head"><strong>${escapeHTML(formatNoteDate(n.date))}</strong>${moodBit}</div>
+      <div class="note-entry-text">${escapeHTML(n.text)}</div>
+    </button>`;
+  }).join('');
+}
+
+// "Sat 15 Mar 2026" reads better in a journal than a bare key, and a bare key is
+// parsed as UTC midnight by Date — which is the timezone bug fixed elsewhere. So
+// build the date from its parts and never let a timezone near it.
+function formatNoteDate(key) {
+  const [y, m, d] = String(key || '').split('-').map(Number);
+  if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) return String(key || '');
+  const dt = new Date(y, m - 1, d, 12, 0, 0);
+  const today = todayISODate();
+  if (key === today) return 'Today';
+  if (key === shiftISODate(today, -1)) return 'Yesterday';
+  try {
+    return dt.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+  } catch (_) { return String(key); }
+}
+
+// ---------- Catch-up: mood / appetite / food noise / note for a past day ----------
 // The three home cards are today-only on purpose — one tap, no date picker, so
 // the daily check-in stays a two-second job. This dialog is the escape hatch for
 // the day you forgot, and doubles as the edit path for a day you got wrong.
-// Reached from the home-tab link or by tapping any bar in the 30-day trend strips.
+// Reached from the home-tab link, by tapping any bar in the 30-day trend strips,
+// or by tapping an entry in the notes journal.
 const CATCHUP_MAX_AGE_DAYS = 730;
 
 // Pure day-key arithmetic. Both ends are wall-clock day keys, so this deliberately
@@ -3815,7 +4050,12 @@ async function deleteFoodNoise(date) { return withStore('foodNoise', 'readwrite'
 // null = "leave this one alone"; a number = write it. Saving only touches the
 // stores the user actually set, so filling in mood never wipes an existing
 // appetite entry for the same day.
-const catchupDraft = { mood: null, appetite: null, foodNoise: null };
+// `note` is '' rather than null when untouched: an empty string is a real edit
+// (the user cleared the box), so it has to be distinguishable from "not loaded".
+// `noteOriginal` is what was on disk when the day was loaded. Clearing a note the
+// user had written is a real edit that must be saved, and without the original
+// there is no way to tell "left the empty box alone" from "deleted the text".
+const catchupDraft = { mood: null, appetite: null, foodNoise: null, note: '', noteOriginal: '' };
 
 function catchupPaint() {
   $$('#catchup-mood-picker .mood-btn').forEach(b =>
@@ -3843,17 +4083,25 @@ function catchupPaint() {
     if (fnDesc) fnDesc.textContent = 'drag to set';
     if (fnState) fnState.textContent = 'not logged';
   }
+
+  const noteBox = $('#catchup-note');
+  const noteState = $('#catchup-note-state');
+  // Same rule as the home card: never overwrite text that is being typed.
+  if (noteBox && document.activeElement !== noteBox) noteBox.value = catchupDraft.note || '';
+  if (noteState) noteState.textContent = (catchupDraft.note || '').trim() ? 'written' : 'not written';
 }
 
 // Pull whatever is already stored for `date` into the draft, so the dialog opens
 // as an edit of that day rather than a blank form.
 async function catchupLoadDay(date) {
-  const [moods, appetites, foodNoise] = await Promise.all([
-    getMoodsSorted(), getAppetitesSorted(), getFoodNoiseSorted(),
+  const [moods, appetites, foodNoise, note] = await Promise.all([
+    getMoodsSorted(), getAppetitesSorted(), getFoodNoiseSorted(), getNote(date),
   ]);
   catchupDraft.mood = (moods.find(m => m.date === date) || {}).value || null;
   catchupDraft.appetite = (appetites.find(a => a.date === date) || {}).value || null;
   catchupDraft.foodNoise = (foodNoise.find(f => f.date === date) || {}).value || null;
+  catchupDraft.note = (note && note.text) || '';
+  catchupDraft.noteOriginal = catchupDraft.note;
   catchupPaint();
 }
 
@@ -3904,6 +4152,16 @@ function setupCatchupUI() {
     catchupDraft.appetite = catchupDraft.appetite === v ? null : v;
     catchupPaint();
   }));
+  const catchupNote = $('#catchup-note');
+  if (catchupNote) {
+    catchupNote.setAttribute('maxlength', String(NOTE_MAX));
+    catchupNote.addEventListener('input', (e) => {
+      catchupDraft.note = e.target.value.slice(0, NOTE_MAX);
+      const state = $('#catchup-note-state');
+      if (state) state.textContent = catchupDraft.note.trim() ? 'written' : 'not written';
+    });
+  }
+
   $('#catchup-foodnoise').addEventListener('input', (e) => {
     catchupDraft.foodNoise = parseInt(e.target.value, 10);
     catchupPaint();
@@ -3914,9 +4172,15 @@ function setupCatchupUI() {
   $('#catchup-clear').addEventListener('click', async () => {
     const date = $('#catchup-date').value;
     if (!date) return;
-    if (!confirm(`Remove the mood, appetite and food-noise entries for ${date}?`)) return;
-    await Promise.all([deleteMood(date), deleteAppetite(date), deleteFoodNoise(date)]);
+    // Spell out that a written note goes too. The other three are one tap to
+    // re-enter; a paragraph about your week is not.
+    const warning = catchupDraft.noteOriginal
+      ? `Remove the mood, appetite, food-noise AND the written note for ${date}? The note can't be recovered.`
+      : `Remove the mood, appetite and food-noise entries for ${date}?`;
+    if (!confirm(warning)) return;
+    await Promise.all([deleteMood(date), deleteAppetite(date), deleteFoodNoise(date), deleteNote(date)]);
     catchupDraft.mood = catchupDraft.appetite = catchupDraft.foodNoise = null;
+    catchupDraft.note = catchupDraft.noteOriginal = '';
     catchupPaint();
     await refreshDailyCards();
     markSyncDirty();
@@ -3936,14 +4200,18 @@ function setupCatchupUI() {
       status.textContent = 'That day is too far back.';
       return;
     }
-    if (!catchupDraft.mood && !catchupDraft.appetite && !catchupDraft.foodNoise) {
-      status.textContent = 'Nothing to save — set at least one of the three.';
+    const noteChanged = (catchupDraft.note || '').trim() !== (catchupDraft.noteOriginal || '').trim();
+    if (!catchupDraft.mood && !catchupDraft.appetite && !catchupDraft.foodNoise && !noteChanged) {
+      status.textContent = 'Nothing to save — set a mood, appetite, food-noise level or write a note.';
       return;
     }
     const writes = [];
     if (catchupDraft.mood) writes.push(saveMood(date, catchupDraft.mood));
     if (catchupDraft.appetite) writes.push(saveAppetite(date, catchupDraft.appetite));
     if (catchupDraft.foodNoise) writes.push(saveFoodNoise(date, catchupDraft.foodNoise));
+    // saveNote deletes the day when the text is empty, so this handles both
+    // writing a new note and clearing an existing one.
+    if (noteChanged) writes.push(saveNote(date, catchupDraft.note));
     try {
       await Promise.all(writes);
       await ensurePersisted();
@@ -3961,18 +4229,21 @@ function setupCatchupUI() {
         catchupDraft.mood ? 'mood' : null,
         catchupDraft.appetite ? 'appetite' : null,
         catchupDraft.foodNoise ? 'foodNoise' : null,
+        noteChanged ? 'note' : null,
       ].filter(Boolean).join('+'),
     });
   });
 }
 
-// Re-render the three daily cards and their trend strips together — a catch-up
+// Re-render the four daily cards and their trend strips together — a catch-up
 // write can land on today (which changes the cards) or on any past day (which
-// only changes the strips), and the caller shouldn't have to know which.
+// only changes the strips and the journal), and the caller shouldn't have to
+// know which.
 async function refreshDailyCards() {
   try { await renderMood(); } catch (_) {}
   try { await renderAppetite(); } catch (_) {}
   try { await renderFoodNoise(); } catch (_) {}
+  try { await renderNote(); } catch (_) {}
 }
 
 // ---------- Cycle tracking (opt-in) ----------
@@ -5147,6 +5418,10 @@ async function renderMoodTrend(moods) {
   const days = 30;
   const today = new Date();
   const byDate = new Map(moods.map(m => [m.date, m.value]));
+  // A low bar on its own invites the wrong conclusion. Where the user wrote down
+  // what was going on that day, mark the bar and put the note in the tooltip, so
+  // the reason travels with the number instead of sitting in a separate list.
+  const noteByDate = new Map((await getNotesSorted()).map(n => [n.date, n.text]));
   const bars = [];
   let sum = 0, count = 0;
   for (let i = days - 1; i >= 0; i--) {
@@ -5155,11 +5430,13 @@ async function renderMoodTrend(moods) {
     const iso = localISOForInput(d).slice(0, 10);
     const v = byDate.get(iso);
     if (v != null) { sum += v; count++; }
-    bars.push({ iso, v });
+    bars.push({ iso, v, note: noteByDate.get(iso) || '' });
   }
   const html = bars.map(b => {
-    if (b.v == null) return `<div class="mood-bar empty" data-date="${b.iso}" title="${b.iso}: not logged — tap to fill in"></div>`;
-    return `<div class="mood-bar v${b.v}" data-date="${b.iso}" style="height:${20 + b.v * 16}%" title="${b.iso}: ${MOOD_LABELS[b.v]} — tap to edit"></div>`;
+    const noteCls = b.note ? ' has-note' : '';
+    const noteTip = b.note ? ` — ${noteSnippet(b.note)}` : '';
+    if (b.v == null) return `<div class="mood-bar empty${noteCls}" data-date="${b.iso}" title="${escapeHTML(`${b.iso}: not logged — tap to fill in${noteTip}`)}"></div>`;
+    return `<div class="mood-bar v${b.v}${noteCls}" data-date="${b.iso}" style="height:${20 + b.v * 16}%" title="${escapeHTML(`${b.iso}: ${MOOD_LABELS[b.v]} — tap to edit${noteTip}`)}"></div>`;
   }).join('');
   $('#mood-trend-bars').innerHTML = html;
   const avg = count ? (sum / count) : null;
@@ -6604,6 +6881,10 @@ async function runPdfExport(opts) {
   const labs = inc('labs') ? (await getLabs()).filter(l => new Date(l.date) >= since) : [];
   const moodsAll = inc('moods') ? (await dbAll(STORES.moods) || []).filter(m => new Date(m.date) >= since).sort((a,b) => new Date(b.date)-new Date(a.date)) : [];
   const appetitesAll = inc('appetites') ? (await getAppetitesSorted()).filter(a => new Date(a.date) >= since) : [];
+  // Off unless explicitly ticked in the share dialog. A day note is about the
+  // rest of someone's life, not their treatment, and it should never reach a
+  // clinician because a checkbox happened to default on.
+  const notesAll = inc('notes') ? (await getNotesSorted()).filter(n => new Date(n.date) >= since).reverse() : [];
   const foodNoiseAll = inc('foodNoise') ? (await getFoodNoiseSorted()).filter(f => new Date(f.date) >= since) : [];
   const cyclesAll = (inc('cycles') && settings.cycleEnabled) ? (await getCyclesSorted()).filter(c => new Date(c.startDate) >= since) : [];
   const wd = weightDelta(weightsAll, settings.startWeight);
@@ -6675,6 +6956,10 @@ async function runPdfExport(opts) {
 
     ${inc('foodNoise') && foodNoiseAll.length ? `<h2>Food noise log</h2><p class="meta">Daily 1-10 self-rating of mental food chatter (1 = quiet, 10 = constant).</p><table><thead><tr><th>Date</th><th>Score</th><th>Descriptor</th></tr></thead><tbody>
     ${foodNoiseAll.map(f => `<tr><td>${f.date}</td><td>${f.value}/10</td><td>${foodNoiseDescriptor(f.value)}</td></tr>`).join('')}
+    </tbody></table>` : ''}
+
+    ${inc('notes') && notesAll.length ? `<h2>Daily notes</h2><p class="meta">The patient's own notes on what was happening each day — context for the mood and appetite entries above.</p><table><thead><tr><th>Date</th><th>Note</th></tr></thead><tbody>
+    ${notesAll.map(n => `<tr><td>${escapeHTML(n.date)}</td><td>${escapeHTML(n.text).replace(/\n/g, '<br>')}</td></tr>`).join('')}
     </tbody></table>` : ''}
 
     ${cyclesAll.length ? `<h2>Cycle log</h2><table><thead><tr><th>Start</th><th>End</th><th>Days</th><th>Flow</th><th>Symptoms</th></tr></thead><tbody>
@@ -6758,6 +7043,10 @@ async function buildPayload(opts) {
   const shots = inc('shots') ? filterByWhen((await dbAll(STORES.shots)) || []) : [];
   const weights = inc('weights') ? filterByWhen((await dbAll(STORES.weights)) || []) : [];
   const moods = inc('moods') ? filterByWhen((await dbAll(STORES.moods)) || []) : [];
+  // Notes are the most personal thing in the app, so they follow the same rule as
+  // everything else here: included in the encrypted blob, excluded from a share
+  // unless explicitly ticked (see the share dialog).
+  const notes = inc('notes') ? filterByWhen((await getNotesSorted()) || []) : [];
   let supplies = [], measurements = [], labs = [], expenses = [], appetites = [], foodNoise = [], cycles = [];
   if (inc('supplies')) { try { supplies = await getSupplies(); } catch (e) {} }
   if (inc('measurements')) { try { measurements = filterByWhen(await getMeasurements()); } catch (e) {} }
@@ -6772,11 +7061,12 @@ async function buildPayload(opts) {
   if (inc('medChanges')) { try { medChanges = (await dbAll('medChanges')) || []; } catch (e) {} }
   return {
     // v8 adds stable per-record `uid`s so pulls can merge instead of replace.
-    version: 8,
+    // v9 adds `notes` — free text, merged rather than overwritten on pull.
+    version: 9,
     exportedAt: new Date().toISOString(),
     range: opts && opts.range ? opts.range : 'all',
     settings,
-    shots, weights, moods, appetites, foodNoise, cycles, medChanges,
+    shots, weights, moods, appetites, foodNoise, cycles, medChanges, notes,
     supplies, measurements, labs, expenses,
   };
 }
@@ -6854,10 +7144,44 @@ async function mergeStore(storeName, incoming, contentKey) {
   return { added, skipped };
 }
 
+// Notes are the one daily store that can't take last-write-wins. Mood is a number
+// you can re-tap in a second; a note is sentences someone wrote about their life,
+// and a pull that silently replaced it would destroy the only copy. So a note
+// only ever loses to a NEWER note, and when both sides have text and neither
+// contains the other, both are kept rather than one being thrown away.
+async function mergeNotes(incoming) {
+  const rows = Array.isArray(incoming) ? incoming : [];
+  if (!rows.length) return { added: 0, updated: 0, combined: 0, skipped: 0 };
+  const stats = { added: 0, updated: 0, combined: 0, skipped: 0 };
+  for (const raw of rows) {
+    const rec = sanitizeNote(raw);
+    if (!rec) { stats.skipped++; continue; }
+    const local = await getNote(rec.date);
+    const localText = (local && local.text ? String(local.text) : '').trim();
+    if (!localText) { await dbPut('notes', rec); stats.added++; continue; }
+    if (localText === rec.text) { stats.skipped++; continue; }
+
+    const localTs = Date.parse(local && local.updatedAt) || 0;
+    const cloudTs = Date.parse(rec.updatedAt) || 0;
+    // One side is a straight extension of the other (the usual case: the same
+    // note edited on two devices). Keep the longer, it already contains the rest.
+    if (rec.text.includes(localText)) { await dbPut('notes', rec); stats.updated++; continue; }
+    if (localText.includes(rec.text)) { stats.skipped++; continue; }
+
+    // Genuinely divergent text. Newer goes first, older is preserved beneath a
+    // marker so the user can see both and tidy up — nothing typed is ever lost.
+    const [first, second] = cloudTs >= localTs ? [rec.text, localText] : [localText, rec.text];
+    const combined = `${first}\n\n— also saved on another device —\n${second}`.slice(0, NOTE_MAX);
+    await dbPut('notes', { date: rec.date, text: combined, updatedAt: new Date().toISOString() });
+    stats.combined++;
+  }
+  return stats;
+}
+
 async function applyPulledPayload(payload) {
   // Refuse newer payloads we can't safely interpret — avoids silent data loss
   // if a stale client pulls a blob written by a future schema.
-  const SUPPORTED_PAYLOAD_VERSION = 8;
+  const SUPPORTED_PAYLOAD_VERSION = 9;
   const pv = Number(payload && payload.version) || 1;
   if (pv > SUPPORTED_PAYLOAD_VERSION) {
     throw new Error(`This cloud backup was written by a newer version of the app (payload v${pv}). Please update before restoring.`);
@@ -6882,6 +7206,8 @@ async function applyPulledPayload(payload) {
   for (const m of (payload.moods || [])) if (m && m.date) await dbPut(STORES.moods, m);
   for (const a of (payload.appetites || [])) if (a && a.date) await saveAppetite(a.date, a.value);
   for (const f of (payload.foodNoise || [])) if (f && f.date) await saveFoodNoise(f.date, f.value);
+  // Notes are the exception to last-write-wins — see mergeNotes.
+  stats.notes = await mergeNotes(payload.notes);
 
   window._lastMergeStats = stats;
   if (payload.settings) {
@@ -6898,6 +7224,9 @@ async function applyPulledPayload(payload) {
   await migrateWeightDatesToCanonical();
   await renderShots();
   await renderWeights();
+  // Notes pulled from another device have to reach the card and the journal, or
+  // they sit in the database invisible until the next reload.
+  try { await refreshDailyCards(); } catch (_) {}
 }
 
 // ---------- Sync UI ----------
