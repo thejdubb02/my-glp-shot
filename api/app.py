@@ -15,6 +15,7 @@ import sqlite3
 import time
 from contextlib import closing
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 
 import bcrypt
 import stripe
@@ -501,6 +502,59 @@ def admin_purge():
 
 
 # ---------- Auth ----------
+ATTRIB_MAX = 120
+_ATTRIB_SAFE = re.compile(r'[^A-Za-z0-9 ._\-/:+%&=?~]')
+
+
+def _clean_attribution(raw):
+    """Normalise client-supplied signup attribution.
+
+    Deliberately stores the referrer HOST, not the full referring URL. A search
+    referrer carries the query in its path, so keeping the URL would silently
+    record what someone typed into Google about their weight or medication. The
+    host is what attribution actually needs, and it can't leak that.
+
+    Everything is length-capped and character-filtered because this is untrusted
+    input that later renders in the admin panel.
+    """
+    out = {k: None for k in ('referrer', 'landing', 'utm_source', 'utm_medium', 'utm_campaign')}
+    if not isinstance(raw, dict):
+        return out
+
+    def clean(v, limit=ATTRIB_MAX):
+        if not isinstance(v, str):
+            return None
+        v = _ATTRIB_SAFE.sub('', v.strip())[:limit]
+        return v or None
+
+    ref = clean(raw.get('referrer'))
+    if ref:
+        # Accept either a bare host or a URL; keep only the host either way.
+        try:
+            parsed = urlparse(ref if '//' in ref else f'//{ref}')
+            ref = (parsed.hostname or ref).lower()
+        except ValueError:
+            ref = ref.lower()
+        if ref.startswith('www.'):
+            ref = ref[4:]
+    out['referrer'] = clean(ref, 80)
+
+    landing = raw.get('landing')
+    if isinstance(landing, str):
+        # Split BEFORE the character filter: '#' is not in the safe set, so
+        # filtering first turned '/x#frag' into '/xfrag' — gluing the fragment
+        # onto the path instead of dropping it.
+        landing = landing.strip().split('?', 1)[0].split('#', 1)[0]
+        landing = clean(landing, 80)
+        if landing and not landing.startswith('/'):
+            landing = '/' + landing
+        out['landing'] = landing or None
+
+    for key in ('utm_source', 'utm_medium', 'utm_campaign'):
+        out[key] = clean(raw.get(key), 60)
+    return out
+
+
 @app.route('/api/signup', methods=['POST'])
 def signup():
     data = request.get_json(silent=True) or {}
@@ -519,11 +573,16 @@ def signup():
     pw_hash = bcrypt.hashpw(auth_token.encode('utf-8'), bcrypt.gensalt(rounds=12)).decode()
     trial_ends = now_ts() + TRIAL_DAYS * 86400
     is_admin = 1 if email in MGS_ADMIN_EMAILS else 0
+    attrib = _clean_attribution(data.get('attribution'))
     try:
         cur = db.execute(
-            """INSERT INTO users (email, password_hash, created_at, subscription_status, trial_ends_at, is_admin)
-               VALUES (?, ?, ?, 'trial', ?, ?)""",
-            (email, pw_hash, now_ts(), trial_ends, is_admin),
+            """INSERT INTO users (email, password_hash, created_at, subscription_status, trial_ends_at, is_admin,
+                                  signup_referrer, signup_landing,
+                                  signup_utm_source, signup_utm_medium, signup_utm_campaign)
+               VALUES (?, ?, ?, 'trial', ?, ?, ?, ?, ?, ?, ?)""",
+            (email, pw_hash, now_ts(), trial_ends, is_admin,
+             attrib['referrer'], attrib['landing'],
+             attrib['utm_source'], attrib['utm_medium'], attrib['utm_campaign']),
         )
     except sqlite3.IntegrityError:
         # Two signups for the same address in flight at once — the UNIQUE index is
@@ -1243,6 +1302,8 @@ def admin_users():
         f"""SELECT u.id, u.email, u.created_at, u.subscription_status,
                    u.trial_ends_at, u.premium_until, u.stripe_customer_id,
                    u.stripe_subscription_id, u.notes,
+                   u.signup_referrer, u.signup_landing,
+                   u.signup_utm_source, u.signup_utm_medium, u.signup_utm_campaign,
                    (SELECT updated_at FROM sync_blobs sb WHERE sb.user_id = u.id) AS sync_updated_at,
                    (SELECT size FROM sync_blobs sb WHERE sb.user_id = u.id) AS sync_size,
                    (SELECT MAX(last_seen) FROM sessions s WHERE s.user_id = u.id) AS last_seen,
@@ -1276,6 +1337,11 @@ def admin_users():
             'activeSessions': r['active_sessions'],
             'activeShares': r['active_shares'],
             'notes': r['notes'],
+            'signupReferrer': r['signup_referrer'],
+            'signupLanding': r['signup_landing'],
+            'signupUtmSource': r['signup_utm_source'],
+            'signupUtmMedium': r['signup_utm_medium'],
+            'signupUtmCampaign': r['signup_utm_campaign'],
         } for r in rows],
     )
 
@@ -2180,6 +2246,15 @@ def init_db():
             'ALTER TABLE users ADD COLUMN test_subscription_status TEXT',
             'ALTER TABLE users ADD COLUMN test_premium_until INTEGER',
             'ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0',
+            # Signup attribution. Without these, "where did this user come from?"
+            # is unanswerable after the fact: the marketing site is Cloudflare-
+            # fronted so origin logs never see the original referrer, and logs
+            # rotate away long before the question gets asked.
+            'ALTER TABLE users ADD COLUMN signup_referrer TEXT',
+            'ALTER TABLE users ADD COLUMN signup_landing TEXT',
+            'ALTER TABLE users ADD COLUMN signup_utm_source TEXT',
+            'ALTER TABLE users ADD COLUMN signup_utm_medium TEXT',
+            'ALTER TABLE users ADD COLUMN signup_utm_campaign TEXT',
         ):
             try:
                 c.execute(stmt)

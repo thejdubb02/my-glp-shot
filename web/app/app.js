@@ -10,7 +10,7 @@ const DB_NAME = 'shotclock';
 // v9 bump: 'medChanges' store added — medication switches as discrete events so charts stay readable across drug changes.
 // v10 bump: 'notes' store added — a free-text line per day, so a number in a chart can carry the reason behind it.
 const DB_VERSION = 10;
-const APP_VERSION = '0.51.0';
+const APP_VERSION = '0.51.1';
 
 // Umami event tracker. Aggregates only — no PII (no email, no IDs). Safe to call before umami loads.
 function track(event, props) {
@@ -21,6 +21,71 @@ function track(event, props) {
   } catch (_) { /* never let analytics break the app */ }
 }
 const STORES = { shots: 'shots', weights: 'weights', settings: 'settings', moods: 'moods', supplies: 'supplies' };
+
+// ---------- Signup attribution ----------
+// Answers "where did this user come from?" at the only moment it is knowable.
+// Server logs can't: the marketing site is served from Cloudflare's edge, so the
+// origin never sees the original referrer, and by the time anyone asks, the logs
+// have rotated. Captured first-touch, sent once at signup, never on login.
+//
+// Only a referrer HOST is ever stored or sent — never the full referring URL,
+// which for a search engine contains the query someone typed.
+const ATTRIB_KEY = 'mgs_attrib';
+const ATTRIB_UTM = ['utm_source', 'utm_medium', 'utm_campaign'];
+
+function captureAttribution() {
+  try {
+    // First touch wins: whatever brought them here the first time is the answer,
+    // even if they wander off and come back before creating the account.
+    if (localStorage.getItem(ATTRIB_KEY)) { stripAttributionParams(); return; }
+    const params = new URLSearchParams(location.search);
+    const a = {};
+
+    // mgs_ref is forwarded by the marketing site (attribution.js). Falling back
+    // to document.referrer covers anyone who lands on the app directly.
+    let ref = params.get('mgs_ref') || '';
+    if (!ref && document.referrer) {
+      try {
+        const h = new URL(document.referrer).hostname.toLowerCase();
+        if (h && h !== location.hostname) ref = h.startsWith('www.') ? h.slice(4) : h;
+      } catch (_) { /* opaque referrer */ }
+    }
+    if (ref) a.referrer = ref.slice(0, 80);
+
+    const lp = params.get('mgs_lp') || location.pathname;
+    if (lp) a.landing = lp.slice(0, 80);
+    for (const k of ATTRIB_UTM) {
+      const v = params.get(k);
+      if (v) a[k] = v.slice(0, 60);
+    }
+    if (Object.keys(a).length) localStorage.setItem(ATTRIB_KEY, JSON.stringify(a));
+  } catch (_) { /* private mode, storage disabled — attribution is never worth an error */ }
+  stripAttributionParams();
+}
+
+// Take the tracking params back out of the address bar once they're recorded, so
+// a user copying the URL to a friend doesn't pass along someone else's source.
+function stripAttributionParams() {
+  try {
+    const url = new URL(location.href);
+    let touched = false;
+    for (const k of ['mgs_ref', 'mgs_lp', ...ATTRIB_UTM]) {
+      if (url.searchParams.has(k)) { url.searchParams.delete(k); touched = true; }
+    }
+    if (touched) history.replaceState(null, '', url.pathname + url.search + url.hash);
+  } catch (_) {}
+}
+
+function getAttribution() {
+  try {
+    const raw = localStorage.getItem(ATTRIB_KEY);
+    if (!raw) return null;
+    const a = JSON.parse(raw);
+    return (a && typeof a === 'object' && Object.keys(a).length) ? a : null;
+  } catch (_) { return null; }
+}
+
+captureAttribution();
 
 // Info-tooltip topics keyed by `data-info` on the (i) button. Plain-language explanations + formulas.
 const INFO_TOPICS = {
@@ -1289,10 +1354,18 @@ function wireCriticalUI() {
       // Smart fallback: signup with existing email → auto-try login; login with no account → auto-try signup.
       // Same email/password works either way — server uses authToken (PBKDF2 of pw+email) so wrong pw on existing account fails both paths.
       async function callAuth(mode) {
+        const payload = { email: cleanEmail, authToken };
+        // Only ever sent on signup — attribution is a property of how someone
+        // arrived, and re-sending it on every login would just overwrite the
+        // original answer with wherever they happened to be today.
+        if (mode === 'signup') {
+          const a = getAttribution();
+          if (a) payload.attribution = a;
+        }
         const resp = await fetch(mode === 'signup' ? '/api/signup' : '/api/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: cleanEmail, authToken }),
+          body: JSON.stringify(payload),
           credentials: 'include',
         });
         let body = {}; try { body = await resp.json(); } catch (_) {}

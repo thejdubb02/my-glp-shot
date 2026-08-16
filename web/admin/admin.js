@@ -206,10 +206,29 @@
     const data = await api('/api/admin/users?' + params);
     const tbody = $('#users-body');
     if (!data.users.length) {
-      tbody.innerHTML = '<tr><td colspan="7" class="muted center">No users.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8" class="muted center">No users.</td></tr>';
       $('#users-pagination').innerHTML = '';
       return;
     }
+    // Where this user came from, in one cell. A campaign name beats a bare
+    // referrer when both exist; "direct" means they arrived with no referrer at
+    // all (typed it, a bookmark, or an app icon), which is different from
+    // "unknown" — users who signed up before attribution existed.
+    const sourceCell = (u) => {
+      const campaign = u.signupUtmCampaign || u.signupUtmSource;
+      if (campaign) {
+        const medium = u.signupUtmMedium ? ` / ${u.signupUtmMedium}` : '';
+        return `<span title="${escapeHtml(`${campaign}${medium} → ${u.signupLanding || '/'}`)}">${escapeHtml(campaign)}${escapeHtml(medium)}</span>`;
+      }
+      if (u.signupReferrer) {
+        return `<span title="${escapeHtml(`${u.signupReferrer} → ${u.signupLanding || '/'}`)}">${escapeHtml(u.signupReferrer)}</span>`;
+      }
+      if (u.signupLanding) {
+        return `<span class="muted" title="${escapeHtml(`no referrer → ${u.signupLanding}`)}">direct</span>`;
+      }
+      return '<span class="muted small">—</span>';
+    };
+
     tbody.innerHTML = data.users.map(u => {
       const until = u.subscriptionStatus === 'lifetime' ? '—' :
         u.subscriptionStatus === 'trial' ? fmtDate(u.trialEndsAt) :
@@ -219,6 +238,7 @@
         <td>${escapeHtml(u.email)}</td>
         <td>${statusPill(u.subscriptionStatus, u.isPremium)}</td>
         <td>${fmtDate(u.createdAt)}</td>
+        <td>${sourceCell(u)}</td>
         <td>${until}</td>
         <td>${u.syncUpdatedAt ? fmtRelative(u.syncUpdatedAt) : '<span class="muted">never</span>'}</td>
         <td>${u.activeSessions}</td>
