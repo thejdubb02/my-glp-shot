@@ -10,7 +10,7 @@ const DB_NAME = 'shotclock';
 // v9 bump: 'medChanges' store added — medication switches as discrete events so charts stay readable across drug changes.
 // v10 bump: 'notes' store added — a free-text line per day, so a number in a chart can carry the reason behind it.
 const DB_VERSION = 10;
-const APP_VERSION = '0.51.1';
+const APP_VERSION = '0.51.2';
 
 // Umami event tracker. Aggregates only — no PII (no email, no IDs). Safe to call before umami loads.
 function track(event, props) {
@@ -724,7 +724,31 @@ function openDB() {
   });
   return _dbPromise;
 }
+// The date-keyed daily stores get read several times per refresh — once per
+// trend strip, again for the card, again for the notes journal. Measured over
+// two years of history that was 8 full store scans and ~5,800 rows for a single
+// refreshDailyCards(), with `notes` alone scanned four times.
+//
+// They are small, and they only change on an explicit write, so one read per
+// refresh is enough. Invalidation hangs off withStore's readwrite mode rather
+// than off each save/delete helper: that is the single choke point every write
+// passes through, including the direct dbPut calls in applyPulledPayload, so a
+// new write path cannot forget to clear it.
+const DAILY_CACHED = new Set(['moods', 'appetites', 'foodNoise', 'notes']);
+const _dailyCache = new Map();
+
+async function readDailySorted(store) {
+  const hit = _dailyCache.get(store);
+  if (hit) return hit;
+  const rows = ((await dbAll(store)) || [])
+    .filter(r => r && r.date)
+    .sort((a, b) => a.date.localeCompare(b.date));
+  _dailyCache.set(store, rows);
+  return rows;
+}
+
 async function withStore(store, mode, fn) {
+  if (mode === 'readwrite' && DAILY_CACHED.has(store)) _dailyCache.delete(store);
   const db = await openDB();
   return new Promise((resolve, reject) => {
     const t = db.transaction(store, mode);
@@ -3693,8 +3717,7 @@ function registerSW() {
 
 // ---------- Mood store (daily) ----------
 async function getMoodsSorted() {
-  const all = (await dbAll(STORES.moods)) || [];
-  return all.sort((a, b) => a.date.localeCompare(b.date));
+  return readDailySorted(STORES.moods);
 }
 async function saveMood(date, value) {
   await dbPut(STORES.moods, { date, value });
@@ -3704,22 +3727,12 @@ async function saveMood(date, value) {
 const APPETITE_LABELS = { 1: 'No appetite', 2: 'Low', 3: 'Normal', 4: 'Hungry', 5: 'Ravenous' };
 const APPETITE_EMOJIS = { 1: '🚫', 2: '🤏', 3: '🍽️', 4: '😋', 5: '😅' };
 async function getAppetitesSorted() {
-  return new Promise((res) => {
-    openDB().then(db => {
-      const t = db.transaction('appetites', 'readonly');
-      const r = t.objectStore('appetites').getAll();
-      r.onsuccess = () => res((r.result || []).sort((a, b) => a.date.localeCompare(b.date)));
-      r.onerror = () => res([]);
-    });
-  });
+  return readDailySorted('appetites');
 }
+// Routed through dbPut rather than a hand-rolled transaction so the write goes
+// past withStore, which is what clears the cached read.
 async function saveAppetite(date, value) {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const t = db.transaction('appetites', 'readwrite');
-    t.objectStore('appetites').put({ date, value });
-    t.oncomplete = resolve; t.onerror = () => reject(t.error);
-  });
+  await dbPut('appetites', { date, value });
 }
 
 async function renderAppetite() {
@@ -3821,22 +3834,10 @@ function foodNoiseDescriptor(v) {
   return 'constant';
 }
 async function getFoodNoiseSorted() {
-  return new Promise((res) => {
-    openDB().then(db => {
-      const t = db.transaction('foodNoise', 'readonly');
-      const r = t.objectStore('foodNoise').getAll();
-      r.onsuccess = () => res((r.result || []).sort((a, b) => a.date.localeCompare(b.date)));
-      r.onerror = () => res([]);
-    });
-  });
+  return readDailySorted('foodNoise');
 }
 async function saveFoodNoise(date, value) {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const t = db.transaction('foodNoise', 'readwrite');
-    t.objectStore('foodNoise').put({ date, value });
-    t.oncomplete = resolve; t.onerror = () => reject(t.error);
-  });
+  await dbPut('foodNoise', { date, value });
 }
 async function renderFoodNoise() {
   const today = todayISODate();
@@ -3940,8 +3941,7 @@ const NOTE_MAX = 2000;
 const NOTE_AUTOSAVE_MS = 700;
 
 async function getNotesSorted() {
-  const all = (await dbAll('notes')) || [];
-  return all.filter(n => n && n.date && n.text).sort((a, b) => a.date.localeCompare(b.date));
+  return (await readDailySorted('notes')).filter(n => n.text);
 }
 async function getNote(date) {
   try { return await dbGet('notes', date); } catch (_) { return null; }

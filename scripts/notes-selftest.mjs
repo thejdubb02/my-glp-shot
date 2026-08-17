@@ -289,6 +289,38 @@ await wipe();
   check('combined note stays within the cap', (await getNote('2026-04-08')).text.length <= NOTE_MAX);
 }
 
+// ---------- read cache coherence ----------
+// The daily stores are cached per-read and invalidated by withStore's readwrite
+// mode. A stale cache would show the user yesterday's data after they typed —
+// silent and very hard to spot — so every write path is checked here.
+await wipe();
+{
+  await saveNote('2026-06-01', 'first');
+  eq('cache: write is visible immediately',
+     (await getNotesSorted()).map(n => n.text).join(','), 'first');
+
+  await saveNote('2026-06-01', 'edited');
+  // Indexed defensively: a stale cache returns [], and this suite should report
+  // that as a failed assertion rather than dying on a TypeError.
+  eq('cache: edit invalidates', ((await getNotesSorted())[0] || {}).text, 'edited');
+
+  await saveNote('2026-06-02', 'second');
+  eq('cache: added day appears', (await getNotesSorted()).length, 2);
+
+  await deleteNote('2026-06-01');
+  eq('cache: delete invalidates', (await getNotesSorted()).map(n => n.date).join(','), '2026-06-02');
+
+  // mergeNotes writes through dbPut, which must also clear the cache.
+  await mergeNotes([{ date: '2026-06-03', text: 'from cloud' }]);
+  eq('cache: merge invalidates', (await getNotesSorted()).length, 2);
+
+  // Clearing a note to empty deletes it; the cache must not keep showing it.
+  await saveNote('2026-06-02', '');
+  eq('cache: cleared note disappears', (await getNotesSorted()).map(n => n.date).join(','), '2026-06-03');
+}
+await wipe();
+eq('cache: wipe leaves nothing behind', (await getNotesSorted()).length, 0);
+
 // ---------- rendering safety ----------
 {
   const nasty = '5"><img src=x onerror=alert(1)>';
