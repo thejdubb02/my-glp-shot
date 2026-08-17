@@ -1175,7 +1175,8 @@
 <!-- toast() has always fallen back to alert() because this element never existed. -->
 <div id="app-toast" class="app-toast" role="status" aria-live="polite"></div>
 
-<script src="lib/chart.min.js"></script>
-<script src="app.js?v=415"></script>
+<!-- Chart.js is no longer loaded here: it is 68 KB gzipped that only the
+     Insights tab needs, and app.js now fetches it on first chart draw. -->
+<script src="app.js?v=416"></script>
 </body>
 </html>

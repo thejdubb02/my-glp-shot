@@ -10,7 +10,7 @@ const DB_NAME = 'shotclock';
 // v9 bump: 'medChanges' store added — medication switches as discrete events so charts stay readable across drug changes.
 // v10 bump: 'notes' store added — a free-text line per day, so a number in a chart can carry the reason behind it.
 const DB_VERSION = 10;
-const APP_VERSION = '0.51.2';
+const APP_VERSION = '0.52.0';
 
 // Umami event tracker. Aggregates only — no PII (no email, no IDs). Safe to call before umami loads.
 function track(event, props) {
@@ -1142,7 +1142,9 @@ async function renderShots() {
   }
   renderCountdown(shots);
   renderCountdownRing(shots);
-  renderLevelChart(shots);
+  // Deliberately not awaited: this now fetches the chart library on first use,
+  // and the rest of the shot list should not wait on a network round-trip.
+  renderLevelChart(shots).catch(e => console.warn('level chart failed', e));
   renderBodyDiagram(shots);
   renderDoseTimeline(shots);
   renderSideEffectsSummary(shots);
@@ -2097,6 +2099,7 @@ async function renderWeights() {
       });
     } catch (e) { console.warn('benchmark overlay failed', e); }
   }
+  if (!await ensureChart()) return;
   if (weightChart) weightChart.destroy();
   weightChart = new Chart(ctx, {
     type: 'line',
@@ -2124,10 +2127,42 @@ async function renderWeights() {
   });
 }
 
+// ---------- Chart.js, loaded on demand ----------
+// 68 KB gzipped that only the Insights tab needs. It used to be a blocking
+// <script> in index.html, so every visitor paid for it on first paint even if
+// they never opened a chart. Now it is fetched the first time a chart is drawn.
+//
+// The plugin below MUST be registered by this loader rather than at module
+// scope: with the library deferred, a module-scope `typeof Chart !== 'undefined'`
+// check runs before the library exists, silently skips, and the dose-increase
+// markers never appear again.
+let _chartPromise = null;
+
+function ensureChart() {
+  if (typeof Chart !== 'undefined') { registerChartPlugins(); return Promise.resolve(true); }
+  if (_chartPromise) return _chartPromise;
+  _chartPromise = new Promise((resolve) => {
+    const s = document.createElement('script');
+    s.src = 'lib/chart.min.js';
+    s.async = true;
+    s.onload = () => { registerChartPlugins(); resolve(true); };
+    s.onerror = () => {
+      // Let a later attempt retry rather than caching the failure forever —
+      // this is usually a flaky connection, not a missing file.
+      _chartPromise = null;
+      console.warn('[mgs] chart library failed to load');
+      resolve(false);
+    };
+    document.head.appendChild(s);
+  });
+  return _chartPromise;
+}
+
 // Chart.js plugin — draws dashed vertical markers at given indexes with a
 // short label above the chart. Used on the weight chart to flag dose increases
-// and medication-switch events. Registered once at module load.
-if (typeof Chart !== 'undefined' && !Chart._mgsEventMarkersRegistered) {
+// and medication-switch events. Registered once, after the library is present.
+function registerChartPlugins() {
+  if (typeof Chart === 'undefined' || Chart._mgsEventMarkersRegistered) return;
   Chart.register({
     id: 'eventMarkers',
     afterDatasetsDraw(chart) {
@@ -2160,6 +2195,7 @@ if (typeof Chart !== 'undefined' && !Chart._mgsEventMarkersRegistered) {
   });
   Chart._mgsEventMarkersRegistered = true;
 }
+
 
 // Clinical-trial benchmark curves — approximate published average-completer
 // curves, expressed as % weight loss vs week of treatment. Anchored to the
@@ -2237,7 +2273,7 @@ function setupWeightRangeButtons() {
 // Body sex toggle removed 2026-05-03 — only the male silhouette is anatomically right; female version was deferred.
 function setupBodyToggle() { /* no-op */ }
 
-function renderLevelChart(shots) {
+async function renderLevelChart(shots) {
   const ctx = $('#level-chart');
   if (!shots.length) {
     if (levelChart) { levelChart.destroy(); levelChart = null; }
@@ -2264,6 +2300,7 @@ function renderLevelChart(shots) {
     }
     data.push(parseFloat(level.toFixed(2)));
   }
+  if (!await ensureChart()) return;
   if (levelChart) levelChart.destroy();
   levelChart = new Chart(ctx, {
     type: 'line',
