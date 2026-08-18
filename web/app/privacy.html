@@ -6,6 +6,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#0f766e">
 <title>Privacy — My GLP Shot</title>
+<link rel="canonical" href="https://myglpshot.com/privacy.html">
 <link rel="icon" href="/app/icons/favicon.ico">
 <link rel="stylesheet" href="styles.css?v=18">
 <script>
@@ -42,47 +43,74 @@
   <a href="./" class="legal-back">‹ Back to app</a>
   <section class="legal">
     <h1>Privacy Policy</h1>
-    <p class="muted small">Last updated: 2026-05-02</p>
+    <p class="muted small">Last updated: 2026-08-18</p>
 
     <h2>The short version</h2>
     <ul>
-      <li>My GLP Shot is a local-first app. Your data lives in your browser, on your device.</li>
-      <li>If you turn on Cloud Sync, your data is end-to-end encrypted in your browser before it leaves your device. The server stores opaque ciphertext only.</li>
-      <li>We have no way to decrypt your data. Not through admin tools, not under subpoena, not ever. Lose your passphrase and the cloud copy is unrecoverable.</li>
-      <li>No accounts, no email collection, no analytics, no third-party trackers, no advertising, no data sales.</li>
+      <li>My GLP Shot is local-first. Your shot log, weights, notes, photos, and settings live in your browser on this device unless you choose otherwise.</li>
+      <li>An account is optional. You can use the app with no account and no email.</li>
+      <li>If you create an account, we store your email and billing state. We do not store your password. Cloud backup is end-to-end encrypted in your browser. We cannot read that backup.</li>
+      <li><strong>Smart Import is the exception.</strong> If you use it, the file you upload is sent in readable form to an AI parser so we can turn it into shots and weights. That is the only path where health data leaves your device in plaintext.</li>
+      <li>No ads. No data sales. No health-data partnerships.</li>
     </ul>
 
     <h2>What stays on your device only</h2>
     <p>By default, all of this lives in your browser&#39;s IndexedDB on your device and never reaches our servers:</p>
     <ul>
       <li>Shot logs (medication, dose, date/time, injection site, notes)</li>
-      <li>Weight entries</li>
+      <li>Weight, mood, appetite, side effects, body measurements, labs, supply, and daily notes</li>
+      <li>Photos you attach to a log</li>
       <li>Settings (cadence, reminders, theme)</li>
     </ul>
+    <p>You can keep using the app this way forever. Nothing above is uploaded unless you sign in and turn on cloud backup, create a doctor-share link, or use Smart Import.</p>
+
+    <h2>If you create an account</h2>
+    <p>An account is optional. If you sign up, we store:</p>
+    <ul>
+      <li>Your email address (that is how we know which account is yours, and how we send a password-reset link)</li>
+      <li>A one-way hash of an authentication token derived from your password on your device. We never receive the password itself.</li>
+      <li>Subscription state: trial dates, whether you are on Premium, and Stripe customer / subscription IDs if you pay</li>
+      <li>Where you arrived from when you signed up (the referring page and any campaign tags on the link). This is for us to understand which pages bring people in. It is not ad tracking.</li>
+      <li>A signed-in session cookie (HttpOnly, Secure, 90 days)</li>
+    </ul>
+    <p>Forgot-password emails are sent through Resend from <code>hello@myglpshot.com</code>. We do not send marketing mail.</p>
 
     <h2>What we store if you enable Cloud Sync</h2>
-    <p>Cloud Sync is opt-in. When enabled, an encrypted blob of your data is uploaded so you can restore it on another device. The server stores:</p>
+    <p>Cloud Sync is opt-in and requires an account. When enabled, an encrypted blob of your data is uploaded so you can restore it on another device. The server stores:</p>
     <ul>
-      <li>An opaque <code>lookup_id</code> derived from your username + passphrase via PBKDF2 (we cannot reverse it to find your username or passphrase)</li>
       <li>A ciphertext blob (AES-GCM 256, encrypted in your browser before upload)</li>
       <li>An IV (random 96-bit nonce per encryption)</li>
-      <li>A last-updated timestamp</li>
+      <li>A last-updated timestamp and the size of the blob</li>
     </ul>
-    <p>We do not store: your username, your passphrase, your encryption key, your medications, your dosages, your weight, or anything else readable. The server cannot determine who you are or what is in your data.</p>
+    <p>We cannot read the blob. We do not store your password or your encryption key. If you lose your password, the cloud copy cannot be recovered. Your local copy on this device is unchanged.</p>
+
+    <h2>Smart Import — the one plaintext exception</h2>
+    <p>Smart Import is optional and only runs if you are signed in and you choose to upload an export from another tracker (or a CSV). The file is sent to our server, then to an AI model (Google Gemini, reached through our own LiteLLM gateway / OpenRouter) so it can be turned into shots and weights.</p>
+    <ul>
+      <li>The uploaded text is readable to that parser. It can include doses, dates, and weights.</li>
+      <li>We do not use Smart Import files to train a model, sell data, or build advertising profiles.</li>
+      <li>If you do not use Smart Import, this path never runs and that data never leaves the device in readable form.</li>
+    </ul>
+
+    <h2>Reminders</h2>
+    <p>If you turn on shot or daily reminders and allow notifications, your browser gives us a push endpoint. We store that endpoint and the times you asked to be buzzed. The notification wording is chosen from a fixed list on the server. We do not send your dose, weight, or notes in a notification.</p>
+
+    <h2>Payments</h2>
+    <p>Premium is billed by Stripe ($1.99/month or $19.99/year, 14-day trial). Checkout and the customer portal run on Stripe&#39;s site, not inside the app. Stripe sees the email and payment details you give them. We store Stripe&#39;s customer and subscription IDs so we can keep Premium in sync. We do not store card numbers.</p>
 
     <h2>How the encryption works</h2>
     <ul>
-      <li>Key derivation: PBKDF2-SHA-256, 600,000 iterations, salted with a hash of your username</li>
+      <li>Key derivation: PBKDF2-SHA-256, 600,000 iterations, salted with a hash of your email</li>
       <li>Encryption: AES-256-GCM with a fresh random 96-bit IV per upload</li>
-      <li>Lookup ID: derived from the same PBKDF2 output, separate from the encryption key, hex-encoded SHA-256</li>
-      <li>All cryptography runs in your browser via the Web Crypto API. The plaintext, the passphrase, and the encryption key never leave your device.</li>
+      <li>The first half of the derived key never leaves your device. The second half is the auth token we bcrypt and store.</li>
+      <li>All cryptography runs in your browser via the Web Crypto API.</li>
     </ul>
 
     <h2>Plain-English glossary</h2>
     <p class="muted small">If any of the terms above are unfamiliar, here&#39;s what they actually mean.</p>
     <dl class="glossary">
       <dt>Local-first</dt>
-      <dd>The app runs on your device and saves your data on your device. Nothing leaves the phone or computer unless you explicitly turn on Cloud Sync.</dd>
+      <dd>The app runs on your device and saves your data on your device. Nothing leaves the phone or computer unless you turn on Cloud Sync, create a doctor-share link, or use Smart Import.</dd>
 
       <dt>IndexedDB</dt>
       <dd>A built-in storage area inside your web browser where the app keeps your shots, weight, and settings. It stays on your device — like the notes app on your phone.</dd>
@@ -106,7 +134,7 @@
       <dd>A random number we mix in each time we encrypt, so the same data encrypted twice produces different ciphertext. Stops attackers from spotting patterns.</dd>
 
       <dt>Lookup ID</dt>
-      <dd>An anonymous ID we use to find <em>your</em> encrypted blob without knowing who you are. We can&#39;t reverse it back into your email or password.</dd>
+      <dd>An older anonymous ID used by the original sync method. Current accounts are keyed by email plus the hashed auth token, not a lookup ID.</dd>
 
       <dt>Web Crypto API</dt>
       <dd>The cryptography toolkit built into every modern browser. It&#39;s what does the encrypting on your device. Standard, audited, and runs locally.</dd>
@@ -122,14 +150,23 @@
     <p>Our reverse proxy logs basic request metadata (IP address, user agent, timestamp, request size, response status) for security and rate-limiting purposes. These logs are rotated and retained for no longer than 14 days. They are not joined to user data.</p>
 
     <h2>Cookies, analytics, third parties</h2>
-    <p>None. My GLP Shot does not set tracking cookies, does not run analytics, does not include third-party scripts, and does not embed advertising or social-media trackers.</p>
+    <p>The marketing site and the app both load our own self-hosted Umami analytics at <code>analytics.willhitestrategy.org</code>. It counts page views and a few in-app events (for example: signed up, tried without an account). It does not set an advertising cookie, does not sell data, and does not follow you across other sites. We do not embed ad networks, social pixels, or other companies&#39; trackers.</p>
+    <p>Third parties that can see something, and only when you use that feature:</p>
+    <ul>
+      <li><strong>Stripe</strong> — if you pay for Premium</li>
+      <li><strong>Resend</strong> — if we email you a password-reset link</li>
+      <li><strong>Google Gemini via our LiteLLM gateway / OpenRouter</strong> — if you use Smart Import</li>
+      <li><strong>Your browser&#39;s push service</strong> (Apple, Google, or Mozilla) — if you turn on reminders</li>
+    </ul>
+    <p>Cloudflare sits in front of the site for TLS and abuse protection. It sees the same request metadata any CDN would.</p>
 
     <h2>Your rights</h2>
     <ul>
       <li><strong>Export</strong> your data anytime as JSON from Settings → Backup.</li>
-      <li><strong>Delete</strong> all local data at any time via Settings → Erase all data on this device.</li>
-      <li><strong>Delete the cloud copy</strong> at any time via Settings → Cloud Sync → Delete cloud data. This permanently removes the encrypted blob from our server.</li>
-      <li>If you are in the EU/UK, California, or another jurisdiction with privacy rights (GDPR, CCPA/CPRA, etc.), the above export and deletion controls satisfy your access and erasure rights. Because we cannot read your data, we have nothing else to disclose about you specifically.</li>
+      <li><strong>Delete local data</strong> via Settings → Erase all data on this device.</li>
+      <li><strong>Delete the cloud copy</strong> via Settings → Cloud Sync → Delete cloud data.</li>
+      <li><strong>Delete the account</strong> via Settings → Delete account and all cloud data. That removes the account, the encrypted backup, sessions, share links, and reminder schedule.</li>
+      <li>If you are in the EU/UK, California, or another jurisdiction with privacy rights (GDPR, CCPA/CPRA, etc.), the controls above cover access and erasure. Email <a href="mailto:hello@myglpshot.com">hello@myglpshot.com</a> if you want us to confirm an account deletion from our side.</li>
     </ul>
 
     <h2>HIPAA</h2>
@@ -145,7 +182,8 @@
     <p>If this policy changes materially, we will update the &quot;Last updated&quot; date and post a notice in the app.</p>
 
     <h2>Contact</h2>
-    <p>Questions or concerns: <a href="mailto:hello@willhitestrategy.org">hello@willhitestrategy.org</a></p>
+    <p>Questions or concerns: <a href="mailto:hello@myglpshot.com">hello@myglpshot.com</a></p>
+    <p>Willhite Strategy Group<br>1875 Mission St Ste 103 #809<br>San Francisco, CA 94103</p>
 
     <p class="center"><a href="./">Back to My GLP Shot</a> &nbsp;·&nbsp; <a href="terms.html">Terms of Use</a></p>
   </section>

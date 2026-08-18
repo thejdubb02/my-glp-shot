@@ -423,7 +423,7 @@
       "name": "What is the best private GLP-1 shot tracker?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "If privacy is your top priority, My GLP Shot is purpose-built for it: data lives on your device by default, optional cloud sync is end-to-end encrypted (server cannot read it), no account required, no ads, no analytics in the app. Closed-source alternatives like Shotsy, CareClinic, MyTherapy, and Medisafe all store your tracking data on their servers. Spreadsheets are private but lack the dose-half-life chart, site rotation, and mixing calculator. My GLP Shot is free to start with a 14-day premium trial; paid is $19.99/year or $1.99/month."
+        "text": "If privacy is your top priority, My GLP Shot is purpose-built for it: data lives on your device by default, optional cloud sync is end-to-end encrypted (server cannot read it), no account required, no ads, no data sales. Smart Import is the one optional exception: an uploaded export is sent to an AI parser in readable form. Closed-source alternatives like Shotsy, CareClinic, MyTherapy, and Medisafe all store your tracking data on their servers. Spreadsheets are private but lack the dose-half-life chart, site rotation, and mixing calculator. My GLP Shot is free to start with a 14-day premium trial; paid is $19.99/year or $1.99/month."
       }
     },
     {
@@ -471,7 +471,7 @@
       "name": "What information does My GLP Shot NOT collect?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "We never see your shot data, doses, weights, mood, appetite, body measurements, lab values, photos, or notes — even with cloud sync enabled, those are end-to-end encrypted in your browser before upload, and our server only stores opaque ciphertext. We do not collect: device fingerprints, contacts, location, advertising IDs, health-app integrations (we do not connect to Apple Health or Google Fit), social-graph data, browsing history, or any third-party analytics inside the app. The marketing site at myglpshot.com uses self-hosted privacy-friendly Umami analytics for click counts (no IP, no cookies, no cross-site tracking); the app itself loads no third-party scripts."
+        "text": "We do not see your shot data, doses, weights, mood, appetite, body measurements, lab values, photos, or notes when you use the app normally — even with cloud sync, those are end-to-end encrypted in your browser before upload. The one exception is Smart Import: if you upload another tracker’s export, that file is sent in readable form to an AI parser (Google Gemini via our gateway) so it can be turned into shots and weights. We do not collect device fingerprints, contacts, location, advertising IDs, or health-app integrations. The marketing site and the app load our own self-hosted Umami analytics for page views and a few product events (no ad cookies, no cross-site tracking)."
       }
     },
     {
@@ -479,7 +479,7 @@
       "name": "What third-party services does the app connect to?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "The app connects only to its own first-party API (api.myglpshot.com / app.myglpshot.com/api) for optional account login and encrypted sync, and to Stripe Checkout / Stripe Customer Portal for premium billing — Stripe-hosted pages, not embedded scripts. There are no third-party analytics, ad networks, error-tracking SDKs, push-notification vendors, social login providers, CDN-loaded fonts, or chat widgets running inside the app. Push notifications use the standard Web Push API directly between your browser and our server. The full network surface is auditable in the open-source code."
+        "text": "The app talks to its own API for optional login and encrypted sync; to Stripe Checkout / Customer Portal if you buy Premium; to our self-hosted Umami for page-view counts; to Resend if you request a password reset; and to Google Gemini through our LiteLLM gateway only if you use Smart Import. Push notifications use the standard Web Push API between your browser and our server. There are no ad networks, social pixels, or chat widgets. The full network surface is auditable in the open-source code."
       }
     },
     {
@@ -594,7 +594,7 @@
     <ul class="glance-list">
       <li><strong>Your data lives on your device.</strong> No account required to start. Local-first by default.</li>
       <li><strong>Cloud sync is end-to-end encrypted.</strong> Encrypted in your browser before it leaves — our server stores ciphertext and cannot read it.</li>
-      <li><strong>No ads, no analytics in the app, no data sales.</strong> The app itself loads zero third-party scripts.</li>
+      <li><strong>No ads, no data sales.</strong> The app loads our own self-hosted analytics for page views — no ad networks or social pixels. Smart Import is the one optional case where a file you upload is sent to an AI parser in readable form.</li>
       <li><strong>Open source.</strong> Audit every line of the encryption and sync code on GitHub.</li>
       <li><strong>Delete anytime.</strong> One tap removes your encrypted cloud copy permanently. Local data clears with another tap.</li>
     </ul>

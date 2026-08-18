@@ -50,7 +50,7 @@
   "@type": "WebPage",
   "name": "Security \u2014 My GLP Shot",
   "url": "https://myglpshot.com/security.html",
-  "dateModified": "2026-05-03"
+  "dateModified": "2026-08-18"
 }
 </script>
 </head>
@@ -68,17 +68,18 @@
 
 <main class="security-body">
   <h1>Security</h1>
-  <p class="muted">Last updated: <time datetime="2026-05-03">May 3, 2026</time></p>
+  <p class="muted">Last updated: <time datetime="2026-08-18">August 18, 2026</time></p>
 
   <h2>How My GLP Shot protects your data</h2>
-  <p>The default mode is <strong>local-only</strong>. Your shots, doses, weights, mood, body measurements, lab values, photos, and notes never leave your device unless you explicitly opt into cloud sync.</p>
+  <p>The default mode is <strong>local-only</strong>. Your shots, doses, weights, mood, body measurements, lab values, photos, and notes never leave your device unless you turn on cloud sync, create a doctor-share link, or use Smart Import.</p>
   <p>If you turn on cloud sync, the encryption happens in your browser before any byte hits our server:</p>
   <ul>
     <li>Your password is never sent to our server. It is run through <code>PBKDF2-SHA-256</code> with <strong>600,000 iterations</strong> in the browser to derive both an authentication token (sent to the server) and an AES-256-GCM key (kept on your device).</li>
     <li>All synced data is encrypted with that AES-256-GCM key using a fresh random 12-byte IV before upload.</li>
-    <li>The server stores opaque ciphertext only. We have no key material. We literally cannot read your data.</li>
+    <li>The server stores opaque ciphertext only. We have no key material. We cannot read a synced backup.</li>
     <li>Doctor-share links generate a fresh per-share AES key and place it in the URL fragment after the <code>#</code> — fragments are not sent to servers, so the share link's key never reaches us either.</li>
   </ul>
+  <p><strong>Smart Import is different.</strong> If you upload another tracker&#39;s export, that file is sent in readable form to Google Gemini (through our LiteLLM gateway) so it can be parsed into shots and weights. That path is optional, signed-in only, and disclosed in the <a href="/privacy.html">privacy policy</a>.</p>
   <p>The full encryption code is short, idiomatic, and uses only the platform's built-in <code>SubtleCrypto</code> Web API. You can read every line on <a href="https://github.com/thejdubb02/my-glp-shot" target="_blank" rel="noopener">GitHub</a>.</p>
 
   <h2>Independent audits</h2>
@@ -119,7 +120,7 @@
     <li>Backups: daily encrypted (AES-256-CBC + PBKDF2) backups to a second VPS.</li>
     <li>TLS: Let's Encrypt certificates, auto-rotated, OCSP stapling enabled.</li>
     <li>Email: Resend for transactional mail; no marketing automation, no third-party tracking pixels.</li>
-    <li>Analytics on the marketing site: self-hosted privacy-friendly Umami (no IPs, no cookies, no cross-site tracking). The app itself loads zero third-party scripts.</li>
+    <li>Analytics: self-hosted Umami on the marketing site and in the app (page views and a few product events; no ad cookies, no cross-site tracking). No third-party ad or social scripts.</li>
   </ul>
 
   <h2>Account deletion</h2>

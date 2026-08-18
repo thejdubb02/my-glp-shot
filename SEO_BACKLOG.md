@@ -14,5 +14,5 @@ GSC-flagged issues to triage. Newest at top. Close items by striking through (`~
 - https://myglpshot.com/vs-glippy.html
 - https://myglpshot.com/vs-pep.html
 **Suggested fix:** Authority/crawl-budget signal. Push via IndexNow, add internal links from indexed pages, manually Request Indexing in GSC.
-**Status:** open
+**Status:** tags are on every comparison page. App-host copies of those 8 URLs now 301 to myglpshot.com (2026-08-18). Indexing in GSC is still a Google-side wait.
 
