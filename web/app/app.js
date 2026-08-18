@@ -10,7 +10,7 @@ const DB_NAME = 'shotclock';
 // v9 bump: 'medChanges' store added — medication switches as discrete events so charts stay readable across drug changes.
 // v10 bump: 'notes' store added — a free-text line per day, so a number in a chart can carry the reason behind it.
 const DB_VERSION = 10;
-const APP_VERSION = '0.52.0';
+const APP_VERSION = '0.53.0';
 
 // Umami event tracker. Aggregates only — no PII (no email, no IDs). Safe to call before umami loads.
 function track(event, props) {
@@ -315,7 +315,8 @@ const INFO_TOPICS = {
   'supplies': {
     title: 'Pens & vials',
     body: `<p>Track every pen or vial you have on hand: pharmacy, lot number, total mg, expiration date, cost.</p>
-      <p>The progress bar fills as the app counts down doses you've logged against the total mg in the supply.</p>
+      <p>Enter the <strong>total</strong> mg in the whole pen or vial, not the dose you inject — both numbers are on the box, usually printed together as mg/mL.</p>
+      <p>The progress bar fills as you log shots. A supply counts the shots from the day you opened it until the day you opened the next one, so each shot is charged to exactly one pen. Set the "Date opened" or there's nothing to count from.</p>
       <p>You'll see a warning when a pen is within 7 days of expiring or has gone past expiration.</p>`,
   },
   'measurements': {
@@ -562,15 +563,59 @@ const SE_LEVELS = [['', 'None'], ['mild', 'Mild'], ['moderate', 'Moderate'], ['s
 // published pharmacokinetics. Half-life remains user-editable; presets just
 // suggest sensible defaults. ER (extended-release) variants like exenatide
 // once-weekly have a much longer effective half-life than the daily IR form.
+// `doses` is the labelled titration ladder, offered as one-tap chips next to
+// the dose field. It exists because the dose box used to step in 0.1s, so
+// 0.25 mg — the semaglutide starting dose almost everyone begins on — was
+// rejected outright and users rounded it to 0.2. The step is fixed; the chips
+// mean the right number is a tap away rather than something to get right by
+// hand. Doses are the union of the brand labels for that molecule. An empty
+// ladder means no approved label to quote (retatrutide is trial-stage), and
+// the field still accepts any value.
 const MED_PRESETS = [
-  { id: 'tirzepatide',  name: 'Tirzepatide',  halfLifeDays: 5,    defaultDose: 5,    cadenceDays: 7, brands: ['Mounjaro', 'Zepbound'] },
-  { id: 'semaglutide',  name: 'Semaglutide',  halfLifeDays: 7,    defaultDose: 1,    cadenceDays: 7, brands: ['Ozempic', 'Wegovy'] },
-  { id: 'liraglutide',  name: 'Liraglutide',  halfLifeDays: 0.55, defaultDose: 1.8,  cadenceDays: 1, brands: ['Saxenda', 'Victoza'] },
-  { id: 'dulaglutide',  name: 'Dulaglutide',  halfLifeDays: 5,    defaultDose: 1.5,  cadenceDays: 7, brands: ['Trulicity'] },
-  { id: 'exenatide-er', name: 'Exenatide ER', halfLifeDays: 14,   defaultDose: 2,    cadenceDays: 7, brands: ['Bydureon'] },  // microsphere release ~2 weeks
-  { id: 'exenatide',    name: 'Exenatide',    halfLifeDays: 0.1,  defaultDose: 0.01, cadenceDays: 1, brands: ['Byetta'] },  // ~2.4h half-life
-  { id: 'retatrutide',  name: 'Retatrutide',  halfLifeDays: 6,    defaultDose: 4,    cadenceDays: 7, brands: [] },
+  { id: 'tirzepatide',  name: 'Tirzepatide',  halfLifeDays: 5,    defaultDose: 5,    cadenceDays: 7, brands: ['Mounjaro', 'Zepbound'], doses: [2.5, 5, 7.5, 10, 12.5, 15] },
+  { id: 'semaglutide',  name: 'Semaglutide',  halfLifeDays: 7,    defaultDose: 1,    cadenceDays: 7, brands: ['Ozempic', 'Wegovy'],    doses: [0.25, 0.5, 1, 1.7, 2, 2.4] },
+  { id: 'liraglutide',  name: 'Liraglutide',  halfLifeDays: 0.55, defaultDose: 1.8,  cadenceDays: 1, brands: ['Saxenda', 'Victoza'],   doses: [0.6, 1.2, 1.8, 2.4, 3] },
+  { id: 'dulaglutide',  name: 'Dulaglutide',  halfLifeDays: 5,    defaultDose: 1.5,  cadenceDays: 7, brands: ['Trulicity'],            doses: [0.75, 1.5, 3, 4.5] },
+  { id: 'exenatide-er', name: 'Exenatide ER', halfLifeDays: 14,   defaultDose: 2,    cadenceDays: 7, brands: ['Bydureon'],             doses: [2] },  // microsphere release ~2 weeks
+  { id: 'exenatide',    name: 'Exenatide',    halfLifeDays: 0.1,  defaultDose: 0.01, cadenceDays: 1, brands: ['Byetta'],               doses: [0.005, 0.01] },  // ~2.4h half-life
+  { id: 'retatrutide',  name: 'Retatrutide',  halfLifeDays: 6,    defaultDose: 4,    cadenceDays: 7, brands: [], doses: [] },
 ];
+// Render the titration ladder for `medName` as tappable chips into `wrapSel`,
+// filling `inputSel` when one is tapped. Hidden entirely when the medication
+// has no ladder, so a custom peptide just gets the plain field.
+function renderDoseChips(wrapSel, inputSel, medName) {
+  const wrap = $(wrapSel);
+  const input = $(inputSel);
+  if (!wrap || !input) return;
+  const preset = findMedPreset(medName);
+  const ladder = (preset && preset.doses) || [];
+  if (!ladder.length) { wrap.hidden = true; wrap.innerHTML = ''; return; }
+  const current = parseFloat(input.value);
+  wrap.dataset.target = inputSel;
+  wrap.innerHTML = ladder.map(d =>
+    `<button type="button" class="dose-chip${d === current ? ' active' : ''}" data-dose="${d}">${d} mg</button>`
+  ).join('');
+  wrap.hidden = false;
+}
+
+// One delegated listener for every chip row — the rows are re-rendered on each
+// medication change, so per-button listeners would leak.
+function setupDoseChips() {
+  document.addEventListener('click', (e) => {
+    const chip = e.target.closest ? e.target.closest('.dose-chip') : null;
+    if (!chip) return;
+    const wrap = chip.parentElement;
+    const input = wrap && wrap.dataset.target ? $(wrap.dataset.target) : null;
+    if (!input) return;
+    input.value = chip.dataset.dose;
+    // #set-dose persists on 'change'; the shot form reads the value on submit.
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    wrap.querySelectorAll('.dose-chip').forEach(c => c.classList.toggle('active', c === chip));
+  });
+  const med = $('#shot-med');
+  if (med) med.addEventListener('input', () => renderDoseChips('#shot-dose-chips', '#shot-dose-amt', med.value));
+}
+
 function findMedPreset(name) {
   if (!name) return null;
   const n = name.trim().toLowerCase();
@@ -1204,6 +1249,7 @@ async function openShotDialog(shot) {
   $('#shot-id').value = isEdit ? shot.id : '';
   $('#shot-med').value = shot ? shot.med : settings.medication;
   $('#shot-dose-amt').value = shot ? shot.dose : settings.defaultDose;
+  renderDoseChips('#shot-dose-chips', '#shot-dose-amt', $('#shot-med').value);
   $('#shot-when').value = shot ? localISOForInput(new Date(shot.when)) : localISOForInput();
   refreshCustomSiteOptgroup();
   const initialSite = shot ? (shot.site || '') : (window._preferredNextSite || '');
@@ -1636,6 +1682,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const matched = findMedPreset(settings.medication);
     if (matched) $('#set-med-preset').value = matched.id;
     else $('#set-med-preset').value = 'custom';
+    renderDoseChips('#set-dose-chips', '#set-dose', settings.medication);
     await saveSettings(); markSyncDirty();
   });
   $('#set-med-preset').addEventListener('change', async (e) => {
@@ -1650,6 +1697,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     $('#set-med').value = preset.name;
     $('#set-halflife').value = preset.halfLifeDays;
     $('#set-dose').value = preset.defaultDose;
+    renderDoseChips('#set-dose-chips', '#set-dose', preset.name);
     $('#set-cadence').value = preset.cadenceDays;
     await saveSettings();
     markSyncDirty();
@@ -1909,6 +1957,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupPullToRefresh();
   setupAccountUI();
   setupReconCalc();
+  setupDoseChips();
   setupSupplyUI();
   setupMeasurementUI();
   setupLabUI();
@@ -1943,6 +1992,7 @@ function applySettingsToInputs() {
     presetSel.value = matched ? matched.id : 'custom';
   }
   $('#set-dose').value = settings.defaultDose;
+  renderDoseChips('#set-dose-chips', '#set-dose', settings.medication);
   $('#set-cadence').value = settings.cadenceDays;
   $('#set-halflife').value = settings.halfLifeDays;
   if ($('#set-start-weight')) $('#set-start-weight').value = settings.startWeight ?? '';
@@ -3545,6 +3595,10 @@ function setupSupplyUI() {
     openSupplyDialog(null);
   });
   $('#supply-cancel').addEventListener('click', () => $('#supply-dialog').close());
+  ['#supply-total-mg', '#supply-volume-ml'].forEach(sel => {
+    const el = $(sel);
+    if (el) el.addEventListener('input', updateSupplyReadout);
+  });
   $('#supply-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const id = $('#supply-id').value;
@@ -3557,7 +3611,8 @@ function setupSupplyUI() {
       cost: parseFloat($('#supply-cost').value) || null,
       opened_at: $('#supply-opened').value || null,
       expires_at: $('#supply-expires').value || null,
-      used_mg: 0,
+      // No stored used_mg: usage is derived from the shot log by supplyUsage(),
+      // so it can't drift out of date the way a written-once field did.
     };
     if (id) supply.id = parseInt(id, 10);
     await saveSupply(supply);
@@ -6466,6 +6521,33 @@ async function deleteSupply(id) {
   });
 }
 
+// How much of each supply has been used. The rule is the one people actually
+// follow: you open a pen, finish it, then open the next — so a supply owns
+// every shot from the day it was opened until the day the following supply was
+// opened. That keeps each shot counted against exactly one supply. Supplies
+// with no opened date sit outside the attribution entirely rather than
+// swallowing shots that belong to a dated one.
+function supplyUsage(supplies, shots) {
+  const usage = new Map();
+  const dated = supplies
+    .filter(s => s.opened_at)
+    .sort((a, b) => String(a.opened_at).localeCompare(String(b.opened_at)));
+  dated.forEach((s, i) => {
+    const from = String(s.opened_at);
+    const until = dated[i + 1] ? String(dated[i + 1].opened_at) : null;
+    let usedMg = 0, lastDose = null, lastWhen = null;
+    for (const shot of shots) {
+      const day = toCanonicalDate(shot.when);
+      if (!day || day < from) continue;
+      if (until && day >= until) continue;
+      usedMg += shot.dose || 0;
+      if (lastWhen == null || String(shot.when) > lastWhen) { lastWhen = String(shot.when); lastDose = shot.dose || null; }
+    }
+    usage.set(s.id, { usedMg, lastDose });
+  });
+  return usage;
+}
+
 async function renderSupplies(shots) {
   const list = $('#supply-list');
   const empty = $('#supply-empty');
@@ -6477,14 +6559,16 @@ async function renderSupplies(shots) {
     return;
   }
   empty.classList.add('hidden');
-  // Compute usage from shots
-  const usedMg = shots.reduce((sum, s) => sum + (s.dose || 0), 0);
+  const usage = supplyUsage(supplies, shots);
   list.innerHTML = supplies.map(s => {
+    const use = usage.get(s.id) || { usedMg: 0, lastDose: null };
     const today = new Date(); today.setHours(0,0,0,0);
     const exp = s.expires_at ? new Date(s.expires_at) : null;
     const daysToExpire = exp ? Math.floor((exp - today) / 86400000) : null;
-    const dosesLeft = s.last_dose_mg ? Math.floor((s.total_mg - s.used_mg) / s.last_dose_mg) : null;
-    const pctUsed = s.total_mg ? Math.min(100, (s.used_mg / s.total_mg) * 100) : 0;
+    const perDose = use.lastDose || parseFloat(settings.defaultDose) || null;
+    const remaining = Math.max(0, (s.total_mg || 0) - use.usedMg);
+    const dosesLeft = (perDose && s.total_mg) ? Math.floor(remaining / perDose) : null;
+    const pctUsed = s.total_mg ? Math.min(100, (use.usedMg / s.total_mg) * 100) : 0;
     let cls = '';
     if (daysToExpire != null) {
       if (daysToExpire < 0) cls = 'expired';
@@ -6496,13 +6580,33 @@ async function renderSupplies(shots) {
     return `<li class="${cls}" data-id="${s.id}">
       <div class="supply-name">${escapeHTML(s.type === 'pen' ? '💉 Pen' : '🧪 Vial')} · ${s.total_mg} mg ${s.volume_ml ? '· ' + s.volume_ml + ' mL' : ''}</div>
       <div class="supply-meta">${escapeHTML(s.pharmacy || 'Unknown source')}${s.batch ? ' · Lot ' + escapeHTML(s.batch) : ''}${s.cost ? ' · $' + s.cost : ''}</div>
-      <div class="supply-meta">${expireText}${dosesLeft != null ? ' · ~' + dosesLeft + ' doses left' : ''}</div>
+      <div class="supply-meta">${expireText}${s.opened_at && s.total_mg ? ` · ${+use.usedMg.toFixed(2)} of ${s.total_mg} mg used` : ''}${dosesLeft != null && s.opened_at ? ' · ~' + dosesLeft + ' doses left' : ''}</div>
       <div class="supply-progress"><div class="supply-fill" style="width:${pctUsed.toFixed(0)}%"></div></div>
     </li>`;
   }).join('');
   list.querySelectorAll('li').forEach(li => {
     li.addEventListener('click', () => openSupplyDialog(supplies.find(x => x.id == li.dataset.id)));
   });
+}
+
+// Reads the two numbers back in plain language while they're being typed.
+// "2.1 mg and 3 mL" is easy to enter from a box and hard to sanity-check;
+// "0.7 mg/mL - about 8 doses at 0.25 mg" is not.
+function updateSupplyReadout() {
+  const el = $('#supply-readout');
+  if (!el) return;
+  const mg = parseFloat($('#supply-total-mg').value);
+  const ml = parseFloat($('#supply-volume-ml').value);
+  if (!Number.isFinite(mg) || mg <= 0) { el.hidden = true; el.textContent = ''; return; }
+  const parts = [];
+  if (Number.isFinite(ml) && ml > 0) parts.push(`${+(mg / ml).toFixed(3)} mg/mL`);
+  const dose = parseFloat(settings.defaultDose);
+  if (Number.isFinite(dose) && dose > 0 && dose <= mg) {
+    const n = Math.floor(mg / dose);
+    parts.push(`about ${n} dose${n === 1 ? '' : 's'} at your ${dose} mg dose`);
+  }
+  el.textContent = parts.length ? `Reads as: ${parts.join(' · ')}` : '';
+  el.hidden = !parts.length;
 }
 
 function openSupplyDialog(s) {
@@ -6518,6 +6622,7 @@ function openSupplyDialog(s) {
   $('#supply-opened').value = s ? (s.opened_at || '') : todayISODate();
   $('#supply-expires').value = s ? (s.expires_at || '') : '';
   $('#supply-delete').classList.toggle('hidden', !isEdit);
+  updateSupplyReadout();
   $('#supply-dialog').showModal();
 }
 

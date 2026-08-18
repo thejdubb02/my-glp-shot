@@ -688,3 +688,11 @@ body.tab-more #view-home > [data-tab]:not([data-tab="more"]){display:none}
 /* Notes are free text and often multi-line — preserve the breaks the user typed
    rather than collapsing their paragraphs into one run-on line. */
 .note-entry-text{font-size:.88rem;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}
+
+/* Dose ladder chips — the labelled titration steps, one tap from the dose field. */
+.dose-chips{display:flex;flex-wrap:wrap;gap:6px;margin:-4px 0 12px}
+.dose-chip{font:inherit;font-size:.78rem;font-weight:600;padding:5px 11px;border-radius:999px;border:1.5px solid var(--line);background:transparent;color:var(--text);cursor:pointer;transition:transform .15s,background .15s,border-color .15s}
+.dose-chip:hover{transform:translateY(-1px);background:var(--surface-alt);border-color:var(--bronze)}
+.dose-chip.active{background:var(--bronze);border-color:var(--bronze-dk);color:#fff}
+.supply-readout{margin:-4px 0 10px;font-size:.82rem;color:var(--bronze-dk);font-weight:600}
+[data-theme="dark"] .supply-readout{color:var(--bronze)}

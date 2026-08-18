@@ -19,7 +19,7 @@
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="icon" type="image/png" sizes="512x512" href="icons/icon-512.png">
 <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png">
-<link rel="stylesheet" href="styles.css?v=413">
+<link rel="stylesheet" href="styles.css?v=417">
 <script>
 (function(){
   // Apply saved theme synchronously to avoid flash. Settings live in IndexedDB; theme also mirrored to localStorage for fast read.
@@ -277,9 +277,9 @@
     <div class="card-head"><h2>Mixing calculator <button class="info-btn" type="button" data-info="mixing-calc" aria-label="About this">i</button></h2><span class="muted small">Free · for compounded peptide users</span></div>
     <p class="muted small">Mixing your own peptide? Enter the vial size, how much bacteriostatic water you added, your dose, and your syringe size. We'll tell you exactly which line to draw to.</p>
     <div class="recon-grid">
-      <label>Vial (mg)<input id="recon-vial" type="number" step="0.1" min="0" value="10"></label>
+      <label>Vial (mg)<input id="recon-vial" type="number" step="0.01" min="0" inputmode="decimal" value="10"></label>
       <label>BAC water (mL)<input id="recon-water" type="number" step="0.1" min="0.1" value="2"></label>
-      <label>Your dose (mg)<input id="recon-dose" type="number" step="0.1" min="0" value="5"></label>
+      <label>Your dose (mg)<input id="recon-dose" type="number" step="0.001" min="0" inputmode="decimal" value="5"></label>
       <label>Syringe
         <select id="recon-syringe">
           <optgroup label="Insulin (U-100, units + mL)">
@@ -599,7 +599,8 @@
     </label>
     <p class="muted small" id="set-med-preset-hint">Picking a preset suggests sensible defaults; you can still override any field below.</p>
     <label>Name <input id="set-med" type="text" placeholder="Tirzepatide"></label>
-    <label>Default dose (mg) <input id="set-dose" type="number" step="0.1" min="0"></label>
+    <label>Default dose (mg) <input id="set-dose" type="number" step="0.001" min="0" inputmode="decimal"></label>
+    <div id="set-dose-chips" class="dose-chips" hidden></div>
     <label>Cadence (days between shots) <input id="set-cadence" type="number" min="1" max="30"></label>
     <label>Half-life (days, for level chart) <input id="set-halflife" type="number" step="0.1" min="0.1"></label>
     <div class="btn-row">
@@ -776,7 +777,8 @@
     <h2 id="shot-form-title">Log Shot</h2>
     <input type="hidden" id="shot-id">
     <label>Medication <input id="shot-med" type="text" required></label>
-    <label>Dose (mg) <input id="shot-dose-amt" type="number" step="0.1" min="0" required></label>
+    <label>Dose (mg) <input id="shot-dose-amt" type="number" step="0.001" min="0" inputmode="decimal" required></label>
+    <div id="shot-dose-chips" class="dose-chips" hidden></div>
     <label>Date &amp; time <input id="shot-when" type="datetime-local" required></label>
     <label>Injection site
       <select id="shot-site">
@@ -983,8 +985,10 @@
         <option value="pen">Pen</option>
       </select>
     </label>
-    <label>Total mg <input id="supply-total-mg" type="number" step="0.1" min="0" required></label>
-    <label>Volume (mL, vial only) <input id="supply-volume-ml" type="number" step="0.1" min="0"></label>
+    <label>Total mg in the whole pen or vial <input id="supply-total-mg" type="number" step="0.001" min="0" inputmode="decimal" required></label>
+    <label>Liquid volume (mL) — optional <input id="supply-volume-ml" type="number" step="0.01" min="0" inputmode="decimal"></label>
+    <p class="muted small">Both numbers are on the box, usually written together as <strong>mg/mL</strong> — "8 mg/3 mL" means <strong>8</strong> in the first field and <strong>3</strong> in the second. That's the <em>total in the pen</em>, not the dose you inject each week. If you only see one number, enter the mg and leave the volume blank.</p>
+    <p id="supply-readout" class="supply-readout" hidden></p>
     <label>Pharmacy / source <input id="supply-pharmacy" type="text" placeholder="e.g. Hims, EmpowerRx"></label>
     <label>Batch / lot # <input id="supply-batch" type="text"></label>
     <label>Cost ($) <input id="supply-cost" type="number" step="0.01" min="0"></label>
@@ -1177,6 +1181,6 @@
 
 <!-- Chart.js is no longer loaded here: it is 68 KB gzipped that only the
      Insights tab needs, and app.js now fetches it on first chart draw. -->
-<script src="app.js?v=416"></script>
+<script src="app.js?v=417"></script>
 </body>
 </html>
