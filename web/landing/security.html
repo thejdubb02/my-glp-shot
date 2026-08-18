@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#0d9488">
 
 <title>Security — My GLP Shot</title>
-<meta name="description" content="My GLP Shot security: how we protect your data, our cryptography, and how to responsibly disclose vulnerabilities.">
+<meta name="description" content="My GLP Shot security: data stays local-first by default; cloud sync is end-to-end encrypted with AES-256-GCM. How we protect it and how to report a vulnerability.">
 <link rel="canonical" href="https://myglpshot.com/security.html">
 <meta name="robots" content="index, follow, max-snippet:-1">
 
@@ -71,7 +71,7 @@
   <p class="muted">Last updated: <time datetime="2026-08-18">August 18, 2026</time></p>
 
   <h2>How My GLP Shot protects your data</h2>
-  <p>The default mode is <strong>local-only</strong>. Your shots, doses, weights, mood, body measurements, lab values, photos, and notes never leave your device unless you turn on cloud sync, create a doctor-share link, or use Smart Import.</p>
+  <p>In My GLP Shot, the default mode is <strong>local-only</strong>. Your shots, doses, weights, mood, body measurements, lab values, photos, and notes never leave your device unless you turn on cloud sync, create a doctor-share link, or use Smart Import.</p>
   <p>If you turn on cloud sync, the encryption happens in your browser before any byte hits our server:</p>
   <ul>
     <li>Your password is never sent to our server. It is run through <code>PBKDF2-SHA-256</code> with <strong>600,000 iterations</strong> in the browser to derive both an authentication token (sent to the server) and an AES-256-GCM key (kept on your device).</li>
