@@ -1,0 +1,80 @@
+**JSON Audit Report**
+
+```json
+{
+  "findings": [
+    {
+      "severity": "CRITICAL",
+      "file": "web/app/app.js",
+      "line": 325,
+      "title": "XSS via innerHTML in showInfo()",
+      "issue": "document.getElementById('info-dialog-body').innerHTML = body; is called with fully dynamic content. INFO_TOPICS.*.body functions (lines 29-48, 52-72, 102-120, 186-205, 210-232, 252-275, etc.) interpolate user-controlled values (settings.medication, latest.dose, weights, shots, etc.) via template literals without escaping. escapeHTML is defined but only used in a few places (e.g. line 39, 199). An attacker who can influence any of these values (via import, sync, or compromised account) can execute arbitrary JavaScript.",
+      "fix": "Change line 325 to: document.getElementById('info-dialog-body').innerHTML = DOMPurify.sanitize(body); (or implement a strict trusted-types policy). Ensure every interpolated value in every INFO_TOPICS.body function is passed through escapeHTML()."
+    },
+    {
+      "severity": "CRITICAL",
+      "file": "web/app/app.js",
+      "line": 572,
+      "title": "IndexedDB upgrade handler is not version-aware / idempotent",
+      "issue": "onupgradeneeded (lines 572-612) only checks !db.objectStoreNames.contains(...) before creating stores and indexes. It never checks the oldVersion. When DB_VERSION is bumped from 9 to 10 in the future, the handler will re-execute all previous creation steps on every existing database. This is fragile and can cause transaction aborts or schema conflicts under real concurrency or after future schema changes.",
+      "fix": "Wrap each creation block with a version gate, e.g. if (e.oldVersion < 1) { create shots... } if (e.oldVersion < 6) { create appetites... } etc. Remove the DB_VERSION comment on line 7 that claims this is already handled."
+    },
+    {
+      "severity": "HIGH",
+      "file": "web/app/app.js",
+      "line": 1319,
+      "title": "Silent data loss on shot save when date parsing fails",
+      "issue": "Line 1319 does new Date(whenStr) but never checks isNaN(whenDate.getTime()). The guard on line 1320 only alerts and returns — it does not prevent the rest of the function from continuing if the alert is dismissed or suppressed. Later code (line 1355) will store an invalid ISO string. Combined with parseDateFlexible() being overly permissive, this can corrupt charts, streaks, level calculations, and notifications.",
+      "fix": "After line 1320 add: if (!whenDate || isNaN(whenDate.getTime())) { alert(...); return; } and consider using the already-existing localISOForInput() / zonedWallToUtc() helpers for all date handling."
+    },
+    {
+      "severity": "HIGH",
+      "file": "web/app/app.js",
+      "line": 2436,
+      "title": "Notification scheduling is unreliable under concurrency and timezone changes",
+      "issue": "maybeScheduleNotification() clears existing timers and calls scheduleShotReminder() + scheduleDailyReminders(). Both functions read live settings and IndexedDB state without locking. Rapid changes (multiple devices, quick setting toggles, timezone change on line 1468) can leave stale Timeout IDs or overlapping TimestampTrigger notifications. TRIGGERS_SUPPORTED path also does not clean up old triggers reliably (only closes visible notifications).",
+      "fix": "Add a global notification revision counter that is incremented on every settings change. Only fire a notification if its revision still matches the current one. Use a single transaction when reading shots/settings for scheduling."
+    },
+    {
+      "severity": "HIGH",
+      "file": "web/app/app.js",
+      "line": 1041,
+      "title": "Premium gating is entirely client-side and trivially bypassable",
+      "issue": "isPremium() (not shown in this slice but called on lines 1837, 1971, 2926, 2965, 2989, 3023, 3046, 4150, etc.) is a client-side check. All premium UI (supplies, measurements, labs, insights, benchmark curves, PDF export, share links) is rendered and functional before any server validation. A user can simply set a local flag or edit the function in devtools.",
+      "fix": "Keep client-side optimistic UI but add a server-side enforcement gate on every premium write path (sync, PDF generation, share link creation) and re-validate on every pull. Mark the current implementation as bypassable."
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "web/app/app.js",
+      "line": 322,
+      "title": "Unhandled promise rejection in async INFO_TOPICS.body functions",
+      "issue": "showInfo() does try { body = await body(); } catch (e) { ... } but many INFO_TOPICS.body functions (e.g. 'level-chart', 'plateau', 'spending') call async data getters without their own error handling. A single IndexedDB failure will silently replace the entire info dialog with the fallback string, losing all context.",
+      "fix": "Make each async body() function individually robust or wrap the entire await in a more specific error handler that still renders the static explanatory text."
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "web/app/app.js",
+      "line": 824,
+      "title": "migrateWeightDatesToCanonical() runs on every boot with no debounce",
+      "issue": "Called unconditionally on DOMContentLoaded (line 1262). It does a full table scan + potential write for every weight row on every page load. Under real concurrency or with thousands of weights this creates unnecessary IndexedDB contention and can delay app startup.",
+      "fix": "Store a 'weightsNormalized' flag in settings or a dedicated store and only run once per database lifetime."
+    },
+    {
+      "severity": "LOW",
+      "file": "web/app/app.js",
+      "line": 105,
+      "title": "Null/undefined DOM references in mixing calculator info topic",
+      "issue": "Lines 104-106: parseFloat(($('#recon-vial') || {}).value) will throw if $() returns null (querySelector returns null, not an object with .value). Same for other three fields. This happens inside an async info body that is rendered via innerHTML.",
+      "fix": "Use optional chaining or guard with existence checks: const v = parseFloat($('#recon-vial')?.value || 0);"
+    }
+  ]
+}
+```
+
+**Summary of Blast Radius**
+
+- **Critical XSS** and **IndexedDB upgrade fragility** are the two highest-risk items for a production health app.
+- Premium gating is marketing-only; real patients will quickly discover they can unlock everything client-side.
+- Notification reliability and date handling bugs can lead to missed doses or incorrect medical-pattern insights.
+
+These are concrete defects present in the supplied source. No speculative advice was included.

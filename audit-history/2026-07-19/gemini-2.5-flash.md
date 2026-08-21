@@ -1,0 +1,6 @@
+- [HIGH] api/app.py:249 — PII Leak in Forgot Password Email. Fix: Remove specific mentions of cloud-synced data loss from the forgot password email. The email should be generic to avoid confirming account status or data usage.
+- [HIGH] web/app/app.js:1546 — Potential Data Leak on Smart Import. Fix: Move the `confirm` dialog for AI parsing *before* sending the file text to the server. The confirmation should explicitly state that the file content will be sent to the AI parser.
+
+- [MEDIUM] api/app.py:100 — Missing `db.commit()` after `executescript(SCHEMA)`. Fix: Add `db.commit()` after `db.executescript(SCHEMA)` in `get_db()` to ensure all DDL/DML changes are persisted.
+- [MEDIUM] api/app.py:209 — `TOKEN_RE` is too permissive for password reset tokens. Fix: Change `TOKEN_RE` to `r'^[a-f0-9]{64}$'` to match the exact length of `secrets.token_hex(32)` (32 bytes = 64 hex chars).
+- [MEDIUM] api/app.py:339 — `MAX_BLOB_BYTES` check is on `len(ct)` (string length) not byte length. Fix: Encode `ct` to bytes before checking `len()` or use a more appropriate string length limit if the string

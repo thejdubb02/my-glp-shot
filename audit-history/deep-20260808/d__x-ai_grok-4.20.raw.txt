@@ -1,0 +1,78 @@
+**JSON Audit Report**
+
+```json
+{
+  "findings": [
+    {
+      "severity": "CRITICAL",
+      "file": "web/app/sw.js",
+      "line": 55,
+      "title": "Silent data-loss on navigation cache fallback",
+      "issue": "When the network fetch for a navigation request fails, the code does `caches.match(req).then(c => c || caches.match('index.html'))`. If the exact request URL is not in the cache (common for deep links, query parameters, or first-load after cache clear), it falls back to index.html *without* preserving the original URL. The PWA therefore loses the deep-link context (e.g. ?action=log-shot, ?tab=insights). Combined with the very small SHELL list and no precache of all possible entry points, this causes silent loss of user intent on every offline navigation.",
+      "fix": "Change the offline navigation handler to always return the cached index.html for any navigation request (standard SPA offline pattern) and let the client-side router read URL/fragment state after load. Replace the inner `caches.match(req)` with `caches.match('index.html')` unconditionally for `req.mode === 'navigate'`."
+    },
+    {
+      "severity": "HIGH",
+      "file": "web/app/sw.js",
+      "line": 3,
+      "title": "Service worker cache version is stale",
+      "issue": "CACHE = 'mglp-v0.47.2' but index.html and app.js are served with ?v=411. The version in the SW is not synchronized with the assets. On production update the SW will not be updated (or will serve old shell), leading to users running outdated code that may have bugs in encryption, sync, or data models.",
+      "fix": "Make the CACHE name dynamic from the same version used in the HTML/JS (e.g. 'mglp-v411' or use a build-time constant). Update the SHELL array and CACHE name together on every release."
+    },
+    {
+      "severity": "HIGH",
+      "file": "web/app/sw.js",
+      "line": 20,
+      "title": "install event does not fail on critical shell assets",
+      "issue": "`.catch(() => null)` on every `c.add(u)` means a single 404 or network error during precache is silently ignored. The SW still activates with an incomplete cache. Combined with the navigation fallback bug above, this can leave users with a broken offline experience and no clear error.",
+      "fix": "Remove the per-asset .catch() or at minimum fail the install if any *shell* asset (html, js, css, manifest) fails to cache. Only non-critical icons may be allowed to fail."
+    },
+    {
+      "severity": "HIGH",
+      "file": "web/app/index.html",
+      "line": 50,
+      "title": "Analytics script loaded without nonce or strict CSP",
+      "issue": "The Umami analytics script is loaded from an external domain with no `nonce` and no `integrity`. The HTML contains no `<meta http-equiv=\"Content-Security-Policy\">` and the review instructions say to assume security headers live in nginx. If the nginx CSP is `default-src 'self'` (as is common for a privacy-first app), the script is blocked. If the CSP is lax, the external script can exfiltrate health-related data the app claims to keep private.",
+      "fix": "Either self-host the analytics script, add a CSP nonce that is also passed to the script tag, or explicitly document the required CSP directive. The current external script + lack of nonce violates the \"privacy-first\" promise."
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "web/app/index.html",
+      "line": 525,
+      "title": "Admin iframe src=about:blank allows clickjacking / unexpected navigation",
+      "issue": "The admin view uses `<iframe id=\"admin-frame\" src=\"about:blank\">` and is later populated (presumably via JS setting `srcdoc` or `src`). No `sandbox` attribute, no `allow` restrictions. When opened inside the PWA (embedded=1), an admin session could be tricked into navigating the iframe to an attacker-controlled page that looks like the PWA, or the iframe could break out via top navigation if X-Frame-Options is not set on the admin responses.",
+      "fix": "Add `sandbox=\"allow-scripts allow-same-origin\"` (or tighter) and ensure the backend sets `X-Frame-Options: DENY` or `Content-Security-Policy: frame-ancestors 'self'` on admin routes."
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "web/app/manifest.webmanifest",
+      "line": 8,
+      "title": "Manifest forces portrait orientation",
+      "issue": " `\"orientation\": \"portrait\"` prevents users from using the app in landscape on tablets or when they rotate their phone. For a health tracking app this is a significant usability regression (charts, input forms, PDF preview). Google Play / TWA review may flag poor UX.",
+      "fix": "Remove the orientation field or change to \"any\"."
+    },
+    {
+      "severity": "LOW",
+      "file": "web/app/sw.js",
+      "line": 45,
+      "title": "API routes bypassed by origin check only",
+      "issue": "The SW returns early for any URL whose pathname starts with `/api/`. However the check is done *after* `if (url.origin !== self.location.origin) return;`. A same-origin /api/ request is never cached (correct), but the comment and architecture assume the backend is the only source of /api/. If a future change adds a same-origin static asset under /api/ it would be incorrectly excluded.",
+      "fix": "Move the /api/ check before the origin check or make the condition more precise (`url.pathname.startsWith('/api/') && url.origin === self.location.origin`)."
+    },
+    {
+      "severity": "LOW",
+      "file": "web/admin/admin.js",
+      "line": 109,
+      "title": "escapeHtml is overly aggressive on legitimate data",
+      "issue": "The function escapes `/ =` in addition to the normal HTML characters. While it prevents some template injection, it turns perfectly valid data (e.g. URLs containing `/`, query parameters with `=`) into HTML entities when rendered in text nodes or attributes, potentially confusing admins reading logs or user details.",
+      "fix": "Use a standard HTML escaper that only encodes `& < > \" '` unless the value is placed in a dangerous context (which should be avoided)."
+    }
+  ]
+}
+```
+
+**Summary of blast radius (ranked)**
+
+- **Critical** findings center on the service worker: the combination of stale cache name, silent install failures, and incorrect offline navigation fallback can cause users to lose deep-link context or run stale encryption/sync code — exactly the “lose a user’s data” or “break under real concurrency” bar set by the project.
+- **High** findings concern privacy surface (external analytics) and update correctness, both of which are explicit priority areas.
+- All findings are directly traceable to the supplied source files. No speculative items were included.

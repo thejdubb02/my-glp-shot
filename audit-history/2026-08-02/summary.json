@@ -1,0 +1,32 @@
+{
+  "date": "2026-08-02",
+  "total": 4,
+  "by_sev": {
+    "CRITICAL": 1,
+    "HIGH": 2,
+    "MEDIUM": 1,
+    "LOW": 0
+  },
+  "findings": [
+    {
+      "sev": "CRITICAL",
+      "body": "web/app/index.html \u2014 Missing Content Security Policy (CSP) header. Fix: Add a `<meta http-equiv=\"Content-Security-Policy\" ...>` tag with appropriate directives to `index.html` to mitigate XSS and data exfiltration risks.",
+      "src": "gemini-2.5-flash"
+    },
+    {
+      "sev": "HIGH",
+      "body": "api/app.py:202, 220, 258 \u2014 Lack of rate limiting on authentication and password reset endpoints. Fix: Implement rate limiting (e.g., using Flask-Limiter or a reverse proxy) on `/api/signup`, `/api/login`, `/api/forgot`, and `/api/reset` to prevent brute-force attacks and denial-of-service.",
+      "src": "gemini-2.5-flash"
+    },
+    {
+      "sev": "HIGH",
+      "body": "api/app.py:69 \u2014 Single admin bearer token (`MGS_ADMIN_TOKEN`) as a primary admin authentication mechanism. Fix: Consider implementing multi-factor authentication (MFA) for admin access, IP whitelisting, or a more robust admin session management system to reduce the risk of a single token compromise.",
+      "src": "gemini-2.5-flash"
+    },
+    {
+      "sev": "MEDIUM",
+      "body": "api/app.py:46 \u2014 PBKDF2 salt derivation uses a fixed string `myglpshot-v1:` concatenated with the email. Fix: While 600k iterations are strong, using a truly random, per-user salt stored alongside the `password_hash` (e.g., in the `users` table) would be more robust against precomputation attacks, even if the fixed string is known.",
+      "src": "gemini-2.5-flash"
+    }
+  ]
+}

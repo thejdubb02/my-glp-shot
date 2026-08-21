@@ -1,0 +1,1 @@
+[error 404] {"error":{"message":"This model is unavailable for free. The paid version is available now - use this slug instead: z-ai/glm-4.5-air","code":404},"user_id":"user_39aXIY0mHFZt7hdqLdI0jR0qtl7"}

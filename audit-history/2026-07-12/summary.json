@@ -1,0 +1,27 @@
+{
+  "date": "2026-07-12",
+  "total": 3,
+  "by_sev": {
+    "CRITICAL": 0,
+    "HIGH": 0,
+    "MEDIUM": 2,
+    "LOW": 1
+  },
+  "findings": [
+    {
+      "sev": "MEDIUM",
+      "body": "api/Dockerfile:23 \u2014 The Gunicorn `--timeout 1800` (30 minutes) is excessively long. While LLM calls can be lengthy (150s timeout), a 30-minute Gunicorn timeout can tie up worker processes unnecessarily and delay client responses if a request truly hangs. Fix: Reduce the Gunicorn `--timeout` to a more reasonable value, such as `300` (5 minutes), which is still",
+      "src": "gemini-2.5-flash"
+    },
+    {
+      "sev": "MEDIUM",
+      "body": "api/app.py:100 \u2014 `public_user` exposes `isAdmin` to all authenticated users. While client-side UI gates access, this sensitive flag should ideally only be exposed to admin-specific endpoints or to the user themselves when querying their own profile, not as part of a general public user object. Fix: Remove `isAdmin` from the `public_user` dictionary and expose it only through dedicated admin APIs or a specific \"get my admin status\" endpoint.",
+      "src": "gemini-2.5-flash"
+    },
+    {
+      "sev": "LOW",
+      "body": "api/app.py:117 \u2014 The `TOKEN_RE` regex `r'^[a-f0-9]{32,}$'` for session tokens is too broad. `secrets.token_hex(32)` generates 64-character tokens. For stricter validation and to prevent unexpected token lengths, the regex should be `r'^[a-f0-9]{64}$'`. Fix: Update `TOKEN_RE` to `re.compile(r'^[a-f0-9]{64}$'`.",
+      "src": "gemini-2.5-flash"
+    }
+  ]
+}

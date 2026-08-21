@@ -1,0 +1,114 @@
+{"findings": [
+  {
+    "severity": "CRITICAL",
+    "file": "api/app.py",
+    "line": 147,
+    "title": "SQLite concurrency corruption risk with multiple gunicorn workers",
+    "issue": "The app uses SQLite without WAL mode or busy timeout, and the Dockerfile runs gunicorn with 2 workers. Multiple processes writing to the same SQLite file can cause database corruption, 'database is locked' errors, and silent data loss under any concurrent write load (e.g., sync, signup, webhooks).",
+    "fix": "Either switch to a single worker with threads (--workers 1 --threads 8) or enable WAL mode and set a busy timeout in get_db(): db.execute('PRAGMA journal_mode=WAL'); db.execute('PRAGMA busy_timeout=5000');. For production, consider using a client/server database like PostgreSQL."
+  },
+  {
+    "severity": "HIGH",
+    "file": "api/app.py",
+    "line": 1641,
+    "title": "Gemini API key exposed in URL query string",
+    "issue": "The import_parse endpoint sends the GEMINI_API_KEY as a query parameter in the URL. This key will appear in server logs, request logs, and possibly in error messages, leading to secret leakage.",
+    "fix": "Pass the API key in the request header (e.g., 'x-goog-api-key') or use the Google AI Python client library which handles authentication securely."
+  },
+  {
+    "severity": "MEDIUM",
+    "file": "api/app.py",
+    "line": 817,
+    "title": "Stripe webhook idempotency race condition",
+    "issue": "The webhook handler checks for an existing event ID and then inserts it without a transaction or unique constraint handling. Concurrent deliveries of the same event can both pass the SELECT check, causing a duplicate INSERT that raises an IntegrityError, resulting in a 500 response and potential missed processing if the first request's processing fails after the second request's insert.",
+    "fix": "Use INSERT OR IGNORE or wrap the check-and-insert in a transaction with immediate locking, or catch IntegrityError and then re-fetch to see if the event was already processed."
+  },
+  {
+    "severity": "MEDIUM",
+    "file": "api/app.py",
+    "line": 374,
+    "title": "Incomplete GDPR/CCPA deletion – legacy_blobs not removed",
+    "issue": "The delete_account endpoint deletes user rows from users, sessions, sync_blobs, share_links, and password_resets, but does not delete any legacy_blobs that may be associated with the user's email-derived lookup_id. This leaves encrypted health data on the server after account deletion.",
+    "fix": "If a mapping from user to legacy lookup_id exists, delete the corresponding legacy_blobs row. Alternatively, provide a migration to link legacy_blobs to user IDs and delete them on account deletion."
+  },
+  {
+    "severity": "MEDIUM",
+    "file": "api/app.py",
+    "line": 71,
+    "title": "Unbounded table growth – no cleanup of old sessions, events, shares, audit logs",
+    "issue": "The sessions, stripe_events, share_links, and admin_audit tables grow indefinitely. Expired sessions, processed Stripe events, expired share links, and old audit logs are never purged, leading to storage bloat and degraded query performance over time.",
+    "fix": "Implement a periodic cleanup job (e.g., a cron or a scheduled task) that deletes rows older than a retention threshold: sessions expired > 30 days, stripe_events older than 90 days, share_links expired > 7 days, admin_audit older than 1 year."
+  },
+  {
+    "severity": "MEDIUM",
+    "file": "api/app.py",
+    "line": 773,
+    "title": "premium_until set to NULL if Stripe current_period_end is missing",
+    "issue": "In _apply_subscription, when status is 'active' or 'trialing', the code uses sub.get('current_period_end') or sub.get('trial_end') as the new premium_until. If Stripe sends a webhook where current_period_end is None (e.g., for an incomplete subscription), premium_until will be set to NULL, prematurely revoking premium access.",
+    "fix": "Only update premium_until if the value is not None; otherwise keep the existing premium_until."
+  },
+  {
+    "severity": "MEDIUM",
+    "file": "api/app.py",
+    "line": 1685,
+    "title": "Concurrent ALTER TABLE during multi-worker startup",
+    "issue": "init_db() runs ALTER TABLE statements at module import time. When multiple gunicorn workers start simultaneously, they may execute these DDL statements concurrently, causing 'database is locked' errors or partial schema application, potentially leaving the database in an inconsistent state.",
+    "fix": "Run schema migrations as a separate, single-process step before starting the application (e.g., in an entrypoint script) and remove DDL from the application code."
+  },
+  {
+    "severity": "MEDIUM",
+    "file": "api/app.py",
+    "line": 817,
+    "title": "Stripe webhook processing not atomic with idempotency insert",
+    "issue": "The webhook inserts the event ID and commits before processing the event. If the processing step (e.g., _apply_subscription) raises an exception, the event is already marked as processed and will never be retried, leading to lost subscription updates.",
+    "fix": "Wrap the entire event handling (idempotency check, insert, and processing) in a single database transaction so that any failure rolls back the event marker, allowing Stripe to retry."
+  },
+  {
+    "severity": "MEDIUM",
+    "file": "api/app.py",
+    "line": 298,
+    "title": "Trial abuse via multiple signups",
+    "issue": "The signup endpoint always grants a 14-day trial with no check for previous trials from the same user (e.g., by IP, device fingerprint, or payment method). A user can create unlimited accounts with different emails to obtain perpetual free trials.",
+    "fix": "Implement trial eligibility checks such as requiring a payment method upfront, limiting trials per IP/device, or using a CAPTCHA on signup."
+  },
+  {
+    "severity": "MEDIUM",
+    "file": "api/app.py",
+    "line": 1184,
+    "title": "Umami token cache not thread-safe",
+    "issue": "The _umami_state dictionary is a global variable shared across threads within a worker. Concurrent requests can race on reading/updating the token and expires_at, potentially causing multiple login calls or use of an expired token.",
+    "fix": "Use threading.Lock to guard access to _umami_state, or use a per-request token fetch with a short-lived cache in a thread-safe store."
+  },
+  {
+    "severity": "MEDIUM",
+    "file": "api/app.py",
+    "line": 708,
+    "title": "Trial period granted on every checkout, allowing trial reuse",
+    "issue": "The billing_checkout endpoint always includes trial_period_days in the subscription_data, even if the user has previously used a trial. A user can cancel and resubscribe to get another trial period indefinitely.",
+    "fix": "Track whether a user has already consumed a trial (e.g., a trial_used flag) and omit trial_period_days for subsequent subscriptions."
+  },
+  {
+    "severity": "LOW",
+    "file": "api/app.py",
+    "line": 945,
+    "title": "now_ts() embedded directly in SQL string",
+    "issue": "The admin_users query uses an f-string to insert the current timestamp into the SQL for subquery conditions. While not a SQL injection risk (it's an integer), it bypasses parameterization and could lead to subtle bugs if the function is changed.",
+    "fix": "Use a parameter placeholder and pass now_ts() as a bound value."
+  },
+  {
+    "severity": "LOW",
+    "file": "api/app.py",
+    "line": 1511,
+    "title": "Admin user deletion does not cancel test Stripe subscriptions",
+    "issue": "admin_delete_user cancels the live Stripe subscription but ignores any test subscription (stripe_subscription_id_test). This can leave orphaned test subscriptions in Stripe's test mode.",
+    "fix": "Also attempt to cancel the test subscription if stripe_subscription_id_test is set and test keys are configured."
+  },
+  {
+    "severity": "LOW",
+    "file": "api/app.py",
+    "line": 1538,
+    "title": "admin_clear_test_state does not cancel test subscription in Stripe",
+    "issue": "Clearing the test state only nullifies the database columns but does not cancel the actual subscription in Stripe's test mode, leaving orphaned test resources.",
+    "fix": "Call stripe.Subscription.delete() for the test subscription before clearing the columns."
+  }
+]}

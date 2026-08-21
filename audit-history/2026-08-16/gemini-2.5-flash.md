@@ -1,0 +1,7 @@
+- [CRITICAL] api/app.py:53 — Global `stripe.api_key` assignment is a race condition.
+    Fix: Ensure all Stripe API calls in `stripe_webhook_test` and `admin_test_checkout` explicitly pass `api_key=STRIPE_API_KEY_TEST`. Similarly, ensure all live Stripe API calls explicitly pass `api_key=STRIPE_API_KEY`. Avoid setting `stripe.api_key` globally in a multi-threaded/multi-worker environment.
+
+- [HIGH] api/app.py:507 — `_apply_subscription` does not explicitly handle the case where `sub.get('customer')` is present but `user['stripe_customer_id']` is `NULL` and `sub.get('metadata').get('user_id')` is also `NULL`. This could lead to a subscription event being processed but not linked to any user, leaving a user without premium status despite a valid Stripe subscription.
+    Fix: Add logging for this specific scenario to alert admins if a subscription event cannot be linked to a user, and consider a fallback mechanism (e.g., searching by email if available and not already linked).
+
+- [MEDIUM] api/app.py:102 — `users.password_hash` column is `TEXT NOT NULL`. If password hashing fails (e.g., bcrypt library issue, out of memory) in `signup` or `reset_password`, an empty or invalid hash could be stored, preventing user login.

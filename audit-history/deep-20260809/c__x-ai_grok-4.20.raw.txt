@@ -1,0 +1,88 @@
+**JSON Audit Report**
+
+```json
+{
+  "findings": [
+    {
+      "severity": "CRITICAL",
+      "file": "web/app/app.js",
+      "line": 325,
+      "title": "XSS via innerHTML in showInfo()",
+      "issue": "document.getElementById('info-dialog-body').innerHTML = body; is called with fully dynamic content. INFO_TOPICS.*.body (lines 39, 61, 113, 197, 219, 265, etc.) interpolate user-controlled values (settings.medication, latest.dose, weights, shots, lost, etc.) through template literals before escapeHTML is applied in only a few places. escapeHTML is defined but not used on every interpolated value (e.g. yourLine, lost, weeks, delta).",
+      "fix": "Change to textContent + explicit DOM construction, or pass every interpolated value through escapeHTML(). Never use innerHTML with data that touches user records."
+    },
+    {
+      "severity": "CRITICAL",
+      "file": "web/app/app.js",
+      "line": 3967,
+      "title": "XSS via innerHTML in openGuidance()",
+      "issue": "openGuidance() does $('#guidance-body').innerHTML = renderGuidance(sectionId);. renderGuidance() returns raw HTML constructed from GUIDANCE objects that contain user-controlled strings (side effect labels, notes, etc.) with no escaping.",
+      "fix": "Replace innerHTML with a safe DOM builder or ensure every value passed into the template is run through escapeHTML()."
+    },
+    {
+      "severity": "HIGH",
+      "file": "web/app/app.js",
+      "line": 574,
+      "title": "IndexedDB upgrade is not defensive / can lose data on failure",
+      "issue": "onupgradeneeded creates stores but never calls e.oldVersion checks or data migrations (except the one-off weight migration at line 895). A failed upgrade (e.g. quota exceeded, disk error, concurrent access) leaves the database at an inconsistent version. DB_VERSION = 9 but no version-by-version migration path exists.",
+      "fix": "Implement explicit per-version migration blocks (if (e.oldVersion < 1) … else if (e.oldVersion < 2) …) with try/catch and user-visible error if migration cannot complete."
+    },
+    {
+      "severity": "HIGH",
+      "file": "web/app/app.js",
+      "line": 1059,
+      "title": "Premium gating is entirely client-side and trivially bypassable",
+      "issue": "isPremium() (not shown but implied by calls at 1916, 2050, 3270, 3309, 3390, 3452, etc.) and the UI checks (if (!isPremium() && account.user)) can be bypassed by editing the function in devtools or patching the bundle. No server-side enforcement on rendered premium features (supplies, measurements, labs, insights, benchmarks, PDF, share links).",
+      "fix": "Keep client-side gating for UX only. All premium data paths and export/share endpoints must be enforced server-side after decrypting the blob."
+    },
+    {
+      "severity": "HIGH",
+      "file": "web/app/app.js",
+      "line": 773,
+      "title": "nextDailyTriggerAt() and zonedWallToUtc() can schedule in the past or skip days on DST transitions",
+      "issue": "The iterative correction loop only runs 3 times and can converge to a time in the past when crossing a DST boundary (especially spring-forward). The fallback logic in scheduleDailyReminders() then treats it as already fired, silently dropping the reminder for that day.",
+      "fix": "After the convergence loop, if the returned fire time is in the past, explicitly add 24h (in wall time, not ms) and re-normalize."
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "web/app/app.js",
+      "line": 628,
+      "title": "Unhandled promise rejections and swallowed transaction errors in withStore",
+      "issue": "withStore() sets req.onerror and t.onerror but many callers (dbAll, dbGet, render functions, etc.) do not await or .catch the returned promise. A transaction abort (e.g. quota, locked DB) fails silently.",
+      "fix": "Add top-level window.addEventListener('unhandledrejection', …) handler that logs to console and shows a user-visible toast. Make critical paths explicitly catch and surface errors."
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "web/app/app.js",
+      "line": 989,
+      "title": "DOM references used before null-check in renderShots() and many other render functions",
+      "issue": "Lines 986–1009 (recent, full, empty-shots, etc.) and similar patterns throughout (e.g. renderWeights line 1832, renderMood line 4837, etc.) assume elements exist. If the HTML changes or a view is not yet mounted, this throws and halts later rendering.",
+      "fix": "Guard every DOM access: const recent = $('#recent-shots'); if (!recent) return; (or use optional chaining where possible)."
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "web/app/app.js",
+      "line": 2531,
+      "title": "Notification cleanup only removes tags starting with 'shot-' or 'daily-' — leaks old notifications",
+      "issue": "getNotifications({ includeTriggered: true }) then n.close() is limited to specific prefixes. Old notifications from previous versions or test notifications stay in the OS tray forever.",
+      "fix": "Either use a broader prefix or clear all notifications owned by the app on every schedule cycle."
+    },
+    {
+      "severity": "LOW",
+      "file": "web/app/app.js",
+      "line": 104,
+      "title": "Dead / unreachable code in INFO_TOPICS.mixing-calc",
+      "issue": "$('#recon-vial') etc. are queried but the mixing calculator UI was removed; the async body function is never called.",
+      "fix": "Remove the dead INFO_TOPICS entry and associated code."
+    }
+  ]
+}
+```
+
+**Summary of Blast Radius**
+
+- **Critical** findings (XSS + missing migration safety) can lead to stored XSS against health data or silent data loss on schema changes.
+- Premium gating is client-only → any motivated user can unlock paid features.
+- Notification scheduling has subtle timezone/DST edge cases that can cause missed dose reminders.
+
+These are the concrete defects visible in the supplied source. All other observations were either already defended elsewhere in the file or fell into speculative territory prohibited by the review rules.

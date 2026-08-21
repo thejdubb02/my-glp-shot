@@ -1,0 +1,30 @@
+```json
+{"findings": [
+  {"severity": "CRITICAL",
+    "file": "web/app/app.js",
+    "line": 5097,
+    "title": "Maximum call stack size exceeded on large payloads",
+    "issue": "The spread operator `...new Uint8Array(ct)` passes every byte of the encrypted payload as a separate argument to `String.fromCharCode`. For payloads larger than ~65KB (common for users with history), this throws a `RangeError`, completely breaking sync and share links.",
+    "fix": "Convert the ArrayBuffer to a base64 string using a chunked loop or a `FileReader` reading a `Blob`, avoiding the spread operator on large arrays."
+  },
+  {"severity": "CRITICAL",
+    "file": "web/app/app.js",
+    "line": 5177,
+    "title": "Login unconditionally overwrites cloud backup with local data",
+    "issue": "In `handleAccountSubmit`, if the device has any local data (`shots.length > 0`), it immediately calls `accountSyncPush()` before pulling. If a user logs into an existing account on a device that has even one local record, their entire historical cloud backup is permanently overwritten and destroyed.",
+    "fix": "Perform the cloud pull first. If both local and cloud have data, prompt the user to choose which to keep or merge them, before ever pushing to the cloud."
+  },
+  {"severity": "CRITICAL",
+    "file": "web/app/app.js",
+    "line": 4984,
+    "title": "Health data exposure and cross-contamination on logout",
+    "issue": "`accountLogout` does not clear the local IndexedDB. If a user logs out on a shared device, their plaintext health data remains accessible. Worse, if a second user logs in, `handleAccountSubmit` will see the first user's local data and push it to the second user's cloud account, leaking health data.",
+    "fix": "Clear all IndexedDB object stores during `accountLogout` to ensure the local device is wiped of plaintext health data."
+  },
+  {"severity": "HIGH",
+    "file": "web/app/app.js",
+    "line": 4991,
+    "title": "Password reset permanently breaks E2EE decryption",
+    "issue": "The AES encryption key is derived directly from the user's password. If a user resets their password via `accountForgot`, they will derive a new AES key that cannot decrypt their existing cloud backup, resulting in permanent, silent data loss when they try to sync.",
+    "fix": "Use a randomly generated Master Key to encrypt the payload, and encrypt the Master Key with the password-derived key. Alternatively, explicitly warn users that resetting their password will destroy their cloud backup, and clear the server ciphertext on reset."
+  },

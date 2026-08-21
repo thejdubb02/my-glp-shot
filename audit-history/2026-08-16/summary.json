@@ -1,0 +1,27 @@
+{
+  "date": "2026-08-16",
+  "total": 3,
+  "by_sev": {
+    "CRITICAL": 1,
+    "HIGH": 1,
+    "MEDIUM": 1,
+    "LOW": 0
+  },
+  "findings": [
+    {
+      "sev": "CRITICAL",
+      "body": "api/app.py:53 \u2014 Global `stripe.api_key` assignment is a race condition.",
+      "src": "gemini-2.5-flash"
+    },
+    {
+      "sev": "HIGH",
+      "body": "api/app.py:507 \u2014 `_apply_subscription` does not explicitly handle the case where `sub.get('customer')` is present but `user['stripe_customer_id']` is `NULL` and `sub.get('metadata').get('user_id')` is also `NULL`. This could lead to a subscription event being processed but not linked to any user, leaving a user without premium status despite a valid Stripe subscription.",
+      "src": "gemini-2.5-flash"
+    },
+    {
+      "sev": "MEDIUM",
+      "body": "api/app.py:102 \u2014 `users.password_hash` column is `TEXT NOT NULL`. If password hashing fails (e.g., bcrypt library issue, out of memory) in `signup` or `reset_password`, an empty or invalid hash could be stored, preventing user login.",
+      "src": "gemini-2.5-flash"
+    }
+  ]
+}

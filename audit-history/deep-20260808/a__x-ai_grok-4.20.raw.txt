@@ -1,0 +1,96 @@
+**JSON Audit Report**
+
+```json
+{
+  "findings": [
+    {
+      "severity": "CRITICAL",
+      "file": "api/app.py",
+      "line": 150,
+      "title": "SQLite connection created per-request without WAL or serialization",
+      "issue": "get_db() does `sqlite3.connect(DB_PATH)` on every request (2 workers × 4 threads = 8 concurrent threads). No `PRAGMA journal_mode=WAL;`, no `PRAGMA busy_timeout`, and no connection pooling/serialization. Under real concurrency this produces frequent SQLITE_BUSY, corrupted transactions, and silent data loss on sync_put, _create_session, webhook processing, and account deletion.",
+      "fix": "Add `db.execute('PRAGMA journal_mode=WAL')`, `db.execute('PRAGMA busy_timeout=5000')` immediately after connect. Consider a thread-local connection pool or single writer thread for the SQLite file."
+    },
+    {
+      "severity": "CRITICAL",
+      "file": "api/app.py",
+      "line": 259,
+      "title": "get_session_user() performs UPDATE+commit on every authenticated request",
+      "issue": "Every call to get_session_user() (i.e. almost every protected endpoint) does `UPDATE sessions SET last_seen = ?` followed by unconditional `db.commit()`. With 8 threads this creates massive write contention on the sessions table and greatly increases the chance of SQLITE_BUSY / transaction failures.",
+      "fix": "Remove the last_seen UPDATE from the hot path or make it asynchronous / batched. At minimum, do not commit on every read."
+    },
+    {
+      "severity": "HIGH",
+      "file": "api/app.py",
+      "line": 152,
+      "title": "Schema migration runs on every request inside get_db()",
+      "issue": "`db.executescript(SCHEMA)` + `db.commit()` executes on *every* request because get_db() is called from before_request and every route. This is extremely expensive and creates unnecessary write locks under concurrency.",
+      "fix": "Move schema creation and the ALTER TABLE migration block into the one-time `init_db()` function only. Remove from get_db()."
+    },
+    {
+      "severity": "HIGH",
+      "file": "api/app.py",
+      "line": 820,
+      "title": "Stripe webhook idempotency table can be bypassed by replay before commit",
+      "issue": "The SELECT for existing event, INSERT into stripe_events, and subsequent business logic are not inside a single transaction. A duplicate webhook can be processed twice if it arrives between the SELECT and the INSERT commit (race condition exacerbated by 8 threads and no WAL).",
+      "fix": "Wrap the idempotency check + INSERT + business logic in `db.execute('BEGIN IMMEDIATE')` / explicit transaction with final COMMIT."
+    },
+    {
+      "severity": "HIGH",
+      "file": "api/app.py",
+      "line": 385,
+      "title": "Account deletion and admin_delete_user do not cancel test-mode subscriptions",
+      "issue": "delete_account() and admin_delete_user() only cancel the live `stripe_subscription_id`. Test-mode subscriptions (`stripe_subscription_id_test`) are never canceled, which can lead to orphaned test subscriptions and potential billing side-effects.",
+      "fix": "Also cancel the test subscription if `user['stripe_subscription_id_test']` exists (using the test API key)."
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "api/app.py",
+      "line": 259,
+      "title": "Session last_seen UPDATE lacks error handling and can fail silently",
+      "issue": "The `UPDATE sessions ... last_seen` + `db.commit()` in get_session_user() can raise or fail under concurrency. The exception is not caught, so the whole request can fail even though the user is authenticated.",
+      "fix": "Wrap the last_seen update in a try/except or remove it from the critical path."
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "api/app.py",
+      "line": 504,
+      "title": "sync_put and legacy_put use ON CONFLICT but still vulnerable to size race",
+      "issue": "Two concurrent PUTs from the same user (possible with multiple devices or retry logic) can both pass the `len(ct) > MAX_BLOB_BYTES` check before the upsert, allowing the blob to exceed the intended 2 MiB cap.",
+      "fix": "Perform the size check *after* acquiring a write lock or use a single `BEGIN IMMEDIATE` transaction that includes the size validation."
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "api/app.py",
+      "line": 946,
+      "title": "admin_users query uses {now_ts()} inside f-string SQL",
+      "issue": "Line 945 injects `now_ts()` via f-string into the SQL query. While currently safe (integer), this pattern is fragile and could lead to SQL injection if the function changes.",
+      "fix": "Use a parameter: `AND s.expires_at > ?` and pass `now_ts()` in the parameter list."
+    },
+    {
+      "severity": "LOW",
+      "file": "api/Dockerfile",
+      "line": 22,
+      "title": "Container runs as non-root but /data volume ownership is set at build time",
+      "issue": "The volume `mgs-data` is mounted after the `chown` in the Dockerfile. If the volume already exists with root ownership (common on Docker volume creation), the app user cannot write to the SQLite database.",
+      "fix": "Use an entrypoint script that does `chown -R app:app /data` at container start, or ensure the volume is pre-created with correct ownership."
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "api/app.py",
+      "line": 173,
+      "title": "CSRF mitigation relies on Content-Type but does not reject unknown methods",
+      "issue": "`_enforce_json_for_mutations()` only checks POST/PUT/DELETE/PATCH. Other methods that mutate (e.g. future routes) would bypass the JSON requirement.",
+      "fix": "Change condition to `if request.method not in ('GET', 'HEAD', 'OPTIONS')` or explicitly list all mutating methods."
+    }
+  ]
+}
+```
+
+**Summary of highest-risk issues (must-fix before shipping to patients):**
+
+1. **SQLite concurrency model is fundamentally broken** for 2 workers × 4 threads (no WAL, schema on every request, commit on every last_seen update). This is the most likely source of silent data loss.
+2. **Stripe webhook idempotency race** — duplicate events can be applied twice.
+3. **Schema migration runs on every request** — massive unnecessary locking.
+
+These findings are derived strictly from the supplied source. No external assumptions were made.

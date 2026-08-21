@@ -1,0 +1,41 @@
+/DELETE, `admin.js` would fail because it doesn't send one.
+Since `admin.js` is supposed to work, the backend probably doesn't require a CSRF token.
+Does the backend rely on `SameSite=Lax` or `Strict` for the cookie?
+If `mgs_session` is `SameSite=Lax`, it provides decent CSRF protection for POST requests, but not for top-level navigations (which aren't API calls anyway).
+If it's `SameSite=Strict`, it's fully protected.
+So we shouldn't report CSRF unless we are sure it's vulnerable.
+
+Let's check `admin.js` line 106:
+```javascript
+106:   function escapeHtml(s) {
+107:     // Forward-safe: also escapes ', `, =, / so future template patterns
+108:     // (single-quoted attrs, unquoted attrs, inline event handlers) stay safe.
+109:     return String(s == null ? '' : s).replace(/[&<>"'`=\/]/g, c => ({
+110:       '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;',
+111:       "'": '&#39;', '`': '&#96;', '=': '&#61;', '/': '&#47;',
+112:     }[c]));
+113:   }
+```
+This is very thorough.
+
+Let's check `admin.js` line 125:
+```javascript
+125:   function renderBarChart(target, data, labelFn, valueFn, color = '#c7915b') {
+```
+```javascript
+138:       return `<g><rect x="${x}" y="${y}" width="${bw - 2}" height="${h}" fill="${color}" rx="2"><title>${escapeHtml(lbl)}: ${v}</title></rect>${v > 0 ? `<text x="${x + bw / 2 - 1}" y="${y - 2}" text-anchor="middle" fill="#94a3b8" font-size="9">${v}</text>` : ''}</g>`;
+```
+`v` is returned by `valueFn(d)`.
+In `loadMetrics`:
+```javascript
+181:       (d) => d.count,
+```
+`d.count` is a number. Safe.
+
+Let's check `admin.js` line 142:
+```javascript
+142:       return `<text x="${x}" y="${H - 6}" text-anchor="middle" fill="#94a3b8" font-size="10">${escapeHtml(labelFn(d))}</text>`;
+```
+Safe.
+
+Let's check `admin.js` line 

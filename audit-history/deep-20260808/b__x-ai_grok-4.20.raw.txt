@@ -1,0 +1,89 @@
+**JSON Audit Output**
+
+```json
+{
+  "findings": [
+    {
+      "severity": "CRITICAL",
+      "file": "web/app/app.js",
+      "line": 5012,
+      "title": "AES-GCM key persisted in localStorage with insecure base64 encoding",
+      "issue": "rememberSignedIn() does `crypto.subtle.exportKey('raw', aesKey)` then `btoa(String.fromCharCode(...new Uint8Array(raw)))` and stores the result in localStorage under 'account.cred'. This is exactly the 256-bit encryption key that protects all health data. Any XSS (or malicious browser extension) immediately gets the master key. The comment on line 5008 acknowledges the risk but the protection is illusory.",
+      "fix": "Remove persistent storage of the raw AES key. Force password entry on every new tab/session. If UX is non-negotiable, encrypt the key with a Web Crypto key derived from a user-supplied device PIN + PBKDF2 (with high iterations) and store the wrapped key. Never store the unwrapped AES-GCM key."
+    },
+    {
+      "severity": "CRITICAL",
+      "file": "web/app/app.js",
+      "line": 5134,
+      "title": "Silent failure + data loss on second-device login when local data exists",
+      "issue": "In tryRestoreAccount() (lines 5069-5078) and handleAccountSubmit() (lines 5184-5191), if local data exists and cloud is not newer, the code either does nothing or shows a confirm dialog whose rejection path silently swallows the error (`catch (e) {}`). A user logging in on their phone after using the web app can permanently lose data with no warning.",
+      "fix": "Always surface a clear choice: 'Keep local data (will overwrite cloud on next push)' vs 'Replace with cloud copy'. Remove all top-level `catch (e) {}` that swallow sync errors on login. At minimum, show the error to the user."
+    },
+    {
+      "severity": "HIGH",
+      "file": "web/app/app.js",
+      "line": 5097,
+      "title": "Base64 encoding of binary data is broken for >255 byte values",
+      "issue": "Multiple places (accountSyncPush:5097, createShareLink:6101, syncEncrypt:6143, etc.) do `btoa(String.fromCharCode(...iv))` and `btoa(String.fromCharCode(...new Uint8Array(ct)))`. When any byte >= 128, `String.fromCharCode` produces incorrect Unicode characters. `btoa` then corrupts the data. This can cause decryption failures or silent data corruption on some payloads.",
+      "fix": "Replace all binary-to-base64 conversions with the provided `b64.enc()` helper (lines 6118-6119) which correctly uses `Uint8Array`. Update accountSyncPull, syncDecrypt, and importStoredAesKey accordingly."
+    },
+    {
+      "severity": "HIGH",
+      "file": "web/app/app.js",
+      "line": 5034,
+      "title": "importStoredAesKey uses legacy broken base64 decoding",
+      "issue": "importStoredAesKey() (lines 5034-5037) manually does `atob()` + `charCodeAt()` but does not handle padding or characters outside the 0-255 range safely. Combined with the broken encoding on line 5013, this is fragile and can produce wrong keys after certain browser updates or when data is copied between environments.",
+      "fix": "Replace with the robust `b64.dec()` pattern used later in the file, or better, switch to a proper ArrayBuffer → base64 library that is standards-compliant."
+    },
+    {
+      "severity": "HIGH",
+      "file": "web/app/app.js",
+      "line": 5118,
+      "title": "Decryption error leaks that the account is valid",
+      "issue": "accountSyncPull() throws 'Decryption failed — wrong password' only on AES-GCM tag failure. An attacker who can observe whether this specific error is returned can distinguish between 'account does not exist' and 'valid account, wrong password'. This enables username enumeration and confirms valid accounts.",
+      "fix": "Return a generic 'Sync failed' error for both 404 and decryption failures. Do not differentiate the error messages."
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "web/app/app.js",
+      "line": 4966,
+      "title": "Session token stored in localStorage (Bearer fallback)",
+      "issue": "After login, `j.token` is stored in localStorage as 'mgs_session_token'. This is sent as Bearer token. localStorage is readable by any XSS. The primary session is httpOnly cookie, but this fallback defeats that protection.",
+      "fix": "Remove the localStorage token fallback or make the server treat Bearer tokens as short-lived and non-refreshable. Prefer to rely solely on the httpOnly cookie for the account system."
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "web/app/app.js",
+      "line": 6247,
+      "title": "applyPulledPayload clears all stores without versioned conflict resolution",
+      "issue": "The function unconditionally clears every store then inserts cloud records. There is no last-write-wins per record, no client-side timestamps on individual shots/weights, and no merge strategy. Concurrent use on two devices (one offline) will silently lose data.",
+      "fix": "Either add per-record `updatedAt` + client-generated UUIDs and implement proper merge, or document that the last device to sync wins and warn the user aggressively on every pull/push."
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "web/app/app.js",
+      "line": 5048,
+      "title": "tryRestoreAccount silently fails to restore encryptionKey",
+      "issue": "If `importStoredAesKey()` throws (e.g. corrupted base64), the error is caught and `account.encryptionKey` remains null. Later sync calls (`accountSyncPull` etc.) will fail with 'Not unlocked' but the user is already past the login screen. No error is shown.",
+      "fix": "If key restoration fails, force a full re-login (clear remembered creds and show auth screen again)."
+    },
+    {
+      "severity": "LOW",
+      "file": "web/app/app.js",
+      "line": 4939,
+      "title": "PBKDF2 key is marked extractable when it should not be",
+      "issue": "In deriveAccountCreds(), the AES key is imported with `extractable: true` solely so it can be later exported for localStorage. This is unnecessary risk; the key should be non-extractable after initial derivation.",
+      "fix": "Import with `extractable: false`. Export only the raw bytes immediately after derivation for storage (if storage is kept), then re-import non-extractably."
+    }
+  ]
+}
+```
+
+**Summary of Blast Radius**
+
+The two **CRITICAL** findings are the primary blockers before shipping to real patients:
+
+1. The raw AES-GCM key is stored in localStorage in a form that any XSS can immediately use to decrypt all health data.
+2. The sync logic has multiple paths that can silently discard a user’s medication injection history when they log in on a second device.
+
+These must be fixed before production. The base64 handling bugs are also high-priority as they can lead to permanent decryption failures.

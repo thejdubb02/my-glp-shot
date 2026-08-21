@@ -1,0 +1,44 @@
+{
+  "findings": [
+    {
+      "severity": "CRITICAL",
+      "file": "web/app/app.js",
+      "line": 6246,
+      "title": "Non-atomic clear-then-insert in applyPulledPayload can cause permanent data loss",
+      "issue": "The function calls `t.objectStore(s).clear()` across multiple stores inside a single transaction, then after that transaction resolves it sequentially adds records with `dbAdd`/`saveSupply`/etc. If the page is closed, crashes, or an error occurs between the clear and the completion of all inserts, all existing data in these stores is lost.",
+      "fix": "Put all clear operations and all subsequent insert/put calls into a single `readwrite` transaction that covers every affected store, so the replacement is atomic."
+    },
+    {
+      "severity": "HIGH",
+      "file": "web/app/app.js",
+      "line": 5097,
+      "title": "Stack-overflow crash when base64-encoding large ciphertexts during sync push",
+      "issue": "The code uses `btoa(String.fromCharCode(...new Uint8Array(ct)))` (line 5097, similarly in b64.enc line 6117 and syncEncrypt line 6143). When the encrypted payload is large (many entries), spreading the Uint8Array into `String.fromCharCode` arguments causes a `RangeError: Maximum call stack size exceeded`, silently aborting the sync push.",
+      "fix": "Replace the spread-based encoding with a chunked conversion (e.g., iterate over bytes, concatenate in chunks, then call `btoa`) to avoid call stack exhaustion."
+    },
+    {
+      "severity": "HIGH",
+      "file": "web/app/app.js",
+      "line": 6469,
+      "title": "Empty catch blocks silently swallow sync errors, hiding failures",
+      "issue": "The auto-push interval (line 6469) and several try/catch wrappers (lines 5077, 5086, 5096–5103 fallbacks) have empty catch blocks or only `console.warn`. Users receive no visual indication that sync is failing, leading to a false belief that data is backed up while cloud copy becomes stale.",
+      "fix": "At minimum, log the error via a notification system; ideally surface a transient warning (e.g., ‘Sync failed — tap to retry’) so the user is aware."
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "web/app/app.js",
+      "line": 6238,
+      "title": "Downgrade to an older payload version can silently drop newer data types",
+      "issue": "`applyPulledPayload` rejects payloads with version > 7 but accepts any lower version (e.g., v5). After clearing all stores, records of data types introduced after v5 (measurements, labs, cycles, etc.) present locally are erased and not replaced because the older payload lacks those fields.",
+      "fix": "Add a guard that warns the user or refuses to apply payloads with a version less than the minimum supported if local stores contain data from those newer schemas, preventing accidental data loss."
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "web/app/app.js",
+      "line": 5069,
+      "title": "Auto-pull on login discards unsynced local data without confirmation",
+      "issue": "`tryRestoreAccount` pulls the cloud copy if it is newer than the locally-stored `syncLastUpdatedAt` and overwrites local data without prompting. This can silently discard offline edits made on the device since the last sync.",
+      "fix": "Either show a confirmation dialog before the auto-pull when local data exists (similar to the manual flow), or introduce a merge strategy that preserves local changes that are newer than the cloud timestamp."
+    }
+  ]
+}

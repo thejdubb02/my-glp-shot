@@ -1,0 +1,60 @@
+{
+  "findings": [
+    {
+      "severity": "CRITICAL",
+      "file": "web/app/app.js",
+      "line": 782,
+      "title": "Date parsing ignores user-configured timezone, causing day-boundary errors",
+      "issue": "parseDateFlexible interprets bare YYYY-MM-DD strings via `new Date(year, month-1, day)`, which uses the system local timezone instead of the user's chosen timezone (settings.timezone). This causes weight entries, mood logs, and other data to be assigned to the wrong calendar day when the device timezone differs from the user's configured timezone, silently corrupting streaks, charts, and plateau detection.",
+      "fix": "Replace the `new Date(...)` construction with a conversion that respects the user's timezone (e.g., using the existing `zonedWallToUtc` helper or `Intl.DateTimeFormat` with the selected timezone) to obtain the correct UTC timestamp."
+    },
+    {
+      "severity": "HIGH",
+      "file": "web/app/app.js",
+      "line": 1307,
+      "title": "Unsafe DOM manipulation without null check can crash the app",
+      "issue": "Multiple calls to `$('#selector')` followed by direct method calls (e.g., `$('#shot-cancel').addEventListener('click', ...)` at line 1307, `$('#countdown-value')` inside renderCountdown at line 851, `$('#hero-card')` at line 4219) do not verify element existence. If any expected element is missing from the DOM, a TypeError is thrown, breaking subsequent script execution and leaving the app unusable.",
+      "fix": "Add null/undefined guards before accessing properties or calling methods on the result of `$()` throughout the codebase, or use optional chaining (`?.`)."
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "web/app/app.js",
+      "line": 4173,
+      "title": "Insight card body rendered without HTML escaping creates future XSS risk",
+      "issue": "renderInsights sets `innerHTML` with `<p>${i.body}</p>`. Although current insight functions return hardcoded strings without user data, no escaping is applied. If any future insight function (especially premium ones) incorporates user-provided text (e.g., custom site names, medication names, notes), this becomes a direct DOM XSS vulnerability.",
+      "fix": "Wrap `i.body` with `escapeHTML(i.body)` or use `textContent` for the paragraph content to prevent injection even if developers later include user data."
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "web/app/app.js",
+      "line": 572,
+      "title": "IndexedDB upgrade handler cannot add indexes to existing stores",
+      "issue": "The onupgradeneeded callback only creates object stores if they do not already exist (`if (!db.objectStoreNames.contains(store)) …`). It does not handle the case where a store already exists but needs a new index. A future schema version that adds an index to, for example, the 'shots' store will not apply to users upgrading from a version where the store already exists, leading to missing indexes and potential query failures or performance degradation.",
+      "fix": "Track the current version and, on upgrade, explicitly create missing indexes on existing stores (e.g., `if (e.oldVersion < expected)` calls to `createIndex`) or check for index existence before creating."
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "web/app/app.js",
+      "line": 2964,
+      "title": "Client-only premium feature gates can be bypassed",
+      "issue": "Premium features (supplies, measurements, labs, expenses, doctor share, premium insights) are gated solely by calling `isPremium()` on the client. A user can trivially override `isPremium = () => true` in the console to unlock all premium functionality without payment, circumventing the 14-day trial and recurring subscription. This has direct revenue impact and undermines the billing model.",
+      "fix": "Move premium authorization checks to server-side API endpoints for any feature that involves server data (sync, share, smart import). For client-only premium features that cannot rely on server, consider obfuscation or a periodic server-side entitlement refresh, but treat client-check bypass as a known risk with reduced revenue impact."
+    },
+    {
+      "severity": "LOW",
+      "file": "web/app/app.js",
+      "line": 1219,
+      "title": "Unhandled promise from async event handler may swallow errors",
+      "issue": "In wireCriticalUI, the 'submit' event listener calls `handleAuthSubmit()` without awaiting or attaching a `.catch()`. Although the async function internally uses try/catch, any synchronous error thrown before entering the try block (e.g., unexpected variable reassignment) would result in an unhandled promise rejection, potentially hiding failures.",
+      "fix": "Change the handler to `authForm.addEventListener('submit', (e) => { e.preventDefault(); handleAuthSubmit().catch(err => console.error('[mgs] auth submit error:', err)); });`."
+    },
+    {
+      "severity": "LOW",
+      "file": "web/app/app.js",
+      "line": 2000,
+      "title": "Dead code: no-op function retained",
+      "issue": "The function `setupBodyToggle` is defined but performs no operation (`/* no-op */`). Leaving dead code clutters the codebase and may confuse maintenance.",
+      "fix": "Remove the function definition and any stale references to `setupBodyToggle`."
+    }
+  ]
+}

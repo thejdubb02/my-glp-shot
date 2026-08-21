@@ -1,0 +1,92 @@
+**JSON Audit Output**
+
+```json
+{
+  "findings": [
+    {
+      "severity": "CRITICAL",
+      "file": "api/app.py",
+      "line": 215,
+      "title": "SQLite connection created per-request without WAL reuse or statement cache",
+      "issue": "get_db() does one sqlite3.connect() per request (and per thread in the 8-thread gunicorn pool). WAL mode is set, but each connection is independent; there is no connection pooling or reuse. Under real concurrency (especially with the many admin queries that do sub-selects and the purge_expired DELETEs), this leads to frequent 'database is locked' errors, transaction rollbacks, and silent data loss on COMMIT.",
+      "fix": "Use a thread-local pool (e.g. queue.SimpleQueue of pre-warmed connections limited to ~8) or switch to a proper connection manager that reuses the same connection object per gunicorn worker thread. Remove the per-request connect pattern."
+    },
+    {
+      "severity": "CRITICAL",
+      "file": "api/app.py",
+      "line": 326,
+      "title": "Unconditional db.commit() inside get_session_user on every 5-minute touch",
+      "issue": "Every authenticated request that hasn't touched a session in the last 300s performs an UPDATE + db.commit() even though the rest of the request may later fail or raise. With 8 concurrent threads this creates massive write contention on the WAL and can cause lost updates or locked database errors for sync_put, webhook processing, etc.",
+      "fix": "Remove the commit from get_session_user(). Let the caller decide when to commit, or batch the last_seen update into the main transaction of the endpoint."
+    },
+    {
+      "severity": "HIGH",
+      "file": "api/app.py",
+      "line": 1016,
+      "title": "Stripe webhook idempotency claim is deleted on any handler exception",
+      "issue": "If _apply_subscription or any downstream code raises (including the explicit except Exception at line 1009), the code deletes the stripe_events row (lines 1016-1018). A subsequent retry of the same event is then allowed to re-process, but because the previous partial UPDATEs may have already been written, this can cause duplicate state transitions or lost premium_until values.",
+      "fix": "Never delete the idempotency row on error. Return 500 and let Stripe retry. Only delete after successful processing or after the TTL window."
+    },
+    {
+      "severity": "HIGH",
+      "file": "api/app.py",
+      "line": 978,
+      "title": "Stripe event idempotency uses INSERT OR IGNORE but still processes on duplicate in test webhook",
+      "issue": "The test webhook (line 1564) uses the same stripe_events table but prefixes the ID with 'TEST:'. However, the live webhook does not. A test event ID that collides with a live event ID (possible because Stripe test/live event IDs are in separate namespaces but the prefix is only added for the INSERT) can be incorrectly deduplicated.",
+      "fix": "Use separate tables (stripe_events_live, stripe_events_test) or always prefix test events with a guaranteed unique marker before the INSERT."
+    },
+    {
+      "severity": "HIGH",
+      "file": "api/app.py",
+      "line": 507,
+      "title": "Account deletion does not cancel subscriptions in test mode when using live keys",
+      "issue": "delete_account() only calls stripe.Subscription.delete with STRIPE_API_KEY_TEST if STRIPE_API_KEY_TEST is set AND the test column is populated. If an admin has both live and test keys but the user only has a test subscription, the live key path is taken and the test subscription is never cancelled.",
+      "fix": "Always attempt cancellation against both keys when the corresponding *_test columns are populated, regardless of which STRIPE_API_KEY_* is primary."
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "api/app.py",
+      "line": 1116,
+      "title": "SQL injection in admin_users query via f-string",
+      "issue": "The admin_users endpoint builds SQL with an f-string that includes {now_ts()} inside the query (lines 1116 and 1124). Although now_ts() is an integer, this is still dynamic SQL construction. A future change that adds another dynamic value could introduce real SQL injection.",
+      "fix": "Use a parameter for the current timestamp instead of injecting it via f-string. Replace the two occurrences with a bound parameter."
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "api/app.py",
+      "line": 368,
+      "title": "purge_expired is called without transaction wrapping in high-concurrency paths",
+      "issue": "purge_expired() performs five DELETE statements followed by one commit. It is called from the healthcheck-adjacent admin_purge, from init_db at boot, and could be called from a cron. Under the current 8-thread model these DELETEs + commit can block writers for a long time and cause 'database is locked' on sync_put and webhook paths.",
+      "fix": "Wrap the entire purge in a single transaction (BEGIN IMMEDIATE) and consider running it only from a single worker or via a separate maintenance process."
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "api/app.py",
+      "line": 481,
+      "title": "logout() clears cookie but does not invalidate Bearer token fallback",
+      "issue": "The client can fall back to a Bearer token stored in localStorage. logout() only deletes the session row when the cookie is used; if the client sends the Bearer token instead, the session row is not deleted, allowing continued access after logout.",
+      "fix": "In logout(), after get_session_user(), always delete the session row regardless of whether it came from cookie or Bearer."
+    },
+    {
+      "severity": "LOW",
+      "file": "api/app.py",
+      "line": 692,
+      "title": "share_fetch increments views without checking premium status or rate limiting",
+      "issue": "Any unauthenticated user can repeatedly call a valid share token. Each call does an UPDATE + COMMIT on share_links.views. This both leaks that the link is still valid (side-channel) and creates write contention under load.",
+      "fix": "Move the views increment to a separate non-blocking table or remove the view counter entirely if it is not critical."
+    },
+    {
+      "severity": "LOW",
+      "file": "docker/docker-compose.yml",
+      "line": 22,
+      "title": "Container runs with read_only: true but writes to /data via volume",
+      "issue": "The compose file sets read_only: true and only mounts a tmpfs on /tmp, yet the app writes to /data/api.db (and creates directories in init_db). This works only because the volume is mounted read-write after the read_only rootfs, but it is fragile and breaks the intended hardening.",
+      "fix": "Remove read_only or explicitly mount the volume with :rw. Better: keep read_only and use a dedicated writable volume only for /data."
+    }
+  ]
+}
+```
+
+**Notes on audit scope**
+
+Only defects directly observable in the supplied source were reported. The most serious issues are around SQLite concurrency model (per-request connect + frequent commits) and the webhook idempotency/error-handling logic — both can lead to silent data loss or incorrect subscription state for real users. These meet the project's own bar of “would this fail under real concurrency or lose a user's data.”

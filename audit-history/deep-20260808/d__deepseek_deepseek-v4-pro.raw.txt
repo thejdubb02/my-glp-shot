@@ -1,0 +1,36 @@
+{
+  "findings": [
+    {
+      "severity": "HIGH",
+      "file": "web/app/sw.js",
+      "line": 35,
+      "title": "Versioned shell assets not pre-cached break offline load after update",
+      "issue": "The service worker pre-caches only unversioned filenames (e.g., 'app.js'), but the HTML requests versioned URLs (e.g., 'app.js?v=411'). The fetch handler treats versioned requests as shell assets (regex matches query strings) and uses network-first with cache fallback. On first offline visit after an update, the versioned URL is not in cache, so the fallback serves 'index.html' as the JS file, breaking the entire app.",
+      "fix": "Include the versioned URLs in the SHELL array, or use a cache-first strategy for shell assets with network update, or modify the cache-match to ignore the query string (e.g., via `ignoreSearch` option)."
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "web/app/manifest.webmanifest",
+      "line": 1,
+      "title": "Missing related_applications for Play Store TWA association",
+      "issue": "The manifest lacks `prefer_related_applications` and `related_applications` fields. For a Trusted Web Activity published on Google Play, these are required to link the PWA to the Android app. Without them, the Play Store review may reject the listing or the 'open in app' behavior will not work.",
+      "fix": "Add `\"prefer_related_applications\": true` and `\"related_applications\": [{\"platform\": \"play\", \"id\": \"com.myglpshot.app\"}]` (with the actual package name)."
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "web/app/index.html",
+      "line": 50,
+      "title": "Third-party analytics script loaded without user consent in a health-data app",
+      "issue": "The page loads a script from `analytics.willhitestrategy.org`. Even if the analytics are privacy-respecting, the mere fact that a user visits a GLP-1 injection tracker can be considered health-related information. No consent mechanism is presented, and the privacy policy may not adequately disclose this. This risks violating Play Store privacy requirements and user trust.",
+      "fix": "Implement a consent banner before loading analytics, or switch to a self-hosted, cookieless analytics solution that does not transmit any personal data, and update the privacy policy accordingly."
+    },
+    {
+      "severity": "LOW",
+      "file": "web/app/sw.js",
+      "line": 20,
+      "title": "Silent pre-cache failures may leave offline shell incomplete",
+      "issue": "The install event uses `c.add(u).catch(() => null)` for each shell asset. If any asset fails to cache (e.g., 404 due to a missing file), the error is swallowed. The service worker still activates, but the missing asset will not be available offline, potentially causing partial breakage.",
+      "fix": "Log the failure or abort installation if a critical shell asset cannot be cached, or at least surface a warning in the console."
+    }
+  ]
+}

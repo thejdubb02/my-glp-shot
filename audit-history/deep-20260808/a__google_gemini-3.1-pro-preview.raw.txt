@@ -1,0 +1,32 @@
+```json
+{"findings": [
+  {
+    "severity": "CRITICAL",
+    "file": "api/app.py",
+    "line": 152,
+    "title": "Severe SQLite lock contention due to per-request schema execution",
+    "issue": "The `get_db()` function executes the entire `SCHEMA` (multiple `CREATE TABLE IF NOT EXISTS` statements) on every single request. In a multi-threaded environment (2 workers x 4 threads), this constantly acquires SQLite schema/write locks, guaranteeing massive lock contention and `database is locked` errors under real-world load.",
+    "fix": "Remove `db.executescript(SCHEMA)` and `db.commit()` from `get_db()`. The schema is already safely initialized at startup by `init_db()`."
+  },
+  {
+    "severity": "HIGH",
+    "file": "api/app.py",
+    "line": 259,
+    "title": "SQLite write lock contention on every authenticated GET request",
+    "issue": "`get_session_user()` updates the `last_seen` timestamp in the `sessions` table on every authenticated request. Since SQLite only allows one concurrent writer, concurrent GET requests (e.g., a PWA loading user, sync, and share data simultaneously) will collide and throw `database is locked` errors.",
+    "fix": "Throttle the `last_seen` update so it only writes if a certain threshold has passed (e.g., `if now_ts() - sess['last_seen'] > 300:`), or remove it entirely if real-time session tracking is not strictly required."
+  },
+  {
+    "severity": "HIGH",
+    "file": "api/app.py",
+    "line": 826,
+    "title": "Silent data loss on Stripe webhook transient failures",
+    "issue": "The webhook handler inserts and immediately commits the event ID to `stripe_events` before processing the subscription update. If the subsequent processing fails (e.g., due to a DB lock), the event is marked as processed. Stripe will not retry, and the user's payment will never be credited.",
+    "fix": "Remove `db.commit()` at line 826. Allow the `INSERT INTO stripe_events` to remain in the same transaction as the subscription updates, so they commit or roll back together."
+  },
+  {
+    "severity": "HIGH",
+    "file": "api/app.py",
+    "line": 851,
+    "title": "Stripe webhooks fail silently without retries",
+    "issue": "The generic `except Exception` block catches all webhook processing errors and returns a 200 OK response. This tells Stripe the event was handled successfully, preventing Stripe's automatic retry mechanism from recovering transient failures (like network drops or DB locks).",

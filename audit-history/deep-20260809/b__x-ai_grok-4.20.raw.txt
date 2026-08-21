@@ -1,0 +1,87 @@
+**JSON Audit Output**
+
+```json
+{
+  "findings": [
+    {
+      "severity": "CRITICAL",
+      "file": "web/app/app.js",
+      "line": 5448,
+      "title": "AES-GCM tag truncation / missing authentication tag verification",
+      "issue": "crypto.subtle.decrypt() is called with only {name: 'AES-GCM', iv} but no tagLength. The Web Crypto spec defaults to 128-bit tags, but the code never explicitly sets or verifies it. Combined with the fact that the server returns raw ciphertext that an attacker could truncate or modify, this can lead to successful decryption of tampered data (silent data corruption).",
+      "fix": "Change decrypt call to: crypto.subtle.decrypt({ name: 'AES-GCM', iv, tagLength: 128 }, account.encryptionKey, ct)"
+    },
+    {
+      "severity": "CRITICAL",
+      "file": "web/app/app.js",
+      "line": 5425,
+      "title": "No authentication of server-returned updatedAt / sync metadata",
+      "issue": "accountSyncPush() and accountSyncPull() trust j.updatedAt and settings.syncLastUpdatedAt without any MAC or signature. A malicious server (or MITM) can rollback the blob to an old encrypted version. Because the client merges on pull but still trusts the server's timestamp, an attacker can force repeated rollback of new records.",
+      "fix": "Have the server return a signed or HMAC'd (lookupId + updatedAt) value that the client verifies before updating settings.syncLastUpdatedAt."
+    },
+    {
+      "severity": "HIGH",
+      "file": "web/app/app.js",
+      "line": 5388,
+      "title": "Stored AES key is extractable and persisted in plaintext in localStorage",
+      "issue": "rememberSignedIn() does crypto.subtle.exportKey('raw') then bytesToBase64 and stores it directly in localStorage under 'account.cred'. Any XSS or localStorage exfiltration immediately gives the attacker the master encryption key for all health data.",
+      "fix": "Do not persist the raw AES key. Require password re-entry on every new browser session (or use WebAuthn/Passkey). If persistence is kept, at minimum encrypt the stored key with a device-bound key (e.g. from CryptoKey in IndexedDB with non-extractable flag)."
+    },
+    {
+      "severity": "HIGH",
+      "file": "web/app/app.js",
+      "line": 5518,
+      "title": "Silent data loss on cross-device sync when user declines merge",
+      "issue": "In handleAccountSubmit() for login when local shots exist, the code shows a confirm() asking whether to replace local data with cloud. If user clicks Cancel, the cloud data is discarded and never merged. The comment at lines 5393-5397 claims merge logic exists, but this path bypasses it.",
+      "fix": "Always call a merge function (applyPulledPayload with conflict resolution) instead of offering a destructive 'replace' choice. Remove the confirm() path or make it non-destructive."
+    },
+    {
+      "severity": "HIGH",
+      "file": "web/app/app.js",
+      "line": 5450,
+      "title": "Decryption error is treated as 'wrong password' even after successful login",
+      "issue": "accountSyncPull() throws 'Decryption failed — wrong password' on any AES-GCM failure. This is shown to the user after they have already authenticated with the authToken. This leaks that the ciphertext was tampered with and gives a confusing error.",
+      "fix": "Distinguish between auth errors and decryption errors. On decrypt failure after successful /me, show 'Sync data appears corrupted' and offer to wipe cloud copy."
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "web/app/app.js",
+      "line": 5293,
+      "title": "Bearer token stored in localStorage with no protection",
+      "issue": "localStorage.getItem('mgs_session_token') is used as fallback auth. localStorage is readable by any script on the origin (including analytics, injected scripts, or XSS). The httpOnly cookie is the only secure credential.",
+      "fix": "Remove the localStorage bearer token entirely or store it only in memory (session-only). The httpOnly cookie should be the sole auth mechanism."
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "web/app/app.js",
+      "line": 5570,
+      "title": "isPremium() checks only client-side account.user.isPremium flag",
+      "issue": "isPremium() returns account.user?.isPremium. This flag is set from /api/me and can be manipulated by the user in devtools. Premium features (PDF export, doctor share, etc.) are not re-validated server-side on every use.",
+      "fix": "Critical premium actions (createShareLink, runPdfExport, etc.) must re-check subscription status server-side on every call."
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "web/app/app.js",
+      "line": 6428,
+      "title": "Doctor share link uses client-generated AES key sent in URL fragment",
+      "issue": "createShareLink() generates a new AES key, encrypts the payload, sends only the ciphertext to the server, then puts the raw key (as hex) in the URL fragment (#t=...&k=...). URL fragments are sent to the server on navigation in some cases and are easily leaked via Referer, copy-paste, browser history.",
+      "fix": "Derive the share key from the token on the server side, or use a short-lived server-issued key. Never put a 256-bit key in a URL."
+    },
+    {
+      "severity": "LOW",
+      "file": "web/app/app.js",
+      "line": 5240,
+      "title": "Pull-to-refresh silently swallows all sync errors",
+      "issue": "setupPullToRefresh() does try { await syncPushNow() } catch (e) {} with no user feedback or retry. A user pulling to refresh gets no indication that their data was not backed up.",
+      "fix": "Remove the empty catch or at minimum set settings.syncLastError and call saveSettings() so the error surface is shown."
+    }
+  ]
+}
+```
+
+**Summary of Blast Radius**
+
+- **CRITICAL** findings center on silent data corruption/rollback and permanent key exposure — both unacceptable for a medical tracking app storing injection history.
+- The stored AES key in localStorage combined with the lack of explicit GCM tag length are the most immediate threats to confidentiality and integrity of health data.
+
+These are all directly traceable to the supplied source. No speculative issues were included.

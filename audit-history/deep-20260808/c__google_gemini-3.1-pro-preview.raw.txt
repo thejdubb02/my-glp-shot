@@ -1,0 +1,51 @@
+```
+    In `applySettingsToInputs`:
+    ```javascript
+    if ($('#set-start-weight')) $('#set-start-weight').value = settings.startWeight ?? '';
+    if ($('#set-goal-weight'))  $('#set-goal-weight').value = settings.goalWeight ?? '';
+    ```
+    This proves the elements are conditionally present. Unconditionally calling `.addEventListener` on them will throw `TypeError` and halt the `DOMContentLoaded` execution, breaking the app.
+
+12. **Premium gating bypass (revisited)**:
+    ```javascript
+    $('#add-supply-btn').addEventListener('click', () => {
+      if (!isPremium() && account.user) { $('#upgrade-dialog').showModal(); return; }
+      openSupplyDialog(null);
+    });
+    ```
+    If `account.user` is null (user is not signed in, using local-only mode), `!isPremium() && account.user` evaluates to `false`. The user bypasses the premium gate and can use the feature.
+    This applies to Supplies, Measurements, Expenses, and Labs.
+    Fix: The check should probably be `if (!isPremium()) { ... }`. If local-only users are supposed to be blocked from premium features, they should be prompted to sign up and upgrade.
+
+13. **Timezone correctness (revisited)**:
+    ```javascript
+    // renderAppetiteTrend
+    const key = d.toISOString().slice(0, 10);
+    // renderFoodNoiseTrend
+    const key = d.toISOString().slice(0, 10);
+    ```
+    These use UTC dates for local bucketing, which causes the trend charts to show data on the wrong day (shifted by 1 day) for users outside of UTC, depending on the time of day.
+    Fix: Use `localISOForInput(d).slice(0, 10)` like `renderMoodTrend` does.
+
+14. **Notification scheduling reliability (revisited)**:
+    ```javascript
+    const t = setTimeout(async () => {
+      // ...
+      scheduleDailyReminders();
+    }, ms);
+    ```
+    Calling `scheduleDailyReminders()` inside the timeout callback creates duplicate timers for all other daily reminders, leading to an exponential explosion of timers and duplicate notifications.
+    Fix: Call `maybeScheduleNotification()` instead, which clears existing timers before rescheduling.
+
+15. **Data Loss / Sync**:
+    In `setupSyncFlushAndVisibilityPull`:
+    ```javascript
+    const flush = () => {
+      if (!window._syncDirty) return;
+      if (!account.user || !account.encryptionKey) return;
+      clearTimeout(window._syncDebounce);
+      window._syncDirty = false;
+      accountSyncPush().catch(() => { window._syncDirty = true; });
+    };
+    ```
+    If `flush` is
