@@ -271,6 +271,13 @@
     </div>
   </section>
 
+  <section class="card symptoms-card" data-tab="home" id="symptoms-card">
+    <div class="card-head"><h2 id="symptoms-heading">Any side effects today?</h2></div>
+    <p id="symptoms-today" class="muted symptoms-today">Nothing logged today.</p>
+    <button type="button" id="symptoms-log-btn" class="btn-primary symptoms-log-btn">Log symptoms</button>
+    <p class="muted small symptoms-hint">You don't need to be injecting today. Side effects logged with a shot show up here too.</p>
+  </section>
+
   <p class="catchup-link-row muted small" data-tab="home">Missed a day? <a href="#" id="catchup-open" class="link">Fill in a past day</a></p>
 
   <section class="card" data-tab="home">
@@ -284,7 +291,7 @@
     <div id="badges-list" class="badges-list"></div>
   </section>
 
-  <section class="card recon-card" data-tab="home">
+  <section class="card recon-card hidden" id="recon-card" data-tab="home">
     <div class="card-head"><h2>Mixing calculator <button class="info-btn" type="button" data-info="mixing-calc" aria-label="About this">i</button></h2><span class="muted small">Free · for compounded peptide users</span></div>
     <p class="muted small">Mixing your own peptide? Enter the vial size, how much bacteriostatic water you added, your dose, and your syringe size. We'll tell you exactly which line to draw to.</p>
     <div class="recon-grid">
@@ -449,7 +456,7 @@
 <section class="card" data-tab="insights">
     <div class="card-head"><h2>How you've been feeling</h2><span class="muted small">Last 30 days</span></div>
     <div id="side-effects-summary" class="side-effects-summary"></div>
-    <p id="empty-side-effects" class="empty"><span class="empty-illus">✓</span><br>No symptoms logged. Add them when you log a shot.</p>
+    <p id="empty-side-effects" class="empty"><span class="empty-illus">✓</span><br>No symptoms logged. Use the <strong>Any side effects today?</strong> card on Home, or add them when you log a shot.</p>
   </section>
 
   <section id="plateau-card" class="card hidden" data-tab="insights">
@@ -625,6 +632,12 @@
     </div>
     <p class="muted small">If you switch medications (e.g. Ozempic → Mounjaro), log the change here so your charts stay readable across the transition. Each entry snapshots the drug + half-life + cadence at that moment.</p>
     <div id="medchanges-list" class="medchanges-list"></div>
+  </section>
+
+  <section class="card" id="mixing-settings-card">
+    <h2>Mixing calculator <span class="lock-pill optional">Optional</span></h2>
+    <p class="muted small">Only useful if you reconstitute your own peptide from a vial. If you use a pre-filled pen, leave this off and the card stays off your home screen.</p>
+    <label class="check-row"><input id="set-mixing-calc" type="checkbox"> Show the mixing calculator on Home</label>
   </section>
 
   <section class="card" id="cycle-settings-card">
@@ -1115,6 +1128,21 @@
 <!-- Catch-up: mood / appetite / food noise for a day that isn't today. The three
      home cards are deliberately today-only (one tap, no date picker); this is the
      one place a past day can be filled in or corrected. -->
+<dialog id="symptoms-dialog" class="modal symptoms-modal">
+  <form id="symptoms-form" method="dialog">
+    <h2>Side effects</h2>
+    <p class="muted small">Log how you're feeling on any day — injection or not. Leave anything you're not experiencing on "None".</p>
+    <label>Day <input id="symptoms-date" type="date" required></label>
+    <div id="symptoms-picker" class="se-grid"></div>
+    <div class="modal-actions">
+      <button type="button" id="symptoms-clear" class="btn-ghost catchup-clear">Clear day</button>
+      <span class="spacer"></span>
+      <button type="button" id="symptoms-cancel" class="btn-ghost">Cancel</button>
+      <button type="button" id="symptoms-save" class="btn-primary">Save</button>
+    </div>
+  </form>
+</dialog>
+
 <dialog id="catchup-dialog" class="modal catchup-modal">
   <form id="catchup-form" method="dialog">
     <h2>Fill in a past day</h2>
@@ -1151,6 +1179,14 @@
         <span class="foodnoise-end-label muted small">Loud</span>
       </div>
       <div class="foodnoise-readout"><span id="catchup-foodnoise-value">—</span><span class="muted small">/10</span> · <span id="catchup-foodnoise-descriptor" class="muted small">drag to set</span></div>
+    </div>
+
+    <div class="catchup-section">
+      <div class="catchup-section-head"><strong>Side effects</strong><span id="catchup-symptoms-state" class="muted small">not logged</span></div>
+      <details class="catchup-symptoms-details">
+        <summary>Add or edit side effects for this day</summary>
+        <div id="catchup-symptoms-picker" class="se-grid"></div>
+      </details>
     </div>
 
     <div class="catchup-section">

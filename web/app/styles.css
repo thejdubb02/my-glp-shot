@@ -396,6 +396,15 @@ canvas{width:100% !important;height:auto !important;max-height:200px}
 .se-group-row .se-group-title{margin:0 0 4px}
 .se-pills{display:flex;flex-wrap:wrap;gap:6px}
 .se-details summary{cursor:pointer;color:var(--bronze-dk);font-weight:600;padding:6px 0}
+
+/* Symptoms card — standalone daily side-effect entry */
+.symptoms-today{margin:2px 0 10px;font-size:.95rem}
+.symptoms-card.logged .symptoms-today{color:var(--ink);font-weight:600}
+.symptoms-log-btn{width:100%}
+.symptoms-hint{margin-top:8px}
+.symptoms-modal .se-grid{max-height:52vh;overflow-y:auto;padding-right:4px}
+.catchup-symptoms-details summary{cursor:pointer;color:var(--bronze-dk);font-weight:600;padding:6px 0;font-size:.85rem}
+.catchup-symptoms-details .se-grid{max-height:40vh;overflow-y:auto;padding-right:4px}
 .side-effects-summary{display:flex;flex-direction:column;gap:8px;margin-top:4px}
 .se-pill{background:var(--surface-alt);border:1px solid var(--line);border-radius:999px;padding:4px 10px;font-size:.78rem;display:flex;align-items:center;gap:6px}
 .se-pill .se-count{font-weight:700;color:var(--bronze-dk)}

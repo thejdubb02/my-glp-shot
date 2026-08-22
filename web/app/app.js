@@ -9,8 +9,11 @@ const DB_NAME = 'shotclock';
 // v8 bump: 'cycles' store added — opt-in menstrual cycle tracking (period start/end, flow, symptoms).
 // v9 bump: 'medChanges' store added — medication switches as discrete events so charts stay readable across drug changes.
 // v10 bump: 'notes' store added — a free-text line per day, so a number in a chart can carry the reason behind it.
-const DB_VERSION = 10;
-const APP_VERSION = '0.53.0';
+// v11 bump: 'symptoms' store added — side effects for a day you didn't inject. They
+//   used to live only on a shot record, which meant the daily side-effect reminder
+//   asked for something the app had nowhere to put.
+const DB_VERSION = 11;
+const APP_VERSION = '0.54.0';
 
 // Umami event tracker. Aggregates only — no PII (no email, no IDs). Safe to call before umami loads.
 function track(event, props) {
@@ -494,6 +497,10 @@ const DEFAULT_SETTINGS = {
   customSites: [],
   cycleEnabled: false,
   cycleSeenOptIn: false,
+  // The mixing calculator only applies to people reconstituting their own
+  // peptide. It used to be a permanent card on Home for everyone, including
+  // pen users who will never need it. Off by default; opt in from Settings.
+  showMixingCalc: false,
   maintenanceMode: false,
   // Timezone: IANA name (e.g. "America/Chicago"). When unset, falls back to the
   // device timezone at runtime. Once a user sets one explicitly it overrides
@@ -748,6 +755,9 @@ function openDB() {
       if (!db.objectStoreNames.contains('notes')) {
         db.createObjectStore('notes', { keyPath: 'date' });
       }
+      if (!db.objectStoreNames.contains('symptoms')) {
+        db.createObjectStore('symptoms', { keyPath: 'date' });
+      }
     };
     req.onsuccess = () => {
       const db = req.result;
@@ -779,7 +789,7 @@ function openDB() {
 // than off each save/delete helper: that is the single choke point every write
 // passes through, including the direct dbPut calls in applyPulledPayload, so a
 // new write path cannot forget to clear it.
-const DAILY_CACHED = new Set(['moods', 'appetites', 'foodNoise', 'notes']);
+const DAILY_CACHED = new Set(['moods', 'appetites', 'foodNoise', 'notes', 'symptoms']);
 const _dailyCache = new Map();
 
 async function readDailySorted(store) {
@@ -1192,7 +1202,7 @@ async function renderShots() {
   renderLevelChart(shots).catch(e => console.warn('level chart failed', e));
   renderBodyDiagram(shots);
   renderDoseTimeline(shots);
-  renderSideEffectsSummary(shots);
+  await renderSideEffectsSummary(shots);
   await renderHero(shots, weights);
   await renderBadges(shots, weights);
   try { await renderSupplies(shots); } catch (e) {}
@@ -1945,8 +1955,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   await renderNote();
   setupNoteUI();
   setupCatchupUI();
+  setupSymptomsUI();
+  await renderSymptomsCard();
   setupCycleUI();
   await renderCycleCard();
+  setupMixingCalcUI();
+  applyMixingCalcVisibility();
   setupMedChangeUI();
   await renderMedChanges();
   $('#guidance-close')?.addEventListener('click', () => $('#guidance-dialog').close());
@@ -1998,6 +2012,8 @@ function applySettingsToInputs() {
   if ($('#set-start-weight')) $('#set-start-weight').value = settings.startWeight ?? '';
   if ($('#set-goal-weight'))  $('#set-goal-weight').value = settings.goalWeight ?? '';
   if ($('#set-maintenance'))  $('#set-maintenance').checked = !!settings.maintenanceMode;
+  if ($('#set-mixing-calc'))  $('#set-mixing-calc').checked = !!settings.showMixingCalc;
+  applyMixingCalcVisibility();
   $('#set-notify').checked = !!settings.notify && (typeof Notification !== 'undefined' && Notification.permission === 'granted');
   $('#set-lead').value = String(settings.notifyLeadMinutes ?? 60);
   const tzSel = $('#set-timezone');
@@ -2482,21 +2498,25 @@ function sanitizeShot(s) {
     site: safeText(s.site, 80),
     notes: safeText(s.notes, 2000),
   };
-  if (s.sideEffects && typeof s.sideEffects === 'object' && !Array.isArray(s.sideEffects)) {
-    // Keys are rendered as labels when they aren't in our taxonomy, so restrict
-    // them to a safe charset rather than merely truncating. Values must be one
-    // of the four severity levels.
-    const LEVELS = new Set(SE_LEVELS.map(l => l[0]));
-    const se = {};
-    for (const [k, v] of Object.entries(s.sideEffects).slice(0, 40)) {
-      const key = String(k).slice(0, 40).replace(/[^A-Za-z0-9 _-]/g, '');
-      if (!key) continue;
-      const val = String(v ?? '').toLowerCase();
-      se[key] = LEVELS.has(val) ? val : '';
-    }
-    out.sideEffects = se;
-  }
+  const se = sanitizeSideEffectMap(s.sideEffects);
+  if (se) out.sideEffects = se;
   return out;
+}
+
+// Shared by shot records and standalone symptom days. Keys are rendered as
+// labels when they aren't in our taxonomy, so restrict them to a safe charset
+// rather than merely truncating. Values must be one of the four severity levels.
+function sanitizeSideEffectMap(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const LEVELS = new Set(SE_LEVELS.map(l => l[0]));
+  const se = {};
+  for (const [k, v] of Object.entries(raw).slice(0, 40)) {
+    const key = String(k).slice(0, 40).replace(/[^A-Za-z0-9 _-]/g, '');
+    if (!key) continue;
+    const val = String(v ?? '').toLowerCase();
+    se[key] = LEVELS.has(val) ? val : '';
+  }
+  return se;
 }
 
 function sanitizeWeight(w) {
@@ -3172,7 +3192,7 @@ function handleReminderDeepLink() {
   const tabAndAnchor = {
     weight:       { tab: 'home', scroll: '#weight-chart' },
     moodAppetite: { tab: 'home', scroll: '#mood-card' },
-    sideEffects:  { tab: 'home', scroll: '#shot-card' },
+    sideEffects:  { tab: 'home', scroll: '#symptoms-card' },
     measurements: { tab: 'more', scroll: '#measurements-card' },
     shot:         { tab: 'home', scroll: null },
   }[key];
@@ -3189,6 +3209,10 @@ function handleReminderDeepLink() {
   }
   if (key === 'weight') {
     setTimeout(() => { const b = document.querySelector('#add-weight-btn'); if (b) b.click(); }, 300);
+  } else if (key === 'sideEffects') {
+    // The reminder used to scroll to a card that didn't exist, so tapping the
+    // notification landed on Home with nothing to do. Open the picker instead.
+    setTimeout(() => { const b = document.querySelector('#symptoms-log-btn'); if (b) b.click(); }, 300);
   } else if (key === 'shot') {
     setTimeout(() => { const b = document.querySelector('#log-shot-btn'); if (b) b.click(); }, 300);
   }
@@ -4220,7 +4244,7 @@ async function deleteFoodNoise(date) { return withStore('foodNoise', 'readwrite'
 // `noteOriginal` is what was on disk when the day was loaded. Clearing a note the
 // user had written is a real edit that must be saved, and without the original
 // there is no way to tell "left the empty box alone" from "deleted the text".
-const catchupDraft = { mood: null, appetite: null, foodNoise: null, note: '', noteOriginal: '' };
+const catchupDraft = { mood: null, appetite: null, foodNoise: null, note: '', noteOriginal: '', symptoms: null, symptomsOriginal: '' };
 
 function catchupPaint() {
   $$('#catchup-mood-picker .mood-btn').forEach(b =>
@@ -4249,6 +4273,12 @@ function catchupPaint() {
     if (fnState) fnState.textContent = 'not logged';
   }
 
+  const symState = $('#catchup-symptoms-state');
+  if (symState) {
+    const desc = describeSe(catchupDraft.symptoms, 2);
+    symState.textContent = desc || 'not logged';
+  }
+
   const noteBox = $('#catchup-note');
   const noteState = $('#catchup-note-state');
   // Same rule as the home card: never overwrite text that is being typed.
@@ -4267,6 +4297,10 @@ async function catchupLoadDay(date) {
   catchupDraft.foodNoise = (foodNoise.find(f => f.date === date) || {}).value || null;
   catchupDraft.note = (note && note.text) || '';
   catchupDraft.noteOriginal = catchupDraft.note;
+  const symRow = await getSymptomDay(date);
+  catchupDraft.symptoms = (symRow && symRow.se) || null;
+  catchupDraft.symptomsOriginal = JSON.stringify(catchupDraft.symptoms || {});
+  writeSePicker('csym-', catchupDraft.symptoms);
   catchupPaint();
 }
 
@@ -4332,6 +4366,12 @@ function setupCatchupUI() {
     catchupPaint();
   });
 
+  renderSePicker($('#catchup-symptoms-picker'), 'csym-');
+  $('#catchup-symptoms-picker')?.addEventListener('change', () => {
+    catchupDraft.symptoms = readSePicker('csym-');
+    catchupPaint();
+  });
+
   $('#catchup-cancel').addEventListener('click', () => dlg.close());
 
   $('#catchup-clear').addEventListener('click', async () => {
@@ -4340,14 +4380,18 @@ function setupCatchupUI() {
     // Spell out that a written note goes too. The other three are one tap to
     // re-enter; a paragraph about your week is not.
     const warning = catchupDraft.noteOriginal
-      ? `Remove the mood, appetite, food-noise AND the written note for ${date}? The note can't be recovered.`
-      : `Remove the mood, appetite and food-noise entries for ${date}?`;
+      ? `Remove the mood, appetite, food-noise, side effects AND the written note for ${date}? The note can't be recovered.`
+      : `Remove the mood, appetite, food-noise and side-effect entries for ${date}?`;
     if (!confirm(warning)) return;
-    await Promise.all([deleteMood(date), deleteAppetite(date), deleteFoodNoise(date), deleteNote(date)]);
+    await Promise.all([deleteMood(date), deleteAppetite(date), deleteFoodNoise(date), deleteNote(date), deleteSymptomDay(date)]);
     catchupDraft.mood = catchupDraft.appetite = catchupDraft.foodNoise = null;
     catchupDraft.note = catchupDraft.noteOriginal = '';
+    catchupDraft.symptoms = null;
+    catchupDraft.symptomsOriginal = '{}';
+    writeSePicker('csym-', null);
     catchupPaint();
     await refreshDailyCards();
+    try { await renderShots(); } catch (_) {}
     markSyncDirty();
     dlg.close();
     toast(`Cleared ${date}`);
@@ -4366,8 +4410,9 @@ function setupCatchupUI() {
       return;
     }
     const noteChanged = (catchupDraft.note || '').trim() !== (catchupDraft.noteOriginal || '').trim();
-    if (!catchupDraft.mood && !catchupDraft.appetite && !catchupDraft.foodNoise && !noteChanged) {
-      status.textContent = 'Nothing to save — set a mood, appetite, food-noise level or write a note.';
+    const symptomsChanged = JSON.stringify(catchupDraft.symptoms || {}) !== (catchupDraft.symptomsOriginal || '{}');
+    if (!catchupDraft.mood && !catchupDraft.appetite && !catchupDraft.foodNoise && !noteChanged && !symptomsChanged) {
+      status.textContent = 'Nothing to save — set a mood, appetite, food-noise level, side effects, or write a note.';
       return;
     }
     const writes = [];
@@ -4377,6 +4422,9 @@ function setupCatchupUI() {
     // saveNote deletes the day when the text is empty, so this handles both
     // writing a new note and clearing an existing one.
     if (noteChanged) writes.push(saveNote(date, catchupDraft.note));
+    // saveSymptomDay deletes the day when nothing is selected, so clearing every
+    // dropdown back to "None" removes the entry rather than storing an empty one.
+    if (symptomsChanged) writes.push(saveSymptomDay(date, catchupDraft.symptoms));
     try {
       await Promise.all(writes);
       await ensurePersisted();
@@ -4385,6 +4433,9 @@ function setupCatchupUI() {
       return;
     }
     await refreshDailyCards();
+    // The side-effect summary and insights are rebuilt by renderShots, so a
+    // backdated symptom would otherwise not appear until the next reload.
+    if (symptomsChanged) { try { await renderShots(); } catch (_) {} }
     markSyncDirty();
     dlg.close();
     toast(date === today ? 'Saved for today' : `Saved for ${date}`);
@@ -4395,6 +4446,7 @@ function setupCatchupUI() {
         catchupDraft.appetite ? 'appetite' : null,
         catchupDraft.foodNoise ? 'foodNoise' : null,
         noteChanged ? 'note' : null,
+        symptomsChanged ? 'symptoms' : null,
       ].filter(Boolean).join('+'),
     });
   });
@@ -4409,6 +4461,7 @@ async function refreshDailyCards() {
   try { await renderAppetite(); } catch (_) {}
   try { await renderFoodNoise(); } catch (_) {}
   try { await renderNote(); } catch (_) {}
+  try { await renderSymptomsCard(); } catch (_) {}
 }
 
 // ---------- Cycle tracking (opt-in) ----------
@@ -4510,6 +4563,28 @@ async function renderCycleCard() {
     });
   });
 }
+// ---------- Mixing calculator visibility ----------
+// Hidden unless the user says they mix their own peptide. Toggling only affects
+// the card; the calculator itself is unchanged and keeps no data.
+function applyMixingCalcVisibility() {
+  const card = $('#recon-card');
+  if (card) card.classList.toggle('hidden', !settings.showMixingCalc);
+}
+function setupMixingCalcUI() {
+  const cb = $('#set-mixing-calc');
+  if (!cb) return;
+  cb.checked = !!settings.showMixingCalc;
+  cb.addEventListener('change', async (e) => {
+    settings.showMixingCalc = !!e.target.checked;
+    await saveSettings();
+    markSyncDirty();
+    applyMixingCalcVisibility();
+    if (settings.showMixingCalc) {
+      $('#recon-card')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  });
+}
+
 function setupCycleUI() {
   const enabledCheckbox = $('#set-cycle-enabled');
   const extras = $('#cycle-settings-extras');
@@ -4696,10 +4771,22 @@ async function evaluateGuidanceTriggers() {
       const sinceShotDays = (Date.now() - new Date(shots[0].when).getTime()) / 86400000;
       if (sinceShotDays <= 3) { target = 'dose_increase'; label = 'Just bumped up — what to expect this cycle'; }
     } else {
-      // Severe side-effects on >=2 of the last 3 shots?
+      // Severe side-effects on >=2 separate days across the last 3 shots' span.
+      // Counts standalone symptom days too — severe nausea on a rest day is the
+      // same signal as severe nausea on shot day.
       const last3 = shots.slice(0, 3);
-      const severeCount = last3.filter(s => s.sideEffects && Object.values(s.sideEffects).includes('severe')).length;
-      if (severeCount >= 2) { target = 'side_effects_high'; label = 'Side effects looking high — questions to bring to your prescriber'; }
+      const windowStart = last3.length ? new Date(last3[last3.length - 1].when).getTime() : 0;
+      let severeDays = 0;
+      try {
+        const entries = await collectSideEffectEntries(shots);
+        const days = new Set();
+        for (const e of entries) {
+          if (e.at < windowStart) continue;
+          if (Object.values(e.se).includes('severe')) days.add(e.date);
+        }
+        severeDays = days.size;
+      } catch (_) {}
+      if (severeDays >= 2) { target = 'side_effects_high'; label = 'Side effects looking high — questions to bring to your prescriber'; }
     }
   }
   if (target) {
@@ -4823,19 +4910,62 @@ function insight_siteRotation(ctx) {
   };
 }
 
+// The measured version of the nausea-timing insight: for each standalone symptom
+// day that reported the target effect, count the days since the last shot before
+// it. Returns null when there isn't enough of that data to beat the heuristic.
+function insight_nauseaDayFromDailyLogs(ctx, targetSE) {
+  const standalone = (ctx.seEntries || []).filter(e => !e.fromShot && e.se[targetSE]);
+  if (standalone.length < 4) return null;
+  const shotTimes = ctx.shots
+    .map(s => new Date(s.when).getTime())
+    .filter(Number.isFinite)
+    .sort((a, b) => a - b);
+  if (shotTimes.length < 2) return null;
+  const cadence = settings.cadenceDays || 7;
+  const buckets = [];
+  for (const e of standalone) {
+    let prev = null;
+    for (const t of shotTimes) { if (t <= e.at) prev = t; else break; }
+    if (prev == null) continue;
+    const days = Math.floor((e.at - prev) / 86400000);
+    // Beyond a cycle-and-a-bit the "days since shot" number stops meaning
+    // anything — that's a missed shot, not a late-cycle symptom.
+    if (days >= 0 && days <= cadence + 2) buckets.push(days);
+  }
+  if (buckets.length < 4) return null;
+  const counts = {};
+  for (const d of buckets) counts[d] = (counts[d] || 0) + 1;
+  let peakDay = null, peakN = 0;
+  for (const [d, n] of Object.entries(counts)) if (n > peakN) { peakN = n; peakDay = Number(d); }
+  const avg = buckets.reduce((a, b) => a + b, 0) / buckets.length;
+  const dayLabel = peakDay === 0 ? 'the day of your shot'
+                 : peakDay === 1 ? 'the day after your shot'
+                 : `day ${peakDay} after your shot`;
+  return {
+    id: 'nausea-day',
+    title: 'When nausea tends to show up',
+    body: `Across ${buckets.length} days where you logged nausea, it landed most often on <strong>${dayLabel}</strong> (${peakN} of ${buckets.length}), averaging ${avg.toFixed(1)} days after a shot.`,
+    scrollTo: '#side-effects-summary',
+    premium: false,
+  };
+}
+
 // F2: Nausea timing relative to shot — which day-since-shot has the most nausea.
+//
+// Two modes. Standalone symptom days carry a real date, so when enough of them
+// exist we can measure the actual day-since-shot the nausea landed on. Before
+// that store existed the only signal was the shot record itself, which is dated
+// to the injection — so the old heuristic below inferred cycle position from the
+// gap between shots. That fallback stays for anyone whose history predates
+// per-day logging.
 function insight_nauseaDay(ctx) {
   const targetSE = 'nausea';
+  const real = insight_nauseaDayFromDailyLogs(ctx, targetSE);
+  if (real) return real;
   const eligible = ctx.shots.filter(s => s.sideEffects && s.sideEffects[targetSE]);
   if (eligible.length < 4) {
     return { id: 'nausea-day', title: 'Nausea timing', ready: false, need: `Need ${4 - eligible.length} more shots with nausea logged to spot a pattern.` };
   }
-  // Bucket by day-since-shot. Side effects are logged on the shot itself, so
-  // the closest meaning is "day 0 = the shot day". Without per-day side-effect
-  // logs we can only say "shots that had nausea were typically Y days into their
-  // cycle" (i.e. cadence position). For the descriptive output we report which
-  // shot in a sequence (early/mid/late dose cycle) most often had nausea by
-  // looking at the gap to the previous shot — proxy for "days into the cycle".
   const cadence = settings.cadenceDays || 7;
   const gaps = [];
   const sorted = [...ctx.shots].sort((a, b) => new Date(a.when) - new Date(b.when));
@@ -4984,8 +5114,12 @@ function insight_doseHold(ctx) {
   const doses = recent.map(s => s.dose);
   const allSame = doses.every(d => d === doses[0]);
   if (!allSame) return null;
-  // Count side-effect "severe" tags across the 4 recent shots.
-  const severeCount = recent.reduce((acc, s) => acc + (s.sideEffects ? Object.values(s.sideEffects).filter(v => v === 'severe').length : 0), 0);
+  // Count "severe" tags since the oldest of those 4 shots — including symptoms
+  // logged on days without an injection.
+  const windowStart = Math.min(...recent.map(s => new Date(s.when).getTime()));
+  const severeCount = (ctx.seEntries || [])
+    .filter(e => e.at >= windowStart)
+    .reduce((acc, e) => acc + Object.values(e.se).filter(v => v === 'severe').length, 0);
   if (severeCount > 0) {
     return {
       id: 'dose-hold',
@@ -5073,17 +5207,24 @@ function insight_cycleSideEffects(ctx) {
   // For each side-effect tag, count occurrence inside vs outside cycle days 1-3.
   const totals = {};
   let earlyDays = 0, otherDays = 0;
-  for (const s of ctx.shots) {
-    const inEarly = inEarlyCycle(s.when);
+  // One observation per day, from either source — otherwise a day with both a
+  // shot and a standalone entry would be double-counted.
+  const byDay = new Map();
+  for (const e of (ctx.seEntries || [])) {
+    const prev = byDay.get(e.date);
+    byDay.set(e.date, prev ? { ...prev, ...e.se } : { ...e.se });
+  }
+  for (const [date, se] of byDay) {
+    const inEarly = inEarlyCycle(date + 'T12:00:00');
     if (inEarly) earlyDays++; else otherDays++;
-    if (!s.sideEffects) continue;
-    for (const [k] of Object.entries(s.sideEffects)) {
+    for (const [k, lvl] of Object.entries(se)) {
+      if (!lvl) continue;
       totals[k] = totals[k] || { early: 0, other: 0 };
       if (inEarly) totals[k].early++; else totals[k].other++;
     }
   }
   if (earlyDays < 2 || otherDays < 4) {
-    return { id: 'cycle-x-se', title: 'Cycle × side effects', ready: false, need: `Need more shots logged across both cycle phases.`, premium: true };
+    return { id: 'cycle-x-se', title: 'Cycle × side effects', ready: false, need: `Need more days logged across both cycle phases.`, premium: true };
   }
   // Find the symptom with the largest relative bump on cycle days 1-3.
   let bestK = null, bestRatio = 1;
@@ -5175,7 +5316,10 @@ async function computeInsights() {
   const foodNoise = await getFoodNoiseSorted();
   const weights = await getWeightsSorted();
   const cycles = await getCyclesSorted();
-  const ctx = { shots, moods, appetites, foodNoise, weights, cycles };
+  // Side effects come from shots AND standalone symptom days; insights read the
+  // merged list so a symptom logged on a rest day still counts.
+  const seEntries = await collectSideEffectEntries(shots);
+  const ctx = { shots, moods, appetites, foodNoise, weights, cycles, seEntries };
   const free = FREE_INSIGHTS.map(fn => { try { return fn(ctx); } catch (e) { console.warn('insight error', e); return null; } }).filter(Boolean);
   const premium = PREMIUM_INSIGHTS.map(fn => { try { return fn(ctx); } catch (e) { console.warn('insight error', e); return null; } }).filter(Boolean);
   return { free, premium };
@@ -5456,41 +5600,185 @@ function renderDoseTimeline(shots) {
 }
 
 // ---------- Side effects ----------
-function renderSideEffectsForm() {
-  const wrap = $('#shot-side-effects');
+//
+// Side effects live in two places, and both are first-class:
+//   * shot.sideEffects  — what happened around an injection
+//   * the 'symptoms' store — a date-keyed entry for a day with no shot
+//
+// The second exists because the daily "Side effects check-in" reminder fires
+// every evening, and until now the only way to answer it was to log a shot.
+// Everything downstream (the 30-day summary, insights, the PDF, the doctor
+// share) reads through collectSideEffectEntries so neither source is invisible.
+
+async function getSymptomDaysSorted() {
+  return (await readDailySorted('symptoms')).filter(r => r.se && Object.keys(r.se).length);
+}
+async function getSymptomDay(date) {
+  try { return await dbGet('symptoms', date); } catch (_) { return null; }
+}
+async function saveSymptomDay(date, se) {
+  const clean = sanitizeSideEffectMap(se) || {};
+  // Drop "None" selections so an all-clear day doesn't masquerade as data.
+  for (const k of Object.keys(clean)) if (!clean[k]) delete clean[k];
+  if (!Object.keys(clean).length) return deleteSymptomDay(date);
+  return dbPut('symptoms', { date, se: clean, updatedAt: new Date().toISOString() });
+}
+async function deleteSymptomDay(date) {
+  return withStore('symptoms', 'readwrite', s => s.delete(date));
+}
+function sanitizeSymptomDay(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const date = safeText(raw.date, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
+  const se = sanitizeSideEffectMap(raw.se) || {};
+  for (const k of Object.keys(se)) if (!se[k]) delete se[k];
+  if (!Object.keys(se).length) return null;
+  return { date, se, updatedAt: safeText(raw.updatedAt, 40) || new Date().toISOString() };
+}
+
+// One flat list of every side-effect observation, from either source.
+// Each entry: { date: 'YYYY-MM-DD', at: ms, se: {key: level}, fromShot: bool }.
+async function collectSideEffectEntries(shots) {
+  const rows = Array.isArray(shots) ? shots : ((await dbAll(STORES.shots)) || []);
+  const out = [];
+  for (const s of rows) {
+    if (!s || !s.sideEffects) continue;
+    const at = new Date(s.when).getTime();
+    if (!Number.isFinite(at)) continue;
+    const date = toCanonicalDate(s.when);
+    if (!date) continue;
+    out.push({ date, at, se: s.sideEffects, fromShot: true });
+  }
+  let days = [];
+  try { days = await getSymptomDaysSorted(); } catch (_) {}
+  for (const d of days) {
+    const at = new Date(d.date + 'T12:00:00').getTime();
+    if (!Number.isFinite(at)) continue;
+    out.push({ date: d.date, at, se: d.se, fromShot: false });
+  }
+  return out.sort((a, b) => a.at - b.at);
+}
+
+// Render the grouped severity picker into any container. Used by the shot form,
+// the standalone symptoms dialog, and the catch-up dialog — one taxonomy, one
+// layout, three entry points. `prefix` namespaces the element ids.
+function renderSePicker(wrap, prefix) {
   if (!wrap) return;
-  // Render rows grouped by category with a small section heading before each group.
-  const html = SE_GROUPS.map(([gid, gname]) => {
+  wrap.innerHTML = SE_GROUPS.map(([gid, gname]) => {
     const rows = SIDE_EFFECTS.filter(([, , g]) => g === gid).map(([key, label]) =>
-      `<div class="se-row"><label for="se-${key}">${label}</label>
-         <select id="se-${key}" data-se="${key}">${SE_LEVELS.map(([v, t]) => `<option value="${v}">${t}</option>`).join('')}</select></div>`
+      `<div class="se-row"><label for="${prefix}${key}">${label}</label>
+         <select id="${prefix}${key}" data-se="${key}">${SE_LEVELS.map(([v, t]) => `<option value="${v}">${t}</option>`).join('')}</select></div>`
     ).join('');
     if (!rows) return '';
     return `<div class="se-group"><h4 class="se-group-title">${gname}</h4>${rows}</div>`;
   }).join('');
-  wrap.innerHTML = html;
 }
-function readSideEffects() {
+function readSePicker(prefix) {
   const obj = {};
   for (const [key] of SIDE_EFFECTS) {
-    const v = $('#se-' + key)?.value;
+    const v = $('#' + prefix + key)?.value;
     if (v) obj[key] = v;
   }
   return Object.keys(obj).length ? obj : null;
 }
-function writeSideEffects(se) {
+function writeSePicker(prefix, se) {
   for (const [key] of SIDE_EFFECTS) {
-    const el = $('#se-' + key);
+    const el = $('#' + prefix + key);
     if (el) el.value = (se && se[key]) || '';
   }
 }
-function renderSideEffectsSummary(shots) {
+// A short "Nausea (moderate) · Fatigue (mild)" line for a severity map.
+function describeSe(se, max = 3) {
+  const labelOf = (k) => (SIDE_EFFECTS.find(x => x[0] === k) || [k, k])[1];
+  const rank = { severe: 3, moderate: 2, mild: 1 };
+  const list = Object.entries(se || {})
+    .filter(([, v]) => v)
+    .sort((a, b) => (rank[b[1]] || 0) - (rank[a[1]] || 0));
+  if (!list.length) return '';
+  const shown = list.slice(0, max).map(([k, v]) => `${labelOf(k)} (${v})`).join(' · ');
+  return list.length > max ? `${shown} +${list.length - max} more` : shown;
+}
+
+function renderSideEffectsForm() {
+  const wrap = $('#shot-side-effects');
+  if (!wrap) return;
+  renderSePicker(wrap, 'se-');
+}
+function readSideEffects() { return readSePicker('se-'); }
+function writeSideEffects(se) { writeSePicker('se-', se); }
+// ---------- Symptoms card (standalone daily entry) ----------
+let _symptomsDialogDate = null;
+
+async function renderSymptomsCard() {
+  const card = $('#symptoms-card');
+  if (!card) return;
+  const today = todayISODate();
+  const row = await getSymptomDay(today);
+  const se = (row && row.se) || null;
+  const logged = !!(se && Object.keys(se).length);
+  const summary = $('#symptoms-today');
+  const btn = $('#symptoms-log-btn');
+  card.classList.toggle('logged', logged);
+  if (summary) {
+    summary.textContent = logged ? describeSe(se) : 'Nothing logged today.';
+    summary.classList.toggle('muted', !logged);
+  }
+  if (btn) btn.textContent = logged ? 'Edit today' : 'Log symptoms';
+}
+
+function openSymptomsDialog(date) {
+  const dlg = $('#symptoms-dialog');
+  if (!dlg) return;
+  _symptomsDialogDate = date || todayISODate();
+  const dateInput = $('#symptoms-date');
+  if (dateInput) { dateInput.value = _symptomsDialogDate; dateInput.max = todayISODate(); }
+  renderSePicker($('#symptoms-picker'), 'sym-');
+  getSymptomDay(_symptomsDialogDate).then(row => writeSePicker('sym-', row && row.se));
+  if (!dlg.open) dlg.showModal();
+}
+
+function setupSymptomsUI() {
+  renderSePicker($('#symptoms-picker'), 'sym-');
+  $('#symptoms-log-btn')?.addEventListener('click', () => openSymptomsDialog(todayISODate()));
+  $('#symptoms-cancel')?.addEventListener('click', () => $('#symptoms-dialog')?.close());
+  $('#symptoms-date')?.addEventListener('change', (e) => {
+    const v = e.target.value;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return;
+    _symptomsDialogDate = v;
+    getSymptomDay(v).then(row => writeSePicker('sym-', row && row.se));
+  });
+  $('#symptoms-clear')?.addEventListener('click', async () => {
+    const date = _symptomsDialogDate || todayISODate();
+    await deleteSymptomDay(date);
+    markSyncDirty();
+    writeSePicker('sym-', null);
+    await renderSymptomsCard();
+    await renderShots();
+    toast('Symptoms cleared for that day.');
+    $('#symptoms-dialog')?.close();
+  });
+  $('#symptoms-save')?.addEventListener('click', async () => {
+    const date = _symptomsDialogDate || todayISODate();
+    const se = readSePicker('sym-');
+    await saveSymptomDay(date, se);
+    markSyncDirty();
+    await renderSymptomsCard();
+    // The 30-day summary and insights both read symptom days now, so they have
+    // to be recomputed or the entry looks like it vanished.
+    await renderShots();
+    toast(se ? 'Symptoms saved.' : 'Symptoms cleared for that day.');
+    $('#symptoms-dialog')?.close();
+  });
+}
+
+async function renderSideEffectsSummary(shots) {
   const cutoff = Date.now() - 30 * 86400000;
   const counts = {};
-  for (const s of shots) {
-    if (new Date(s.when).getTime() < cutoff) continue;
-    if (!s.sideEffects) continue;
-    for (const [k, lvl] of Object.entries(s.sideEffects)) {
+  const entries = await collectSideEffectEntries(shots);
+  for (const e of entries) {
+    if (e.at < cutoff) continue;
+    for (const [k, lvl] of Object.entries(e.se)) {
+      if (!lvl) continue;
       counts[k] = counts[k] || { mild: 0, moderate: 0, severe: 0 };
       if (counts[k][lvl] != null) counts[k][lvl]++;
     }
@@ -5505,6 +5793,7 @@ function renderSideEffectsSummary(shots) {
   }
   const wrap = $('#side-effects-summary');
   const empty = $('#empty-side-effects');
+  if (!wrap || !empty) return;
   if (!Object.keys(byGroup).length) { wrap.innerHTML = ''; empty.classList.remove('hidden'); return; }
   empty.classList.add('hidden');
   const sortPills = (a, b) => {
@@ -7105,12 +7394,16 @@ async function runPdfExport(opts) {
   const wd = weightDelta(weightsAll, settings.startWeight);
   const rShots = inc('shots') ? shotsAll.filter(s => new Date(s.when) >= since) : [];
   const rWeights = inc('weights') ? weightsAll.filter(w2 => new Date(w2.date) >= since) : [];
+  // Counts every side-effect observation in range, whether it was recorded with
+  // a shot or on its own day — a clinician reading this needs both.
+  const seEntriesAll = inc('sideEffects') ? await collectSideEffectEntries(shotsAll) : [];
   const sideEffectCounts = (() => {
     if (!inc('sideEffects')) return [];
     const counts = {};
-    for (const s of shotsAll) {
-      if (new Date(s.when) < since || !s.sideEffects) continue;
-      for (const [k, lvl] of Object.entries(s.sideEffects)) {
+    for (const e of seEntriesAll) {
+      if (e.at < since.getTime()) continue;
+      for (const [k, lvl] of Object.entries(e.se)) {
+        if (!lvl) continue;
         counts[k] = counts[k] || { mild: 0, moderate: 0, severe: 0 };
         if (counts[k][lvl] != null) counts[k][lvl]++;
       }
@@ -7118,6 +7411,11 @@ async function runPdfExport(opts) {
     const labelOf = (k) => (SIDE_EFFECTS.find(s => s[0] === k) || [k, k])[1];
     return Object.entries(counts).sort((a,b) => (b[1].severe*4+b[1].moderate*2+b[1].mild) - (a[1].severe*4+a[1].moderate*2+a[1].mild)).map(([k,c]) => ({ label: labelOf(k), ...c, total: c.mild+c.moderate+c.severe }));
   })();
+  // A dated log of the standalone entries, so "3 × moderate nausea" can be
+  // traced to actual days rather than sitting as an unattributed total.
+  const symptomDaysAll = inc('sideEffects')
+    ? seEntriesAll.filter(e => !e.fromShot && e.at >= since.getTime()).slice().reverse()
+    : [];
   const MOOD_TXT = { 1:'Awful',2:'Low',3:'Okay',4:'Good',5:'Great' };
   const APP_TXT = { 1:'None',2:'Low',3:'Normal',4:'Hungry',5:'Ravenous' };
   const html = `<!doctype html><html><head><meta charset="utf-8"><title>My GLP Shot Report</title>
@@ -7186,6 +7484,10 @@ async function runPdfExport(opts) {
 
     ${inc('sideEffects') && sideEffectCounts.length ? `<h2>Side-effect summary</h2><table><thead><tr><th>Symptom</th><th>Total</th><th>Mild</th><th>Moderate</th><th>Severe</th></tr></thead><tbody>
     ${sideEffectCounts.map(s => `<tr><td>${escapeHTML(s.label)}</td><td>${s.total}</td><td>${s.mild}</td><td>${s.moderate}</td><td>${s.severe}</td></tr>`).join('')}
+    </tbody></table>` : ''}
+
+    ${symptomDaysAll.length ? `<h2>Symptom days (no injection)</h2><p class="meta">Side effects the patient recorded on days they did not inject.</p><table><thead><tr><th>Date</th><th>Reported</th></tr></thead><tbody>
+    ${symptomDaysAll.map(e => `<tr><td>${escapeHTML(e.date)}</td><td>${escapeHTML(describeSe(e.se, 99))}</td></tr>`).join('')}
     </tbody></table>` : ''}
 
     <p class="meta">This report is for personal/clinical reference. Not medical advice.</p>
@@ -7274,14 +7576,21 @@ async function buildPayload(opts) {
   if (inc('cycles')) { try { cycles = (await dbAll('cycles')) || []; } catch (e) {} }
   let medChanges = [];
   if (inc('medChanges')) { try { medChanges = (await dbAll('medChanges')) || []; } catch (e) {} }
+  // Standalone symptom days ride with 'shots': they are the same clinical data
+  // as shot.sideEffects, just recorded on a day without an injection.
+  let symptoms = [];
+  if (inc('shots')) { try { symptoms = filterByWhen(await getSymptomDaysSorted()); } catch (e) {} }
   return {
     // v8 adds stable per-record `uid`s so pulls can merge instead of replace.
     // v9 adds `notes` — free text, merged rather than overwritten on pull.
-    version: 9,
+    // v10 adds `symptoms` — side-effect entries for days with no shot. Bumped
+    //     rather than added silently: a v9 client would drop them on the next
+    //     push, which is exactly the data loss the version guard exists to stop.
+    version: 10,
     exportedAt: new Date().toISOString(),
     range: opts && opts.range ? opts.range : 'all',
     settings,
-    shots, weights, moods, appetites, foodNoise, cycles, medChanges, notes,
+    shots, weights, moods, appetites, foodNoise, cycles, medChanges, notes, symptoms,
     supplies, measurements, labs, expenses,
   };
 }
@@ -7396,7 +7705,7 @@ async function mergeNotes(incoming) {
 async function applyPulledPayload(payload) {
   // Refuse newer payloads we can't safely interpret — avoids silent data loss
   // if a stale client pulls a blob written by a future schema.
-  const SUPPORTED_PAYLOAD_VERSION = 9;
+  const SUPPORTED_PAYLOAD_VERSION = 10;
   const pv = Number(payload && payload.version) || 1;
   if (pv > SUPPORTED_PAYLOAD_VERSION) {
     throw new Error(`This cloud backup was written by a newer version of the app (payload v${pv}). Please update before restoring.`);
@@ -7421,6 +7730,22 @@ async function applyPulledPayload(payload) {
   for (const m of (payload.moods || [])) if (m && m.date) await dbPut(STORES.moods, m);
   for (const a of (payload.appetites || [])) if (a && a.date) await saveAppetite(a.date, a.value);
   for (const f of (payload.foodNoise || [])) if (f && f.date) await saveFoodNoise(f.date, f.value);
+  // Symptom days merge per-symptom rather than last-write-wins: two devices each
+  // adding a symptom on the same day should end up with both, not with whichever
+  // pushed last. Severity conflicts on the same symptom resolve to the worse one,
+  // which is the safe direction for something a clinician may read.
+  const SE_RANK = { mild: 1, moderate: 2, severe: 3 };
+  for (const raw of (payload.symptoms || [])) {
+    const rec = sanitizeSymptomDay(raw);
+    if (!rec) continue;
+    const local = await getSymptomDay(rec.date);
+    if (!local || !local.se) { await dbPut('symptoms', rec); continue; }
+    const merged = { ...local.se };
+    for (const [k, lvl] of Object.entries(rec.se)) {
+      if (!merged[k] || (SE_RANK[lvl] || 0) > (SE_RANK[merged[k]] || 0)) merged[k] = lvl;
+    }
+    await dbPut('symptoms', { date: rec.date, se: merged, updatedAt: new Date().toISOString() });
+  }
   // Notes are the exception to last-write-wins — see mergeNotes.
   stats.notes = await mergeNotes(payload.notes);
 
