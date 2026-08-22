@@ -5,20 +5,16 @@
 //   node scripts/dose-supply-selftest.mjs
 //   FAKE_INDEXEDDB_PATH=/abs/path/to/fake-indexeddb node scripts/dose-supply-selftest.mjs
 import fs from 'node:fs';
-import vm from 'node:vm';
-import { createRequire } from 'node:module';
+import { loadApp } from './lib/app-harness.mjs';
 
-const APP_JS = process.env.APP_JS_PATH || new URL('../web/app/app.js', import.meta.url).pathname;
-const INDEX  = process.env.INDEX_HTML_PATH || new URL('../web/app/index.html', import.meta.url).pathname;
+const INDEX = process.env.INDEX_HTML_PATH || new URL('../web/app/index.html', import.meta.url).pathname;
 
-const req = createRequire(import.meta.url);
-let fidb;
-try {
-  fidb = req(process.env.FAKE_INDEXEDDB_PATH || 'fake-indexeddb');
-} catch (e) {
-  console.error(`Could not load fake-indexeddb (${e.message}).\n  npm install fake-indexeddb`);
-  process.exit(2);
-}
+// Sandbox (stub DOM + fake-indexeddb + app.js) comes from lib/app-harness.mjs,
+// shared with the other suites. APP_JS_PATH / FAKE_INDEXEDDB_PATH work there.
+// 'sticky' DOM: this suite asserts on what app.js RENDERS (readouts, progress
+// bars), so a selector must return the same node each time and remember writes.
+const { R, nodeFor } = await loadApp({ domMode: 'sticky' });
+const run = R;
 
 let passed = 0;
 const failures = [];
@@ -29,74 +25,6 @@ function ok(name, cond, extra = '') {
 function eq(name, actual, expected) {
   ok(name, JSON.stringify(actual) === JSON.stringify(expected), `got ${JSON.stringify(actual)}, want ${JSON.stringify(expected)}`);
 }
-
-// ---- a DOM stub that returns the SAME node for the same selector, so
-// ---- innerHTML/value/hidden written by app.js can be read back.
-const nodes = new Map();
-function makeNode(sel) {
-  const node = {
-    sel, value: '', textContent: '', innerHTML: '', hidden: false,
-    dataset: {}, style: {},
-    classList: { add(){}, remove(){}, toggle(){}, contains: () => false },
-    addEventListener(){}, removeEventListener(){}, setAttribute(){},
-    getAttribute: () => null, appendChild(){}, focus(){}, click(){},
-    closest: () => null, showModal(){}, close(){},
-    dispatchEvent: () => true,
-    querySelector: () => makeNode(sel + ' *'),
-    querySelectorAll: () => [],
-  };
-  return node;
-}
-function nodeFor(sel) {
-  if (!nodes.has(sel)) nodes.set(sel, makeNode(sel));
-  return nodes.get(sel);
-}
-
-const doc = {
-  addEventListener(){}, removeEventListener(){}, readyState: 'loading',
-  querySelector: nodeFor, querySelectorAll: () => [],
-  getElementById: (id) => nodeFor('#' + id),
-  createElement: () => makeNode('<created>'),
-  documentElement: makeNode(':root'), body: makeNode('body'), head: makeNode('head'),
-  visibilityState: 'visible', activeElement: null,
-};
-const store = new Map();
-const ls = { getItem: k => store.get(k) ?? null, setItem: (k,v)=>store.set(k,String(v)),
-             removeItem: k=>store.delete(k), clear: ()=>store.clear() };
-
-const sandbox = {
-  console: { log(){}, warn(){}, error(){}, info(){} },
-  setTimeout, clearTimeout, setInterval: () => 0, clearInterval, queueMicrotask,
-  TextEncoder, TextDecoder, URL, URLSearchParams, Promise, Date, Math, JSON, Event,
-  atob, btoa, Intl, crypto: globalThis.crypto,
-  indexedDB: fidb.indexedDB ?? fidb.default, IDBKeyRange: fidb.IDBKeyRange,
-  document: doc, localStorage: ls, sessionStorage: ls,
-  navigator: { onLine: true, userAgent: 'node',
-    serviceWorker: { addEventListener(){}, register: async()=>({}), ready: new Promise(()=>{}) },
-    storage: { persisted: async()=>true, persist: async()=>true } },
-  location: { href: 'https://app.myglpshot.com/', hash: '', search: '', pathname: '/', hostname: 'app.myglpshot.com' },
-  history: { replaceState(){}, pushState(){} },
-  fetch: async () => { throw new Error('offline'); },
-  alert(){}, confirm: () => true, prompt: () => null,
-  matchMedia: () => ({ matches: false, addEventListener(){}, addListener(){} }),
-  requestAnimationFrame: fn => setTimeout(fn, 0),
-  scrollTo(){}, addEventListener(){}, getComputedStyle: () => ({ getPropertyValue: () => '' }),
-  performance: { now: () => 0 },
-};
-function N(){} N.prototype = {}; N.permission = 'default'; N.requestPermission = async () => 'default';
-sandbox.Notification = N;
-function ChartStub(){} ChartStub.register = () => {}; ChartStub.defaults = { plugins: {} }; ChartStub.registry = {};
-sandbox.Chart = ChartStub;
-sandbox.window = sandbox; sandbox.globalThis = sandbox; sandbox.self = sandbox;
-
-vm.createContext(sandbox);
-try {
-  vm.runInContext(fs.readFileSync(APP_JS, 'utf8'), sandbox, { filename: 'app.js' });
-} catch (e) {
-  console.error(`app.js failed to evaluate: ${e.message}`);
-  process.exit(2);
-}
-const run = (src) => vm.runInContext(src, sandbox);
 
 // ===================== 1. The markup that caused the bug =====================
 // A step of 0.1 makes 0.25 fail HTML validation outright — that is precisely

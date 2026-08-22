@@ -13,7 +13,7 @@ const DB_NAME = 'shotclock';
 //   used to live only on a shot record, which meant the daily side-effect reminder
 //   asked for something the app had nowhere to put.
 const DB_VERSION = 11;
-const APP_VERSION = '0.54.0';
+const APP_VERSION = '0.55.0';
 
 // Umami event tracker. Aggregates only — no PII (no email, no IDs). Safe to call before umami loads.
 function track(event, props) {
@@ -2376,19 +2376,55 @@ async function renderLevelChart(shots) {
 }
 
 // ---------- Export / Import ----------
+//
+// This is the ONLY backup a user without cloud sync has, and the Backup card
+// tells them to "export regularly". It used to write shots, weights and
+// settings and nothing else — moods, appetite, food noise, notes, cycles,
+// symptoms, supplies, measurements, labs and spending were all silently left
+// out, and the import side only read those same three back. Someone following
+// the app's own advice kept a backup missing most of their history and would
+// only discover it after wiping a device.
+//
+// It now writes the same complete payload the cloud sync uses, so "export" and
+// "back up" finally mean the same thing. Old files still import (see below).
 async function exportData() {
-  const shots = (await dbAll(STORES.shots)) || [];
-  const weights = (await dbAll(STORES.weights)) || [];
-  const blob = new Blob([JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), settings, shots, weights }, null, 2)], { type: 'application/json' });
+  const payload = await buildPayload();
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = url; a.download = `shotclock-${todayISODate()}.json`;
+  a.href = url; a.download = `myglpshot-backup-${todayISODate()}.json`;
   document.body.appendChild(a); a.click(); a.remove();
   URL.revokeObjectURL(url);
   settings.lastBackup = new Date().toISOString();
   await saveSettings();
   updateBackupLabel();
-  track('export_json', { shots: shots.length, weights: weights.length });
+  track('export_json', {
+    shots: (payload.shots || []).length,
+    weights: (payload.weights || []).length,
+    stores: EXPORT_STORE_KEYS.filter(k => (payload[k] || []).length).length,
+  });
+}
+
+// Every array key buildPayload emits. Used for the export summary and to decide
+// whether an imported file is a full payload or a legacy shots+weights one.
+const EXPORT_STORE_KEYS = [
+  'shots', 'weights', 'moods', 'appetites', 'foodNoise', 'notes', 'symptoms',
+  'cycles', 'medChanges', 'supplies', 'measurements', 'labs', 'expenses',
+];
+
+// A human count of what a payload actually contains, for the import confirm
+// prompt. Without this the user is asked to approve a merge sight-unseen.
+function summarisePayload(p) {
+  const LABELS = {
+    shots: 'shots', weights: 'weight entries', moods: 'mood days',
+    appetites: 'appetite days', foodNoise: 'food-noise days', notes: 'notes',
+    symptoms: 'symptom days', cycles: 'cycle entries', medChanges: 'medication changes',
+    supplies: 'pens/vials', measurements: 'measurements', labs: 'lab results',
+    expenses: 'spending entries',
+  };
+  return EXPORT_STORE_KEYS
+    .filter(k => Array.isArray(p[k]) && p[k].length)
+    .map(k => `${p[k].length} ${LABELS[k]}`);
 }
 async function smartImport(e) {
   const file = e.target.files[0];
@@ -2585,22 +2621,41 @@ async function importData(e) {
       await importShotsyCSV(text);
     } else {
       const parsed = JSON.parse(text);
-      if (!parsed || !Array.isArray(parsed.shots)) throw new Error('Invalid JSON file');
-      const shots = parsed.shots.map(sanitizeShot).filter(Boolean);
-      const weights = (Array.isArray(parsed.weights) ? parsed.weights : []).map(sanitizeWeight).filter(Boolean);
-      const dropped = (parsed.shots.length - shots.length) + ((parsed.weights || []).length - weights.length);
-      const warn = dropped > 0 ? `\n\n${dropped} row(s) will be skipped — missing or unreadable date/value.` : '';
-      if (!confirm(`Import ${shots.length} shots and ${weights.length} weight entries? This will MERGE with existing data.${warn}`)) return;
-      for (const s of shots) await dbAdd(STORES.shots, s);
-      for (const w of weights) await dbAdd(STORES.weights, w);
-      if (parsed.settings) {
-        settings = { ...settings, ...sanitizeSettings(parsed.settings) };
-        await saveSettings();
-        applySettingsToInputs();
+      if (!parsed || typeof parsed !== 'object') throw new Error('Invalid JSON file');
+      // A full payload (v8+, or anything carrying a store beyond shots/weights)
+      // goes through the same merge the cloud pull uses — it dedupes by uid and
+      // content key, never deletes, and knows how to handle notes and symptoms.
+      // Older exports only ever had shots + weights, so they keep the simple path.
+      const isFullPayload = Number(parsed.version) >= 8 ||
+        EXPORT_STORE_KEYS.some(k => k !== 'shots' && k !== 'weights' && Array.isArray(parsed[k]) && parsed[k].length);
+
+      if (isFullPayload) {
+        const parts = summarisePayload(parsed);
+        const body = parts.length ? parts.join('\n  • ') : 'nothing recognisable';
+        if (!confirm(`Restore this backup?\n\n  • ${body}\n\nThis MERGES with what's already here — nothing is deleted.`)) return;
+        await applyPulledPayload(parsed);
+        // Deliberately not a record count: only the auto-increment stores report
+        // merge stats, so a total would silently omit the date-keyed ones (moods,
+        // appetites, food noise, symptoms) and understate what was restored.
+        alert(`Backup restored:\n\n  • ${parts.join('\n  • ')}\n\nExisting entries were kept — nothing was overwritten or deleted.`);
+      } else {
+        if (!Array.isArray(parsed.shots)) throw new Error('Invalid JSON file');
+        const shots = parsed.shots.map(sanitizeShot).filter(Boolean);
+        const weights = (Array.isArray(parsed.weights) ? parsed.weights : []).map(sanitizeWeight).filter(Boolean);
+        const dropped = (parsed.shots.length - shots.length) + ((parsed.weights || []).length - weights.length);
+        const warn = dropped > 0 ? `\n\n${dropped} row(s) will be skipped — missing or unreadable date/value.` : '';
+        if (!confirm(`Import ${shots.length} shots and ${weights.length} weight entries? This will MERGE with existing data.${warn}`)) return;
+        for (const s of shots) await dbAdd(STORES.shots, s);
+        for (const w of weights) await dbAdd(STORES.weights, w);
+        if (parsed.settings) {
+          settings = { ...settings, ...sanitizeSettings(parsed.settings) };
+          await saveSettings();
+          applySettingsToInputs();
+        }
+        await renderShots();
+        await renderWeights();
+        alert(`Imported ${shots.length} shots and ${weights.length} weight entries.`);
       }
-      await renderShots();
-      await renderWeights();
-      alert(`Imported ${shots.length} shots and ${weights.length} weight entries.`);
     }
   } catch (err) {
     alert('Import failed: ' + err.message);
@@ -4071,10 +4126,6 @@ async function saveNote(date, text) {
 }
 async function deleteNote(date) { return withStore('notes', 'readwrite', s => s.delete(date)); }
 
-// The set of days that have a note, for the trend strips to mark.
-async function noteDateSet() {
-  try { return new Set((await getNotesSorted()).map(n => n.date)); } catch (_) { return new Set(); }
-}
 
 function noteSnippet(text, max = 80) {
   const t = String(text || '').replace(/\s+/g, ' ').trim();
@@ -6454,12 +6505,6 @@ async function accountSyncPull() {
   return { payload: await decodePayloadBytes(new Uint8Array(pt)), updatedAt: j.updatedAt };
 }
 
-async function accountSyncDelete() {
-  if (!account.user) return;
-  const r = await accountFetch('me/sync', { method: 'DELETE' });
-  // Callers tell the user the cloud copy is gone. Make that true before they do.
-  if (!r.ok) throw new Error(`Could not delete the cloud copy (${r.status}).`);
-}
 
 // ----- Doctor share link (premium) -----
 // ----- Account UI -----
@@ -7072,10 +7117,6 @@ function applyColorTheme(themeId) {
   if (meta) meta.content = t.light.dark;
 }
 
-// Re-apply theme whenever light/dark mode flips so tints stay correct.
-function reapplyCurrentColorTheme() {
-  applyColorTheme(settings.colorTheme || 'teal');
-}
 
 function applyMoodStyle(styleId) {
   const s = MOOD_STYLES.find(x => x.id === styleId) || MOOD_STYLES[0];
@@ -7801,9 +7842,6 @@ async function attemptUnlockFromStored() {
   } catch (e) { return false; }
 }
 
-function persistCreds(u, p) {
-  try { localStorage.setItem('sync.creds', JSON.stringify({ u, p })); } catch (e) {}
-}
 function clearStoredCreds() {
   try { localStorage.removeItem('sync.creds'); } catch (e) {}
 }

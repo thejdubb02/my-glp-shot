@@ -14,34 +14,10 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
+import { loadApp } from './lib/app-harness.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-// APP_JS_PATH lets the suite run against a modified copy — used to confirm the
-// assertions actually fail when the behaviour they guard is broken.
-const APP_JS = process.env.APP_JS_PATH || path.join(HERE, '..', 'web', 'app', 'app.js');
-
-// fake-indexeddb lives wherever it was installed; FAKE_INDEXEDDB_PATH lets this
-// run against a scratch install without adding a dependency to the repo. It ships
-// as CommonJS, so require() rather than import().
-const { createRequire } = await import('node:module');
-const req = createRequire(import.meta.url);
-let fakeIndexedDB, FDBKeyRange;
-try {
-  const base = process.env.FAKE_INDEXEDDB_PATH || 'fake-indexeddb';
-  const mod = req(base);
-  fakeIndexedDB = mod.indexedDB ?? mod.default?.indexedDB ?? mod.default ?? mod;
-  FDBKeyRange = mod.IDBKeyRange ?? mod.default?.IDBKeyRange ?? req(`${base}/build/cjs/index.js`).IDBKeyRange;
-} catch (e) {
-  console.error(`Could not load fake-indexeddb (${e.message}).`);
-  console.error(`Install it and re-run, e.g.:\n  npm install fake-indexeddb\n  FAKE_INDEXEDDB_PATH=/abs/path/to/node_modules/fake-indexeddb node ${process.argv[1]}`);
-  process.exit(2);
-}
-if (!fakeIndexedDB || typeof fakeIndexedDB.open !== 'function') {
-  console.error('fake-indexeddb loaded but did not expose an indexedDB with .open()');
-  process.exit(2);
-}
 
 let pass = 0, fail = 0;
 const failures = [];
@@ -54,94 +30,10 @@ function eq(name, got, want) {
   check(name, got === want, `got ${JSON.stringify(got)}, want ${JSON.stringify(want)}`);
 }
 
-// ---------- stub DOM ----------
-const noopEl = () => ({
-  value: '', textContent: '', innerHTML: '', dataset: {}, style: {}, hidden: false,
-  classList: { add(){}, remove(){}, toggle(){}, contains(){ return false; } },
-  addEventListener(){}, removeEventListener(){}, setAttribute(){}, getAttribute(){ return null; },
-  appendChild(){}, closest(){ return null; }, querySelector(){ return null; }, querySelectorAll(){ return []; },
-  focus(){}, click(){}, remove(){},
-});
-const doc = {
-  addEventListener(){}, removeEventListener(){},
-  querySelector(){ return null; }, querySelectorAll(){ return []; },
-  getElementById(){ return null; }, createElement(){ return noopEl(); },
-  documentElement: noopEl(), body: noopEl(), head: noopEl(),
-  visibilityState: 'visible', activeElement: null, hidden: false,
-  // 'loading' keeps every bootstrap path behind the DOMContentLoaded listener,
-  // which is a no-op here — so the file loads without booting the UI.
-  readyState: 'loading',
-};
-
-const store = new Map();
-const localStorageStub = {
-  getItem: (k) => (store.has(k) ? store.get(k) : null),
-  setItem: (k, v) => { store.set(k, String(v)); },
-  removeItem: (k) => { store.delete(k); },
-  clear: () => store.clear(),
-};
-
-const sandbox = {
-  console, setTimeout, clearTimeout, setInterval, clearInterval, queueMicrotask,
-  TextEncoder, TextDecoder, URL, URLSearchParams, Promise, Date, Math, JSON,
-  atob, btoa, structuredClone, AbortController, Intl,
-  CompressionStream: globalThis.CompressionStream,
-  DecompressionStream: globalThis.DecompressionStream,
-  Response: globalThis.Response, Request: globalThis.Request, Headers: globalThis.Headers,
-  crypto: globalThis.crypto,
-  indexedDB: fakeIndexedDB,
-  IDBKeyRange: FDBKeyRange,
-  document: doc,
-  localStorage: localStorageStub,
-  sessionStorage: localStorageStub,
-  navigator: {
-    onLine: true, userAgent: 'node',
-    serviceWorker: { addEventListener(){}, register: async () => ({ scope: '/' }), ready: new Promise(() => {}), controller: null },
-    storage: { persisted: async () => true, persist: async () => true },
-  },
-  location: { href: 'https://app.myglpshot.com/', hash: '', search: '', origin: 'https://app.myglpshot.com', pathname: '/' },
-  fetch: async () => { throw new Error('network disabled in selftest'); },
-  alert(){}, confirm(){ return true; }, prompt(){ return null; },
-  matchMedia: () => ({ matches: false, addEventListener(){}, addListener(){} }),
-  requestAnimationFrame: (fn) => setTimeout(fn, 0),
-  scrollTo(){}, scrollBy(){}, scroll(){}, focus(){}, open(){ return null; },
-  addEventListener(){}, removeEventListener(){}, dispatchEvent(){ return true; },
-  getComputedStyle: () => ({ getPropertyValue: () => '' }),
-  history: { pushState(){}, replaceState(){}, back(){} },
-  performance: { now: () => 0 },
-};
-// Notification must be a real constructor — app.js probes Notification.prototype
-// for scheduled-trigger support at load.
-function NotificationStub(){}
-NotificationStub.prototype = {};
-NotificationStub.permission = 'default';
-NotificationStub.requestPermission = async () => 'default';
-sandbox.Notification = NotificationStub;
-// Chart.js is bundled separately and never loaded here; a stub with the statics
-// app.js touches at load is enough.
-function ChartStub(){ return { destroy(){}, update(){}, data: {}, options: {} }; }
-ChartStub.register = () => {};
-ChartStub.defaults = { font: {}, plugins: { legend: {} }, scale: {}, scales: {} };
-ChartStub.registry = { getPlugin: () => null };
-sandbox.Chart = ChartStub;
-sandbox.window = sandbox;
-sandbox.globalThis = sandbox;
-sandbox.self = sandbox;
-
-vm.createContext(sandbox);
-const src = fs.readFileSync(APP_JS, 'utf8');
-try {
-  vm.runInContext(src, sandbox, { filename: 'app.js' });
-} catch (e) {
-  // The stack points at the exact app.js line, which is usually a browser global
-  // this sandbox hasn't stubbed yet.
-  console.error('app.js failed to load in the test sandbox:', e.message);
-  console.error(e.stack);
-  process.exit(2);
-}
-
-// Pull the functions under test out of the context's lexical scope.
-const R = (expr) => vm.runInContext(expr, sandbox);
+// The sandbox (stub DOM + fake-indexeddb + app.js) lives in lib/app-harness.mjs
+// so every suite loads the app the same way. APP_JS_PATH and FAKE_INDEXEDDB_PATH
+// are honoured there.
+const { R } = await loadApp();
 const sanitizeNote   = R('sanitizeNote');
 const mergeNotes     = R('mergeNotes');
 const saveNote       = R('saveNote');
@@ -355,8 +247,9 @@ await wipe();
 await saveNote('2026-05-01', 'payload note');
 {
   const p = await buildPayload({});
-  eq('payload version is 9', p.version, 9);
+  eq('payload version is 10', p.version, 10);
   check('payload carries notes', Array.isArray(p.notes) && p.notes.some(n => n.text === 'payload note'));
+  check('payload carries symptoms', Array.isArray(p.symptoms));
 }
 {
   const p = await buildPayload({ sections: ['shots'] });
