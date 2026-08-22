@@ -35,8 +35,28 @@ if [ -z "$FIDB" ]; then
 fi
 export FAKE_INDEXEDDB_PATH="$FIDB"
 
-echo "· app.js syntax"
-node --check web/app/app.js || { echo "✗ app.js does not parse"; exit 1; }
+echo "· syntax"
+for f in web/app/data.js web/app/app.js web/app/sw.js; do
+  node --check "$f" || { echo "✗ $f does not parse"; exit 1; }
+done
+
+# data.js must be loaded before app.js everywhere it is loaded at all. Getting
+# that order wrong leaves every data table undefined at evaluation time, which
+# surfaces as confusing app-level errors rather than a load error.
+echo "· script order"
+python3 - <<'PYEOF' || exit 1
+import re, sys
+html = open('web/app/index.html').read()
+order = re.findall(r'<script src="(data|app)\.js', html)
+if order != ['data', 'app']:
+    print(f"  ✗ index.html loads {order}, expected ['data', 'app']"); sys.exit(1)
+sw = open('web/app/sw.js').read()
+crit = re.search(r'const CRITICAL = \[(.*?)\]', sw, re.S).group(1)
+for f in ('data.js', 'app.js', 'index.html', 'styles.css'):
+    if f not in crit:
+        print(f"  ✗ {f} missing from the service worker CRITICAL list (breaks offline boot)"); sys.exit(1)
+print("  ok")
+PYEOF
 
 FAILED=()
 for suite in scripts/*-selftest.mjs; do

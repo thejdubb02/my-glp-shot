@@ -20,7 +20,12 @@ import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-export const DEFAULT_APP_JS = path.join(HERE, '..', '..', 'web', 'app', 'app.js');
+const APP_DIR = path.join(HERE, '..', '..', 'web', 'app');
+export const DEFAULT_APP_JS = path.join(APP_DIR, 'app.js');
+// data.js is a separate classic script that must be evaluated first, exactly as
+// index.html orders them. Loading only app.js would leave every data table
+// undefined and fail in ways that look like app bugs.
+export const DEFAULT_DATA_JS = path.join(APP_DIR, 'data.js');
 
 function loadFakeIndexedDB(entry) {
   const req = createRequire(import.meta.url);
@@ -151,8 +156,9 @@ export function makeSandbox({ indexedDB, IDBKeyRange }, domMode = 'absent') {
 // Loads app.js and returns { sandbox, R }. R(expr) evaluates an expression in
 // the app's own scope, which is how the suites reach functions that are module-
 // private (app.js declares everything at top level in a classic script).
-export async function loadApp({ appJs, fakeIndexedDBPath, domMode = 'absent' } = {}) {
+export async function loadApp({ appJs, dataJs, fakeIndexedDBPath, domMode = 'absent' } = {}) {
   const file = appJs || process.env.APP_JS_PATH || DEFAULT_APP_JS;
+  const dataFile = dataJs || process.env.DATA_JS_PATH || DEFAULT_DATA_JS;
   let idb;
   try {
     idb = loadFakeIndexedDB(fakeIndexedDBPath);
@@ -164,6 +170,9 @@ export async function loadApp({ appJs, fakeIndexedDBPath, domMode = 'absent' } =
   const sandbox = makeSandbox(idb, domMode);
   vm.createContext(sandbox);
   try {
+    if (fs.existsSync(dataFile)) {
+      vm.runInContext(fs.readFileSync(dataFile, 'utf8'), sandbox, { filename: 'data.js' });
+    }
     vm.runInContext(fs.readFileSync(file, 'utf8'), sandbox, { filename: 'app.js' });
   } catch (e) {
     // The stack points at the exact app.js line, which is nearly always a

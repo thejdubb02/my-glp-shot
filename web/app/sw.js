@@ -7,6 +7,7 @@ const CRITICAL = [
   './',
   'index.html',
   'styles.css',
+  'data.js',
   'app.js',
 ];
 const OPTIONAL = [

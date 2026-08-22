@@ -1228,6 +1228,10 @@
 
 <!-- Chart.js is no longer loaded here: it is 68 KB gzipped that only the
      Insights tab needs, and app.js now fetches it on first chart draw. -->
-<script src="app.js?v=417"></script>
+<!-- data.js is declarations only and must load before app.js, which reads them
+     at evaluation time. Both are classic scripts sharing one global scope —
+     see the note at the top of data.js for why this is not an ES module. -->
+<script src="data.js?v=418"></script>
+<script src="app.js?v=418"></script>
 </body>
 </html>
