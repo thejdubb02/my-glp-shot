@@ -288,6 +288,34 @@ def normalize_email(email):
     return (email or '').strip().lower()
 
 
+# RFC 2606 / RFC 6761 reserve these for documentation and testing, so no real
+# person can ever receive mail at one. Our own self-tests sign up under
+# @example.com, and every run was posting a "new signup" line to the team chat
+# and incrementing the signup counter — noise that looks like traction and
+# quietly corrupts the only number we watch.
+RESERVED_EMAIL_DOMAINS = ('example.com', 'example.org', 'example.net',
+                          'example.edu', 'test', 'invalid', 'localhost')
+
+
+def is_test_email(email):
+    """True for addresses that cannot belong to a real user."""
+    domain = (email or '').rsplit('@', 1)[-1].strip().lower()
+    if not domain:
+        return False
+    return domain in RESERVED_EMAIL_DOMAINS or domain.endswith('.test') or domain.endswith('.invalid')
+
+
+# SQL form of the same rule, for the places that count users rather than inspect
+# one. Appended to a WHERE clause. Kept next to is_test_email so the two cannot
+# drift — a metric that disagrees with the notification is worse than either.
+NOT_TEST_SQL = (
+    ' AND ' + ' AND '.join(f"email NOT LIKE '%@{d}'" for d in RESERVED_EMAIL_DOMAINS)
+    + " AND email NOT LIKE '%.test' AND email NOT LIKE '%.invalid'"
+)
+# Same rule for subqueries that filter by user_id rather than by email.
+REAL_USER_IDS_SQL = f'SELECT id FROM users WHERE COALESCE(is_admin, 0) = 0{NOT_TEST_SQL}'
+
+
 # Per-account throttles. nginx's limit_req is keyed on IP, so it does not slow a
 # credential-stuffing run spread across many addresses against one account, and
 # it does not stop someone triggering a reset mail to a victim's inbox on repeat.
@@ -599,14 +627,18 @@ def signup():
         # Admin accounts are excluded from both counts, same as /api/admin/metrics.
         midnight = int(datetime.now(timezone.utc).replace(
             hour=0, minute=0, second=0, microsecond=0).timestamp())
+        # Reserved-domain addresses are self-test accounts; they are excluded
+        # from the counts for the same reason admin accounts are — the number is
+        # meant to answer "how many real people signed up", and a test run must
+        # not move it.
         today = db.execute(
-            'SELECT COUNT(*) AS c FROM users WHERE created_at >= ? AND COALESCE(is_admin, 0) = 0',
+            'SELECT COUNT(*) AS c FROM users WHERE created_at >= ? AND COALESCE(is_admin, 0) = 0' + NOT_TEST_SQL,
             (midnight,),
         ).fetchone()['c']
         total = db.execute(
-            'SELECT COUNT(*) AS c FROM users WHERE COALESCE(is_admin, 0) = 0'
+            'SELECT COUNT(*) AS c FROM users WHERE COALESCE(is_admin, 0) = 0' + NOT_TEST_SQL
         ).fetchone()['c']
-        if not is_admin:
+        if not is_admin and not is_test_email(email):
             notify_mattermost(
                 f"{MGS_EMOJI} **{MGS_APP_NAME}** · new signup — {email}\n"
                 f"{today} today · {total} total"
@@ -1612,7 +1644,7 @@ def admin_metrics():
     day = 86400
     # Admin accounts (owner / staff) are excluded from every count and curve
     # so the dashboard reflects REAL users only. Toggle in DB via is_admin=1.
-    rows = db.execute('SELECT subscription_status, premium_until, trial_ends_at FROM users WHERE COALESCE(is_admin, 0) = 0').fetchall()
+    rows = db.execute('SELECT subscription_status, premium_until, trial_ends_at FROM users WHERE COALESCE(is_admin, 0) = 0' + NOT_TEST_SQL).fetchall()
     by_status = {'trial': 0, 'premium': 0, 'lifetime': 0, 'free': 0, 'other': 0}
     active_premium = 0
     active_trial = 0
@@ -1631,7 +1663,7 @@ def admin_metrics():
         start = now - (i + 1) * 7 * day
         end = now - i * 7 * day
         c = db.execute(
-            'SELECT COUNT(*) AS c FROM users WHERE created_at >= ? AND created_at < ? AND COALESCE(is_admin, 0) = 0',
+            'SELECT COUNT(*) AS c FROM users WHERE created_at >= ? AND created_at < ? AND COALESCE(is_admin, 0) = 0' + NOT_TEST_SQL,
             (start, end),
         ).fetchone()['c']
         signup_curve.append({'weekStart': start, 'count': c})
@@ -1651,14 +1683,14 @@ def admin_metrics():
     mrr_estimate_cents = active_premium * 166  # cents/mo
     # Sync + share stats also exclude admin-owned rows so totals stay honest.
     sync_stats = db.execute(
-        '''SELECT COUNT(*) AS c, COALESCE(SUM(size), 0) AS bytes
+        f'''SELECT COUNT(*) AS c, COALESCE(SUM(size), 0) AS bytes
            FROM sync_blobs sb
-           WHERE sb.user_id IN (SELECT id FROM users WHERE COALESCE(is_admin, 0) = 0)'''
+           WHERE sb.user_id IN ({REAL_USER_IDS_SQL})'''
     ).fetchone()
     share_stats = db.execute(
-        '''SELECT COUNT(*) AS active FROM share_links sl
+        f'''SELECT COUNT(*) AS active FROM share_links sl
            WHERE sl.expires_at > ?
-             AND sl.user_id IN (SELECT id FROM users WHERE COALESCE(is_admin, 0) = 0)''',
+             AND sl.user_id IN ({REAL_USER_IDS_SQL})''',
         (now,)
     ).fetchone()
     return jsonify(
