@@ -595,6 +595,7 @@
       </div>
       <div class="btn-row">
         <button id="show-export-pdf" class="btn-ghost" type="button">📄 Export PDF report</button>
+        <button id="change-email-btn" class="btn-ghost" type="button">Change email</button>
         <button id="signout-btn" class="btn-ghost" type="button">Sign out</button>
       </div>
       <p id="acct-sync-status" class="sync-status"></p>
@@ -1128,6 +1129,22 @@
 <!-- Catch-up: mood / appetite / food noise for a day that isn't today. The three
      home cards are deliberately today-only (one tap, no date picker); this is the
      one place a past day can be filled in or corrected. -->
+<dialog id="change-email-dialog" class="modal">
+  <form id="change-email-form" method="dialog">
+    <h2>Change your email address</h2>
+    <p class="muted small">Currently <strong id="change-email-current"></strong>.</p>
+    <p class="muted small">Your email is part of what encrypts your data, so changing it re-locks your cloud backup with a new key. That needs your password, and it may take a few seconds. Nothing is changed unless the whole thing succeeds.</p>
+    <label>New email <input id="change-email-new" type="email" required autocomplete="email" inputmode="email" autocapitalize="off"></label>
+    <label>Your password <input id="change-email-password" type="password" required autocomplete="current-password"></label>
+    <p class="muted small">You'll stay signed in here. Your other devices will need to sign in again with the new address.</p>
+    <p id="change-email-status" class="sync-status"></p>
+    <div class="modal-actions">
+      <button type="button" id="change-email-cancel" class="btn-ghost">Cancel</button>
+      <button type="button" id="change-email-save" class="btn-primary">Change email</button>
+    </div>
+  </form>
+</dialog>
+
 <dialog id="symptoms-dialog" class="modal symptoms-modal">
   <form id="symptoms-form" method="dialog">
     <h2>Side effects</h2>
@@ -1231,7 +1248,7 @@
 <!-- data.js is declarations only and must load before app.js, which reads them
      at evaluation time. Both are classic scripts sharing one global scope —
      see the note at the top of data.js for why this is not an ES module. -->
-<script src="data.js?v=418"></script>
-<script src="app.js?v=418"></script>
+<script src="data.js?v=419"></script>
+<script src="app.js?v=419"></script>
 </body>
 </html>

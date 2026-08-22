@@ -63,7 +63,12 @@ for suite in scripts/*-selftest.mjs; do
   [ -e "$suite" ] || continue
   name="$(basename "$suite" .mjs)"
   out="$(node "$suite" 2>&1)"
-  if [ $? -eq 0 ]; then
+  rc=$?
+  if [ $rc -eq 0 ] && echo "$out" | grep -q '^SKIPPED'; then
+    # Suites that need a live API skip rather than fail, but the skip is always
+    # reported — a silent skip reads as a pass and hides a broken endpoint.
+    echo "− $name — skipped ($(echo "$out" | head -1 | sed 's/^SKIPPED — //'))"
+  elif [ $rc -eq 0 ]; then
     echo "✓ $name — $(echo "$out" | grep -oE '[0-9]+ passed' | tail -1)"
   else
     echo "✗ $name"

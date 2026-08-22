@@ -714,6 +714,137 @@ def delete_account():
     return resp
 
 
+@app.route('/api/me/email', methods=['POST'])
+def change_email():
+    """Change the account email — which, in this design, also rotates the
+    encryption key.
+
+    The email is not just a label. It is the PBKDF2 salt:
+
+        salt      = SHA-256("myglpshot-v1:" + email)
+        bits      = PBKDF2(password, salt, 600k) -> 512
+        aes_key   = bits[0:256]   (never leaves the browser)
+        authToken = bits[256:512] (sent here, stored bcrypted)
+
+    So changing the email necessarily changes BOTH the auth token and the key
+    that the cloud blob is encrypted under. The client therefore has to send a
+    blob it has already re-encrypted with the new key, and the swap has to be
+    atomic: an email that changes without its blob leaves a user holding a key
+    that cannot decrypt their own ciphertext, which is indistinguishable from
+    data loss.
+
+    Requires the current auth token as well as a session, because a session
+    alone is a device that was left signed in, and this is an identity change.
+    """
+    user = require_user()
+    if not user:
+        return err('unauthorized', 'Not signed in.', 401)
+
+    data = request.get_json(silent=True) or {}
+    current_auth_token = data.get('currentAuthToken') or ''
+    new_email = normalize_email(data.get('newEmail'))
+    new_auth_token = data.get('newAuthToken') or ''
+    iv = data.get('iv') or ''
+    ct = data.get('ciphertext') or ''
+
+    old_email = user['email']
+
+    # Throttled on the CURRENT address: this verifies a password, so it is a
+    # guessing oracle if left open.
+    if _too_many_attempts('change_email', old_email, LOGIN_WINDOW, LOGIN_MAX_FAILURES):
+        return err('too_many_attempts', 'Too many attempts. Try again later.', 429)
+
+    if not EMAIL_RE.match(new_email):
+        return err('invalid_email', 'Please enter a valid email.')
+    if not new_auth_token or not current_auth_token:
+        return err('invalid_payload', 'Missing credentials.')
+    if new_email == old_email:
+        return err('same_email', 'That is already your email address.')
+
+    # Re-authenticate against the stored hash.
+    ok = False
+    try:
+        ok = bcrypt.checkpw(current_auth_token.encode('utf-8'), user['password_hash'].encode('utf-8'))
+    except Exception:
+        ok = False
+    if not ok:
+        _record_attempt('change_email', old_email, ok=False)
+        return err('invalid_credentials', 'Password incorrect.', 401)
+
+    db = get_db()
+    if db.execute('SELECT id FROM users WHERE email = ?', (new_email,)).fetchone():
+        return err('email_in_use', 'An account with this email already exists.', 409)
+
+    # If there is a stored blob, a re-encrypted replacement is mandatory —
+    # see the docstring. Refusing here is what prevents the lockout.
+    has_blob = db.execute('SELECT user_id FROM sync_blobs WHERE user_id = ?', (user['id'],)).fetchone() is not None
+    if has_blob and not (iv and ct):
+        return err('reencrypted_blob_required',
+                   'Your cloud backup must be re-encrypted before the address can change.')
+    if ct and len(ct) > MAX_BLOB_BYTES:
+        return err('blob_too_large', f'Max {MAX_BLOB_BYTES} bytes.', 413)
+
+    new_hash = bcrypt.hashpw(new_auth_token.encode('utf-8'), bcrypt.gensalt(rounds=12)).decode()
+    _, current_sess = get_session_user()
+    keep_token = current_sess['token'] if current_sess else None
+
+    try:
+        with db:  # one transaction — commits together or rolls back together
+            db.execute(
+                'UPDATE users SET email = ?, password_hash = ?, email_verified_at = NULL WHERE id = ?',
+                (new_email, new_hash, user['id']),
+            )
+            if iv and ct:
+                db.execute(
+                    """INSERT INTO sync_blobs (user_id, iv, ciphertext, updated_at, size)
+                       VALUES (?, ?, ?, ?, ?)
+                       ON CONFLICT(user_id) DO UPDATE SET iv=excluded.iv,
+                         ciphertext=excluded.ciphertext, updated_at=excluded.updated_at,
+                         size=excluded.size""",
+                    (user['id'], iv, ct, now_ts(), len(ct)),
+                )
+            # Other devices hold a key derived from the OLD address; they can no
+            # longer read the blob and must sign in again to re-derive it.
+            if keep_token:
+                db.execute('DELETE FROM sessions WHERE user_id = ? AND token != ?', (user['id'], keep_token))
+            else:
+                db.execute('DELETE FROM sessions WHERE user_id = ?', (user['id'],))
+            # Reset links were issued against the old identity.
+            db.execute('DELETE FROM password_resets WHERE user_id = ?', (user['id'],))
+            # Throttle counters follow the address.
+            db.execute('DELETE FROM auth_attempts WHERE identifier = ?', (old_email,))
+    except sqlite3.IntegrityError:
+        # UNIQUE(email) lost a race with a concurrent signup.
+        return err('email_in_use', 'An account with this email already exists.', 409)
+
+    # Billing follows the account. Best-effort: a Stripe hiccup must not undo a
+    # change that has already been committed above.
+    if _stripe_ready() and user['stripe_customer_id']:
+        try:
+            stripe.Customer.modify(user['stripe_customer_id'], email=new_email, api_key=STRIPE_API_KEY)
+        except stripe.StripeError as e:
+            app.logger.warning('Stripe customer email update failed for user %s: %s', user['id'], e)
+
+    # Tell BOTH addresses. The old one is the only warning a user gets if
+    # someone else changed it.
+    send_email(
+        old_email,
+        f'{MGS_APP_NAME}: your email address was changed',
+        f'<p>The address on your {MGS_APP_NAME} account was changed to <strong>{new_email}</strong>.</p>'
+        f'<p>If this was not you, reply to this message immediately.</p>',
+    )
+    send_email(
+        new_email,
+        f'{MGS_APP_NAME}: this is now your account email',
+        f'<p>Your {MGS_APP_NAME} account email was changed from {old_email} to this address.</p>'
+        f'<p>Sign in with this address and your existing password from now on.</p>',
+    )
+    app.logger.info('email changed for user %s', user['id'])
+
+    fresh = db.execute('SELECT * FROM users WHERE id = ?', (user['id'],)).fetchone()
+    return jsonify(user=public_user(fresh), changed=True)
+
+
 @app.route('/api/forgot', methods=['POST'])
 def forgot_password():
     data = request.get_json(silent=True) or {}

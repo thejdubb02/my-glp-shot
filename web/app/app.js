@@ -1415,6 +1415,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   setInterval(applyTimeOfDayGradient, 5 * 60 * 1000);
   setupPullToRefresh();
   setupAccountUI();
+  setupChangeEmailUI();
   setupReconCalc();
   setupDoseChips();
   setupSupplyUI();
@@ -5920,6 +5921,115 @@ async function accountSyncPull() {
   return { payload: await decodePayloadBytes(new Uint8Array(pt)), updatedAt: j.updatedAt };
 }
 
+
+// ----- Change the account email -----
+//
+// The email is the PBKDF2 salt (see deriveAccountCreds), so changing it changes
+// the encryption key as well as the auth token. That makes this a key rotation
+// wearing a settings-field costume, and the order matters:
+//
+//   1. derive creds under BOTH the old and the new address, from the password
+//      the user just typed — we never store the password, only the derived key,
+//      so it has to be re-entered
+//   2. if there is a cloud blob, pull and decrypt it with the OLD key and
+//      re-encrypt it under the NEW one
+//   3. send old auth token (proof), new auth token, and the re-encrypted blob
+//      together, so the server can swap all three atomically
+//
+// If a blob exists and we skipped step 2, the account would end up with a key
+// that cannot decrypt its own ciphertext — which for the user is data loss.
+// The server refuses that combination too; this is belt and braces.
+async function accountChangeEmail(newEmail, password) {
+  if (!account.user) throw new Error('Not signed in.');
+  const target = (newEmail || '').trim().toLowerCase();
+  if (!target || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(target)) throw new Error('Please enter a valid email address.');
+  if (target === (account.user.email || '').toLowerCase()) throw new Error('That is already your email address.');
+  if (!password) throw new Error('Enter your password to confirm.');
+
+  const cur = await deriveAccountCreds(account.user.email, password);
+  const next = await deriveAccountCreds(target, password);
+
+  // Re-encrypt whatever is already in the cloud, rather than pushing the local
+  // database. A user who never turned on cloud backup must not acquire one as a
+  // side effect of changing their email.
+  let iv = '', ciphertext = '';
+  const existing = await accountFetch('me/sync');
+  if (existing.ok) {
+    const j = await existing.json();
+    if (j && j.exists) {
+      let pt;
+      try {
+        pt = await crypto.subtle.decrypt(
+          { name: 'AES-GCM', iv: base64ToBytes(j.iv) },
+          cur.aesKey,
+          base64ToBytes(j.ciphertext),
+        );
+      } catch (_) {
+        // The old key cannot open the blob, so re-encrypting is impossible and
+        // going ahead would strand the data. Stop before anything changes.
+        throw new Error('Password incorrect — your backup could not be unlocked.');
+      }
+      const newIv = crypto.getRandomValues(new Uint8Array(12));
+      const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv: newIv }, next.aesKey, new Uint8Array(pt));
+      iv = bytesToBase64(newIv);
+      ciphertext = bytesToBase64(ct);
+    }
+  }
+
+  const r = await accountFetch('me/email', {
+    method: 'POST',
+    body: JSON.stringify({
+      currentAuthToken: cur.authToken,
+      newEmail: target,
+      newAuthToken: next.authToken,
+      iv, ciphertext,
+    }),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.message || 'Could not change your email address.');
+
+  // Only now is the new key the real one. Swap it in and re-persist the
+  // device's remembered sign-in, or the next reload unlocks with a stale key.
+  account.encryptionKey = next.aesKey;
+  account.user = j.user || account.user;
+  try { await rememberSignedIn(target, next.aesKey); } catch (_) {}
+  settings.syncUsername = target;
+  await saveSettings();
+  return j.user;
+}
+
+function setupChangeEmailUI() {
+  const openBtn = $('#change-email-btn');
+  const dlg = $('#change-email-dialog');
+  if (!openBtn || !dlg) return;
+  const status = $('#change-email-status');
+  openBtn.addEventListener('click', () => {
+    if (!account.user) { toast('Sign in first.'); return; }
+    $('#change-email-current').textContent = account.user.email || '';
+    $('#change-email-new').value = '';
+    $('#change-email-password').value = '';
+    if (status) { status.textContent = ''; status.classList.remove('err', 'ok'); }
+    dlg.showModal();
+  });
+  $('#change-email-cancel')?.addEventListener('click', () => dlg.close());
+  $('#change-email-save')?.addEventListener('click', async () => {
+    const btn = $('#change-email-save');
+    const original = btn.textContent;
+    if (status) { status.textContent = 'Re-encrypting your data…'; status.classList.remove('err', 'ok'); }
+    btn.disabled = true; btn.textContent = 'Working…';
+    try {
+      const user = await accountChangeEmail($('#change-email-new').value, $('#change-email-password').value);
+      if (status) { status.textContent = `Done — your email is now ${user.email}.`; status.classList.add('ok'); }
+      await onAccountChanged();
+      toast('Email address updated.');
+      setTimeout(() => dlg.close(), 1400);
+    } catch (e) {
+      if (status) { status.textContent = e.message || 'Could not change your email address.'; status.classList.add('err'); }
+    } finally {
+      btn.disabled = false; btn.textContent = original;
+    }
+  });
+}
 
 // ----- Doctor share link (premium) -----
 // ----- Account UI -----
