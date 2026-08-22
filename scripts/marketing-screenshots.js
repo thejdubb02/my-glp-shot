@@ -9,7 +9,34 @@ const puppeteer = require('/tmp/node_modules/puppeteer-core');
 const fs = require('fs');
 const path = require('path');
 
-const KEYS = JSON.parse(fs.readFileSync('/root/.openclaw/workspace/daily/wsg-api-keys.json', 'utf8'));
+// From OpenBao via my-glp-shot's own AppRole (migrated 2026-08-22). keyward_client is
+// Python, so it is invoked rather than reimplemented for a third Node script. Arg array,
+// not a shell string, so nothing is interpolated into a shell.
+const { execFileSync } = require('child_process');
+let KEYS = {};
+try {
+  KEYS = JSON.parse(execFileSync('python3', ['-c',
+    'import sys, json; sys.path.insert(0, "/opt/keyward"); ' +
+    'from keyward_client import get; ' +
+    'out = {}\n' +
+    'for n in ("mgs_qa_email", "mgs_qa_password"):\n' +
+    '    try: out[n] = get("shared/" + n)\n' +
+    '    except Exception: pass\n' +
+    'print(json.dumps(out))'],
+    { env: { ...process.env, KEYWARD_ENV: '/etc/keyward/my-glp-shot.env' },
+      encoding: 'utf8', timeout: 20000 }));
+} catch (e) {
+  console.error('could not reach OpenBao for QA credentials:', e.message);
+}
+if (!KEYS.mgs_qa_email || !KEYS.mgs_qa_password) {
+  // Refuse rather than type "undefined" into a login form and blame the app.
+  console.error('\nQA credentials are not configured.');
+  console.error('  mgs_qa_email    : ' + (KEYS.mgs_qa_email ? 'ok' : 'MISSING'));
+  console.error('  mgs_qa_password : ' + (KEYS.mgs_qa_password ? 'ok' : 'MISSING'));
+  console.error('\nNeither has ever existed in the credential store. Create a QA account for');
+  console.error('My GLP Shot, add both to OpenBao under secret/shared/, and re-run.\n');
+  process.exit(2);
+}
 const QA_EMAIL = KEYS.mgs_qa_email;
 const QA_PASS  = KEYS.mgs_qa_password;
 const APP_URL  = 'https://app.myglpshot.com/?nosw=1';
