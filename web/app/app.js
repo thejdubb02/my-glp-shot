@@ -3058,11 +3058,24 @@ function setupAccountUI() {
       const cleanUrl = window.location.pathname + (sp.toString() ? '?' + sp.toString() : '') + window.location.hash;
       window.history.replaceState({}, '', cleanUrl);
     }
-    if (tab && ['home', 'insights', 'more', 'settings'].includes(tab)) {
-      try { setTab(tab); } catch (e) {}
-    }
-    if (action === 'log-shot') setTimeout(() => { try { openShotDialog(); } catch (e) {} }, 250);
-    else if (action === 'log-weight') setTimeout(() => { try { $('#add-weight-btn')?.click(); } catch (e) {} }, 250);
+    // Navigation is two levels: showView() picks the screen, setHomeTab() picks
+    // a tab WITHIN the home screen. This used to call a setTab() that has never
+    // existed, so the launcher's "Insights" shortcut threw into a silent catch
+    // and just opened the app — the one long-press shortcut users would notice
+    // was broken doing nothing at all.
+    const runShortcut = () => {
+      // Don't fight the auth gate. A shortcut tapped while signed out should
+      // land on the sign-in screen, not force the home view behind it.
+      if (document.body.classList.contains('auth-active')) return;
+      if (tab === 'settings') {
+        try { showView('settings'); } catch (e) {}
+      } else if (tab && ['home', 'insights', 'more'].includes(tab)) {
+        try { showView('home'); setHomeTab(tab); } catch (e) {}
+      }
+      if (action === 'log-shot') { try { openShotDialog(); } catch (e) {} }
+      else if (action === 'log-weight') { try { $('#add-weight-btn')?.click(); } catch (e) {} }
+    };
+    if (action || tab) setTimeout(runShortcut, 250);
   })();
 
   // Handle Stripe Checkout return.

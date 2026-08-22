@@ -705,3 +705,52 @@ body.tab-more #view-home > [data-tab]:not([data-tab="more"]){display:none}
 .dose-chip.active{background:var(--bronze);border-color:var(--bronze-dk);color:#fff}
 .supply-readout{margin:-4px 0 10px;font-size:.82rem;color:var(--bronze-dk);font-weight:600}
 [data-theme="dark"] .supply-readout{color:var(--bronze)}
+
+/* ---------- Touch targets ----------
+   Measured on a phone viewport, 76 of 88 interactive elements came in under the
+   44px minimum, and the icon buttons were 18x18 — a quarter of the area a
+   fingertip actually needs, and the kind of thing Play's pre-launch report and
+   Lighthouse both flag.
+
+   Two different fixes, on purpose:
+   - Controls whose SIZE is the design (buttons, inputs, chips) simply get a
+     min-height. They were already full-width, so height was the only gap.
+   - Icon buttons whose 18px circle IS the visual (the "i" affordances) keep
+     their appearance and gain an invisible centred hit area instead. Growing
+     them visually would wreck the heading rhythm they sit in. */
+.btn-primary, .btn-ghost, .btn-danger {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+/* The small variants stay visually small but keep a usable target. */
+.btn-danger.small, .btn-primary.small, .btn-ghost.small { min-height: 36px; }
+
+input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=file]),
+select, textarea { min-height: 44px; }
+
+.dose-chip, .body-custom-chip { min-height: 36px; display: inline-flex; align-items: center; }
+
+.back { min-width: 44px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; }
+
+.nav-btn { min-height: 48px; }
+
+/* Invisible, centred, and pointer-events stay on the button itself. */
+.info-btn { position: relative; }
+.info-btn::after {
+  content: '';
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 44px; height: 44px;
+  transform: translate(-50%, -50%);
+}
+
+@media (pointer: fine) {
+  /* A mouse does not need a 44px target, and on desktop the taller controls
+     make dense settings screens look inflated. */
+  .btn-primary, .btn-ghost, .btn-danger { min-height: 36px; }
+  input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=file]),
+  select, textarea { min-height: 34px; }
+  .info-btn::after { width: 24px; height: 24px; }
+}

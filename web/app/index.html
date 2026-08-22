@@ -19,7 +19,7 @@
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="icon" type="image/png" sizes="512x512" href="icons/icon-512.png">
 <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png">
-<link rel="stylesheet" href="styles.css?v=417">
+<link rel="stylesheet" href="styles.css?v=421">
 <script>
 (function(){
   // Apply saved theme synchronously to avoid flash. Settings live in IndexedDB; theme also mirrored to localStorage for fast read.
@@ -264,7 +264,7 @@
 
   <section class="card note-card" data-tab="home" id="note-card">
     <div class="card-head"><h2 id="note-heading">Anything worth remembering about today? <button class="info-btn" type="button" data-info="daily-note" aria-label="About this">i</button></h2><span id="note-saved" class="mood-saved muted small"></span></div>
-    <textarea id="note-text" class="note-text" rows="3" placeholder="e.g. house hunting all week — stressed, but not about food"></textarea>
+    <textarea id="note-text" class="note-text" rows="3" aria-label="Note about today" placeholder="e.g. house hunting all week — stressed, but not about food"></textarea>
     <div class="note-foot">
       <p class="muted small note-hint">Saves as you type. The numbers above say what kind of day it was; this says why.</p>
       <span id="note-count" class="muted small note-count">0/2000</span>
@@ -1214,7 +1214,7 @@
 
     <div class="catchup-section">
       <div class="catchup-section-head"><strong>Note</strong><span id="catchup-note-state" class="muted small">not written</span></div>
-      <textarea id="catchup-note" class="note-text" rows="3" placeholder="What was going on that day?"></textarea>
+      <textarea id="catchup-note" class="note-text" rows="3" aria-label="Note about the selected day" placeholder="What was going on that day?"></textarea>
     </div>
 
     <p id="catchup-status" class="catchup-status muted small"></p>
@@ -1254,7 +1254,7 @@
 <!-- data.js is declarations only and must load before app.js, which reads them
      at evaluation time. Both are classic scripts sharing one global scope —
      see the note at the top of data.js for why this is not an ES module. -->
-<script src="data.js?v=420"></script>
-<script src="app.js?v=420"></script>
+<script src="data.js?v=421"></script>
+<script src="app.js?v=421"></script>
 </body>
 </html>
