@@ -169,6 +169,39 @@ eq('index.html theme-color matches the manifest', metaTheme, manifest.theme_colo
   ok('the app links a public account-deletion page', /delete-account\.html/.test(html));
 }
 
+// ---------- Play listing copy stays inside Play's limits ----------
+// The copy lives in docs/play-store-listing.md so it is reviewable and
+// versioned. Play silently truncates over-length fields at submission, which is
+// how a description ends mid-sentence on a live listing.
+{
+  const listing = path.join(HERE, '..', 'docs', 'play-store-listing.md');
+  if (!fs.existsSync(listing)) {
+    ok('play-store-listing.md exists', false);
+  } else {
+    const md = fs.readFileSync(listing, 'utf8');
+    const grab = (heading) => {
+      const m = md.match(new RegExp(`## ${heading}[^\n]*\n+\`\`\`\n([\\s\\S]*?)\n\`\`\``));
+      return m ? m[1] : null;
+    };
+    const limits = [['App title', 30], ['Short description', 80], ['Full description', 4000]];
+    for (const [heading, max] of limits) {
+      const text = grab(heading);
+      if (!ok(`listing has a "${heading}"`, text !== null)) continue;
+      ok(`"${heading}" is within Play's ${max}-character limit`, text.length <= max, `${text.length} chars`);
+    }
+    ok('listing documents the public deletion URL Play requires',
+      md.includes('myglpshot.com/delete-account.html'));
+    ok('listing declares Smart Import as a data-sharing path',
+      /Smart Import/.test(md) && /Gemini/.test(md));
+    const fg = path.join(APP, 'store', 'play-feature-graphic-1024x500.png');
+    ok('feature graphic exists', fs.existsSync(fg));
+    if (fs.existsSync(fg)) {
+      const b = fs.readFileSync(fg).subarray(0, 24);
+      eq('feature graphic is exactly 1024x500', `${b.readUInt32BE(16)}x${b.readUInt32BE(20)}`, '1024x500');
+    }
+  }
+}
+
 console.log(`\n${pass} passed, ${failures.length} failed`);
 if (failures.length) { console.log('\nFailures:'); failures.forEach(f => console.log(`  ✗ ${f}`)); process.exit(1); }
 console.log('PWA / Android assertions all passed.');
