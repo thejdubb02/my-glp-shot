@@ -121,11 +121,26 @@ disclosure written plainly. **This is a product decision, not a technical one.**
 
 ## Play Store requirements checklist
 
+> Audited against the live system on **2026-08-22**. Several items were already
+> done but still showed unticked, and one (`assetlinks.json`) was reporting as
+> present when it was not — see below. Ticks in here should mean verified, not
+> assumed.
+>
+> Reality check: the app is **not** on the Play Store. There is no listing, no
+> package name registered, no keystore, and no Bubblewrap build in the repo. Our
+> first user believed she found it on the Play Store; she almost certainly
+> installed the PWA. That is a point in favour of doing this.
+
 ### Identity and packaging
 - [ ] Package name — suggest `com.myglpshot.app`. Permanent; cannot change after publish.
 - [ ] Generate with Bubblewrap against `https://app.myglpshot.com/manifest.webmanifest`.
 - [ ] Upload key + Play App Signing. **Back the keystore up to Vaultwarden** — losing it means losing the ability to update the app.
 - [ ] `assetlinks.json` served at `https://app.myglpshot.com/.well-known/assetlinks.json`, containing the signing-key fingerprint. **Without this the TWA shows a browser address bar** and looks like a website in a box.
+      **Routing fixed 2026-08-22** — nginx now has a dedicated location for this
+      path. Before that the SPA fallback answered it with `index.html` and a
+      **200**, so every checker that reads only the status code reported it as
+      present while Android would have received HTML. The path now 404s
+      honestly until the real file (with the fingerprint) exists.
 - [ ] Target the API level Play currently requires for new submissions (check at build time — it moves annually).
 
 ### Store listing
@@ -140,20 +155,28 @@ disclosure written plainly. **This is a product decision, not a technical one.**
       posture honestly. Note **Smart Import is the exception**: it sends the
       user's uploaded file to Google Gemini in plaintext. That must be declared
       and is already disclosed in the privacy policy — keep the two consistent.
-- [ ] **Account deletion.** Play requires both in-app deletion *and* a publicly
+- [x] **Account deletion.** Play requires both in-app deletion *and* a publicly
       reachable web URL. The API supports it (`DELETE /api/me`, verified working
-      in production); the **public web page still needs building**.
+      in production), and the public page now exists at
+      `myglpshot.com/delete-account.html` (2026-08-22) — linked from the site
+      footer, the privacy policy, the in-app footer, and the sitemap.
 - [ ] **Health app declaration.** Position it as a personal tracking and
       logging tool. It must not read as diagnosis, treatment advice, or dosing
       recommendation — the insights copy should be reviewed with that lens.
-- [ ] **Medical disclaimer** visible in-app and in the listing.
-- [ ] Privacy policy URL — exists at myglpshot.com/privacy.html.
+- [x] **Medical disclaimer** visible in-app (2026-08-22): a standing card at the
+      foot of Settings plus a line in the app footer. Previously there were only
+      contextual notes beside individual features, which is not the same thing.
+      **Still to do: the listing copy.**
+- [x] Privacy policy URL — exists at myglpshot.com/privacy.html.
 - [ ] No claims about GLP-1 outcomes in the listing that we can't support.
 
 ### Technical gates before submission
-- [ ] Web Push working (Blocker 2).
-- [ ] Billing decision made and implemented (Blocker 1).
-- [ ] `scripts/api-selftest.py` green.
+- [x] Web Push working (Blocker 2) — `/api/push/key` serves a VAPID key in
+      production and our first user receives the daily reminders on Android.
+- [x] Billing decision made and implemented (Blocker 1) — `/api/billing/prices`
+      is live ($1.99/mo, $19.99/yr, 14-day trial) against live Stripe prices.
+- [x] `scripts/api-selftest.py` green — 34/34 as of 2026-08-22. `scripts/run-tests.sh`
+      now also gates the offline suites (183 assertions) with one command.
 - [ ] Test on a real low-end Android device, not only an emulator.
 - [ ] Offline behaviour verified: airplane mode, cold start, log a shot, reconnect, confirm it syncs.
 
