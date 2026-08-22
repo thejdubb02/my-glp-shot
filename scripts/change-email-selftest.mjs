@@ -184,6 +184,22 @@ const newCreds = await derive(NEW, PW);
   eq('sign-in with the old address fails', old.status, 401);
 }
 
+// ---------- clean up after ourselves ----------
+// This suite is safe to point at production, which means it must not leave
+// accounts behind when it does. Deleting through the API rather than the DB, so
+// it works wherever the suite runs.
+for (const [label, email, creds] of [['new-address account', NEW, newCreds], ['second account', OTHER, await derive(OTHER, PW)]]) {
+  try {
+    cookie = '';
+    const li = await api('/login', { method: 'POST', body: JSON.stringify({ email, authToken: creds.authToken }) });
+    if (li.status !== 200) { ok(`cleanup: signed in to remove the ${label}`, false, `login ${li.status}`); continue; }
+    const del = await api('/me', { method: 'DELETE' });
+    ok(`cleanup: ${label} deleted`, del.status === 200, `status ${del.status}`);
+  } catch (e) {
+    ok(`cleanup: ${label} deleted`, false, e.message);
+  }
+}
+
 console.log(`\n${pass} passed, ${failures.length} failed`);
 if (failures.length) { console.log('\nFailures:'); failures.forEach(f => console.log(`  ✗ ${f}`)); process.exit(1); }
 console.log('Change-email assertions all passed.');
