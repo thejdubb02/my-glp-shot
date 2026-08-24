@@ -1110,12 +1110,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     markSyncDirty();
   });
 
-  $('#add-weight-btn').addEventListener('click', async () => {
-    $('#weight-val').value = '';
-    $('#weight-unit').value = (await getLastWeightUnit()) || 'lb';
-    $('#weight-date').value = todayISODate();
-    $('#weight-dialog').showModal();
-  });
+  $('#add-weight-btn').addEventListener('click', openWeightDialog);
+  $('#weight-log-btn')?.addEventListener('click', openWeightDialog);
   $('#weight-cancel').addEventListener('click', () => $('#weight-dialog').close());
   $('#weight-form').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -1495,6 +1491,50 @@ async function getLastWeightUnit() {
   return ws.length ? ws[ws.length - 1].unit : null;
 }
 
+async function openWeightDialog() {
+  $('#weight-val').value = '';
+  $('#weight-unit').value = (await getLastWeightUnit()) || 'lb';
+  $('#weight-date').value = todayISODate();
+  $('#weight-dialog').showModal();
+}
+
+// Home-tab weight card. The Weight card with the chart lives on the Insights
+// tab, so a user who does their daily logging on Home had no visible way to
+// record a weigh-in — and the daily weight reminder pointed at a card on a tab
+// it never switched to. This is the entry point; Insights keeps the chart.
+function renderWeightCard(weights) {
+  const card = $('#weight-card');
+  if (!card) return;
+  const todayEl = $('#weight-log-today');
+  const changeEl = $('#weight-log-change');
+  const ws = Array.isArray(weights) ? weights : [];
+  if (changeEl) { changeEl.textContent = ''; changeEl.classList.remove('gain'); }
+  if (!ws.length) {
+    card.classList.remove('logged');
+    if (todayEl) todayEl.textContent = 'No weight logged yet.';
+    return;
+  }
+  const latest = ws[ws.length - 1];
+  const unit = latest.unit || 'lb';
+  const loggedToday = toCanonicalDate(latest.date) === todayISODate();
+  card.classList.toggle('logged', loggedToday);
+  if (todayEl) {
+    todayEl.textContent = loggedToday
+      ? `Today: ${latest.value} ${unit}`
+      : `Last: ${latest.value} ${unit} on ${fmtDateShort(latest.date)}`;
+  }
+  // Only show a delta when both entries share a unit — subtracting kg from lb
+  // would render a confident-looking wrong number.
+  const prev = ws.length > 1 ? ws[ws.length - 2] : null;
+  if (changeEl && prev && (prev.unit || 'lb') === unit) {
+    const d = latest.value - prev.value;
+    changeEl.textContent = d === 0
+      ? 'no change since last'
+      : `${d < 0 ? '\u2212' : '+'}${Math.abs(d).toFixed(1)} ${unit} since last`;
+    changeEl.classList.toggle('gain', d > 0);
+  }
+}
+
 // ---------- Charts ----------
 let weightChart, levelChart;
 let _weightRangeDays = 'all'; // 'all' | 30 | 90 | 180 | 365
@@ -1502,6 +1542,7 @@ async function renderWeights() {
   const wsAll = await getWeightsSorted();
   const shots = await getShotsSorted();
   await renderHero(shots, wsAll);
+  renderWeightCard(wsAll);
   const empty = $('#empty-weight');
   const ctx = $('#weight-chart');
   if (!wsAll.length) {
@@ -2685,7 +2726,7 @@ function handleReminderDeepLink() {
   const key = m[1];
   try { history.replaceState(null, '', location.pathname + location.search); } catch (_) {}
   const tabAndAnchor = {
-    weight:       { tab: 'home', scroll: '#weight-chart' },
+    weight:       { tab: 'home', scroll: '#weight-card' },
     moodAppetite: { tab: 'home', scroll: '#mood-card' },
     sideEffects:  { tab: 'home', scroll: '#symptoms-card' },
     measurements: { tab: 'more', scroll: '#measurements-card' },
@@ -2703,7 +2744,7 @@ function handleReminderDeepLink() {
     }, 100);
   }
   if (key === 'weight') {
-    setTimeout(() => { const b = document.querySelector('#add-weight-btn'); if (b) b.click(); }, 300);
+    setTimeout(() => { try { openWeightDialog(); } catch (_) {} }, 300);
   } else if (key === 'sideEffects') {
     // The reminder used to scroll to a card that didn't exist, so tapping the
     // notification landed on Home with nothing to do. Open the picker instead.
@@ -3073,7 +3114,7 @@ function setupAccountUI() {
         try { showView('home'); setHomeTab(tab); } catch (e) {}
       }
       if (action === 'log-shot') { try { openShotDialog(); } catch (e) {} }
-      else if (action === 'log-weight') { try { $('#add-weight-btn')?.click(); } catch (e) {} }
+      else if (action === 'log-weight') { try { openWeightDialog(); } catch (e) {} }
     };
     if (action || tab) setTimeout(runShortcut, 250);
   })();

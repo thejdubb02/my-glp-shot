@@ -398,6 +398,12 @@ canvas{width:100% !important;height:auto !important;max-height:200px}
 .se-details summary{cursor:pointer;color:var(--bronze-dk);font-weight:600;padding:6px 0}
 
 /* Symptoms card — standalone daily side-effect entry */
+.weight-log-today{margin:2px 0 10px;font-size:.95rem}
+.weight-log-card.logged .weight-log-today{color:var(--ink);font-weight:600}
+.weight-log-btn{width:100%}
+.weight-log-hint{margin-top:8px}
+#weight-log-change.gain{color:var(--accent-dk)}
+
 .symptoms-today{margin:2px 0 10px;font-size:.95rem}
 .symptoms-card.logged .symptoms-today{color:var(--ink);font-weight:600}
 .symptoms-log-btn{width:100%}

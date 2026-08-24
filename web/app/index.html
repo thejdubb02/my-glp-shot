@@ -19,7 +19,7 @@
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="icon" type="image/png" sizes="512x512" href="icons/icon-512.png">
 <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png">
-<link rel="stylesheet" href="styles.css?v=421">
+<link rel="stylesheet" href="styles.css?v=422">
 <script>
 (function(){
   // Apply saved theme synchronously to avoid flash. Settings live in IndexedDB; theme also mirrored to localStorage for fast read.
@@ -194,6 +194,13 @@
       <div class="hero-goal-bar"><div id="hero-goal-fill" class="hero-goal-fill"></div></div>
       <div id="hero-goal-text" class="hero-goal-text"></div>
     </div>
+  </section>
+
+  <section class="card weight-log-card" data-tab="home" id="weight-card">
+    <div class="card-head"><h2 id="weight-log-heading">Weight</h2><span id="weight-log-change" class="muted small"></span></div>
+    <p id="weight-log-today" class="muted weight-log-today">No weight logged yet.</p>
+    <button type="button" id="weight-log-btn" class="btn-primary weight-log-btn">Log weight</button>
+    <p class="muted small weight-log-hint">Weigh in whenever suits you — the same time of day gives the cleanest trend. Your chart is under Insights.</p>
   </section>
 
   <section class="card mood-card" data-tab="home" id="mood-card">
@@ -1254,7 +1261,7 @@
 <!-- data.js is declarations only and must load before app.js, which reads them
      at evaluation time. Both are classic scripts sharing one global scope —
      see the note at the top of data.js for why this is not an ES module. -->
-<script src="data.js?v=421"></script>
-<script src="app.js?v=421"></script>
+<script src="data.js?v=422"></script>
+<script src="app.js?v=422"></script>
 </body>
 </html>
