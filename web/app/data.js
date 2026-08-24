@@ -28,7 +28,7 @@ const DB_NAME = 'shotclock';
 //   asked for something the app had nowhere to put.
 const DB_VERSION = 11;
 
-const APP_VERSION = '0.60.0';
+const APP_VERSION = '0.61.0';
 
 const STORES = { shots: 'shots', weights: 'weights', settings: 'settings', moods: 'moods', supplies: 'supplies' };
 
@@ -74,13 +74,14 @@ const INFO_TOPICS = {
     body: async () => {
       const weights = await getWeightsSorted();
       const shots = await getShotsSorted();
-      const start = settings.startWeight ?? (weights[0] && weights[0].value);
-      const latest = weights.length ? weights[weights.length - 1].value : null;
-      const lost = (start != null && latest != null) ? (start - latest).toFixed(1) : null;
+      const rows = weightsInLb(weights);
+      const start = settings.startWeight ?? (rows[0] && rows[0].lb);
+      const latest = rows.length ? rows[rows.length - 1].lb : null;
+      const lost = (start != null && latest != null) ? (start - latest) : null;
       const firstShot = shots.length ? new Date(shots[0].when) : null;
       const weeks = firstShot ? Math.floor((Date.now() - firstShot.getTime()) / (7 * 86400000)) : 0;
       let yourLine = '<p><strong>For you right now:</strong> ';
-      if (start != null && latest != null) yourLine += `you've gone from <strong>${escapeHTML(start)} lb</strong> to <strong>${escapeHTML(latest)} lb</strong> = <strong>${escapeHTML(lost > 0 ? lost + ' lb lost' : Math.abs(lost) + ' lb gained')}</strong>`;
+      if (start != null && latest != null) yourLine += `you've gone from <strong>${fmtWeight(start)}</strong> to <strong>${fmtWeight(latest)}</strong> = <strong>${fmtWeight(Math.abs(lost))} ${lost > 0 ? 'lost' : 'gained'}</strong>`;
       else yourLine += `log your starting weight in Settings + at least one weight entry to see your progress`;
       yourLine += `, ${weeks} week${weeks === 1 ? '' : 's'} since first shot, ${shots.length} shot${shots.length === 1 ? '' : 's'} logged.</p>`;
       return `<p>Three numbers across the top of the home screen tell you the big picture.</p>
@@ -159,12 +160,12 @@ const INFO_TOPICS = {
   },
   'achievements': {
     title: 'Achievements',
-    body: `<p>Small badges that unlock as you hit milestones.</p>
+    body: () => `<p>Small badges that unlock as you hit milestones.</p>
       <ul>
         <li><strong>First shot logged</strong> — once you log your first dose</li>
         <li><strong>10 / 50 / 100 shots</strong> — total shots logged</li>
         <li><strong>4-week streak</strong> — four shots in a row at your scheduled cadence</li>
-        <li><strong>5 / 10 / 25 lb lost</strong> — weight change from your starting weight</li>
+        <li><strong>${weightUnit() === 'kg' ? '2.5 / 5 / 10 kg' : '5 / 10 / 25 lb'} lost</strong> — weight change from your starting weight</li>
         <li><strong>Dose graduation</strong> — you've increased your dose at least once (typical titration)</li>
       </ul>
       <p>Locked badges are dimmed; unlocked ones are colored.</p>`,
@@ -250,10 +251,9 @@ const INFO_TOPICS = {
       const inWindow = weights.filter(w => new Date(w.date).getTime() >= cutoff);
       let yourLine = '';
       if (inWindow.length >= 2) {
-        const first = inWindow[0].value;
-        const last = inWindow[inWindow.length - 1].value;
-        const delta = (last - first).toFixed(1);
-        yourLine = `<p><strong>For you right now:</strong> ${inWindow.length} weight entries in the last 28 days, total change <strong>${delta} lb</strong>. ${Math.abs(delta) < 1 ? '⚠️ This would currently flag as a plateau.' : 'No plateau — keep going.'}</p>`;
+        const rows = weightsInLb(inWindow);
+        const deltaLb = rows.length >= 2 ? rows[rows.length - 1].lb - rows[0].lb : 0;
+        yourLine = `<p><strong>For you right now:</strong> ${inWindow.length} weight entries in the last 28 days, total change <strong>${fmtWeightDelta(deltaLb)}</strong>. ${Math.abs(deltaLb) < 1 ? '⚠️ This would currently flag as a plateau.' : 'No plateau — keep going.'}</p>`;
       } else {
         yourLine = `<p><strong>For you right now:</strong> need at least 4 weight entries in the last 28 days to detect a plateau (you have ${inWindow.length}).</p>`;
       }
@@ -262,7 +262,7 @@ const INFO_TOPICS = {
         <h3>Triggers when ALL are true</h3>
         <ul>
           <li>4+ weight entries in the last 28 days</li>
-          <li>Total change less than 1 lb</li>
+          <li>Total change less than ${fmtWeight(1, { dp: weightUnit() === 'kg' ? 1 : 0 })}</li>
           <li>No dose increase during that window</li>
         </ul>
         <p>Plateaus are normal. The card just gives you a heads-up that it might be time to talk to your provider about a dose adjustment, diet/exercise tweaks, or just patience.</p>`;
@@ -295,20 +295,22 @@ const INFO_TOPICS = {
       const expTotal = expenses.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
       const total = supTotal + expTotal;
       const weights = await getWeightsSorted();
-      const start = settings.startWeight ?? (weights[0] && weights[0].value);
-      const latest = weights.length ? weights[weights.length - 1].value : null;
-      const lost = (start != null && latest != null && latest < start) ? (start - latest) : 0;
+      const rows = weightsInLb(weights);
+      const start = settings.startWeight ?? (rows[0] && rows[0].lb);
+      const latest = rows.length ? rows[rows.length - 1].lb : null;
+      const lostLb = (start != null && latest != null && latest < start) ? (start - latest) : 0;
+      const lost = lostLb > 0 ? fromLb(lostLb, weightUnit()) : 0;
       let yourLine = '';
       if (total > 0) {
-        const perLb = lost > 0 ? `<strong>$${(total / lost).toFixed(2)} per lb lost</strong>` : '';
+        const perLb = lost > 0 ? `<strong>$${(total / lost).toFixed(2)} per ${weightUnit()} lost</strong>` : '';
         yourLine = `<p><strong>For you right now:</strong> $${supTotal.toFixed(2)} in supplies + $${expTotal.toFixed(2)} in expenses = <strong>$${total.toFixed(2)} total</strong>. ${perLb}</p>`;
       } else {
         yourLine = `<p><strong>For you right now:</strong> no spending tracked yet — add a pen/vial cost or an expense to get started.</p>`;
       }
       return `<p>Adds up everything you've spent on the program — pens, vials, copays, pharmacy fees, labs, insurance, supplies, shipping.</p>
         ${yourLine}
-        <h3>How "$ per lb lost" is calculated</h3>
-        <div class="formula">$ per lb = total_spent ÷ pounds_lost</div>
+        <h3>How "$ per ${weightUnit()} lost" is calculated</h3>
+        <div class="formula">$ per ${weightUnit()} = total_spent ÷ ${weightUnit() === 'kg' ? 'kilos' : 'pounds'}_lost</div>
         <p>Includes both supply costs (entered when you add a pen/vial) and ad-hoc expenses (entered with the <strong>+ Add</strong> button on this card).</p>`;
     },
   },
@@ -420,6 +422,9 @@ const DEFAULT_SETTINGS = {
   syncAutoPush: true,
   syncDirty: false,
   bodySex: 'male',
+  // Display unit for every weight on screen. Storage and all internal maths stay
+  // in pounds regardless, so switching this never moves a goal or a milestone.
+  weightUnit: 'lb',
   colorTheme: 'teal',
   moodStyle: 'classic',
   appetiteStyle: 'classic',
@@ -565,15 +570,19 @@ const ACHIEVEMENTS = [
   { id: 'streak52',  icon: '👑', label: '1-year streak',                test: ({streak}) => streak >= 52 },
   { id: 'streak104', icon: '💎', label: '2-year streak',                test: ({streak}) => streak >= 104 },
   // Weight loss tiers — all measured against starting weight
-  { id: 'lost2',     icon: '🌱', label: 'First 2 lb lost',              test: ({delta}) => delta <= -2 },
-  { id: 'lost5',     icon: '⭐', label: '5 lb lost',                    test: ({delta}) => delta <= -5 },
-  { id: 'lost10',    icon: '🌟', label: '10 lb lost',                   test: ({delta}) => delta <= -10 },
-  { id: 'lost15',    icon: '💚', label: '15 lb lost',                   test: ({delta}) => delta <= -15 },
-  { id: 'lost25',    icon: '💫', label: '25 lb lost',                   test: ({delta}) => delta <= -25 },
-  { id: 'lost40',    icon: '🌠', label: '40 lb lost',                   test: ({delta}) => delta <= -40 },
-  { id: 'lost50',    icon: '✨', label: '50 lb lost',                   test: ({delta}) => delta <= -50 },
-  { id: 'lost75',    icon: '🦋', label: '75 lb lost',                   test: ({delta}) => delta <= -75 },
-  { id: 'lost100',   icon: '🏔️', label: '100 lb lost — life-changing', test: ({delta}) => delta <= -100 },
+  // Weight milestones run on their own ladder per unit so both read as round
+  // numbers. Showing a kg user "0.9 kg lost" (the literal conversion of the 2 lb
+  // tier) was the alternative, and it reads as a rounding error rather than an
+  // achievement. `delta` is canonical pounds; `deltaKg` is the same figure in kg.
+  { id: 'lost2',     icon: '🌱', label: 'First 2 lb lost',              labelKg: 'First 1 kg lost',             test: (s) => s.unit === 'kg' ? s.deltaKg <= -1  : s.delta <= -2 },
+  { id: 'lost5',     icon: '⭐', label: '5 lb lost',                    labelKg: '2.5 kg lost',                 test: (s) => s.unit === 'kg' ? s.deltaKg <= -2.5 : s.delta <= -5 },
+  { id: 'lost10',    icon: '🌟', label: '10 lb lost',                   labelKg: '5 kg lost',                   test: (s) => s.unit === 'kg' ? s.deltaKg <= -5  : s.delta <= -10 },
+  { id: 'lost15',    icon: '💚', label: '15 lb lost',                   labelKg: '7 kg lost',                   test: (s) => s.unit === 'kg' ? s.deltaKg <= -7  : s.delta <= -15 },
+  { id: 'lost25',    icon: '💫', label: '25 lb lost',                   labelKg: '10 kg lost',                  test: (s) => s.unit === 'kg' ? s.deltaKg <= -10 : s.delta <= -25 },
+  { id: 'lost40',    icon: '🌠', label: '40 lb lost',                   labelKg: '18 kg lost',                  test: (s) => s.unit === 'kg' ? s.deltaKg <= -18 : s.delta <= -40 },
+  { id: 'lost50',    icon: '✨', label: '50 lb lost',                   labelKg: '23 kg lost',                  test: (s) => s.unit === 'kg' ? s.deltaKg <= -23 : s.delta <= -50 },
+  { id: 'lost75',    icon: '🦋', label: '75 lb lost',                   labelKg: '34 kg lost',                  test: (s) => s.unit === 'kg' ? s.deltaKg <= -34 : s.delta <= -75 },
+  { id: 'lost100',   icon: '🏔️', label: '100 lb lost — life-changing', labelKg: '45 kg lost — life-changing', test: (s) => s.unit === 'kg' ? s.deltaKg <= -45 : s.delta <= -100 },
   // Dose ladder — recognizes the titration journey
   { id: 'titrate',   icon: '📈', label: 'First dose increase',          test: ({maxDose, minDose, shots}) => shots.length >= 2 && maxDose > minDose },
   { id: 'maintain',  icon: '⚖️', label: 'Holding steady',               test: ({shots, maxDose}) => shots.length >= 8 && shots.slice(-4).every(s => s.dose === maxDose) },

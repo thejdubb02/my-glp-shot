@@ -19,7 +19,7 @@
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="icon" type="image/png" sizes="512x512" href="icons/icon-512.png">
 <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png">
-<link rel="stylesheet" href="styles.css?v=422">
+<link rel="stylesheet" href="styles.css?v=423">
 <script>
 (function(){
   // Apply saved theme synchronously to avoid flash. Settings live in IndexedDB; theme also mirrored to localStorage for fast read.
@@ -660,8 +660,15 @@
 
   <section class="card">
     <h2>Weight goals</h2>
-    <label>Starting weight (lb) <input id="set-start-weight" type="number" step="0.1" min="0" placeholder="auto-detected from first entry"></label>
-    <label>Goal weight (lb) <input id="set-goal-weight" type="number" step="0.1" min="0"></label>
+    <label>Units
+      <select id="set-weight-unit">
+        <option value="lb">Pounds (lb)</option>
+        <option value="kg">Kilograms (kg)</option>
+      </select>
+    </label>
+    <p class="muted small">Changes how weights are shown everywhere — your chart, goals, and milestones. Entries you've already logged are converted, not rewritten.</p>
+    <label>Starting weight (<span class="weight-unit-label">lb</span>) <input id="set-start-weight" type="number" step="0.1" min="0" placeholder="auto-detected from first entry"></label>
+    <label>Goal weight (<span class="weight-unit-label">lb</span>) <input id="set-goal-weight" type="number" step="0.1" min="0"></label>
     <label class="check-row" style="margin-top:8px"><input id="set-maintenance" type="checkbox"> Maintenance mode</label>
     <p class="muted small">When on, the home screen reframes your goal bar as a stability indicator and plateau alerts read as "holding steady" rather than "needs to be solved." Use after you've hit your target.</p>
     <div class="btn-row">
@@ -1261,7 +1268,7 @@
 <!-- data.js is declarations only and must load before app.js, which reads them
      at evaluation time. Both are classic scripts sharing one global scope —
      see the note at the top of data.js for why this is not an ES module. -->
-<script src="data.js?v=422"></script>
-<script src="app.js?v=422"></script>
+<script src="data.js?v=423"></script>
+<script src="app.js?v=423"></script>
 </body>
 </html>

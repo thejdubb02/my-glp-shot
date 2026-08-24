@@ -81,6 +81,20 @@
     return Number.isNaN(d.getTime()) ? '—' : d.toLocaleString();
   }
 
+  // This page is standalone, so it carries its own copy of the unit rules the
+  // app uses: maths in pounds, display in the patient's chosen unit.
+  const LB_PER_KG = 2.20462;
+  function toLb(value, unit){
+    const n = parseFloat(value);
+    if (!Number.isFinite(n)) return null;
+    return unit === 'kg' ? n * LB_PER_KG : n;
+  }
+  function fromLb(lb, unit){
+    const n = parseFloat(lb);
+    if (!Number.isFinite(n)) return null;
+    return unit === 'kg' ? n / LB_PER_KG : n;
+  }
+
   function render(data, meta){
     const since = new Date(); since.setDate(since.getDate() - 90);
     const arr = (v) => Array.isArray(v) ? v : [];
@@ -88,8 +102,10 @@
     const weights = arr(data.weights).slice().sort((a,b)=>String(a.date).localeCompare(String(b.date)));
     const labs = arr(data.labs);
     const measurements = arr(data.measurements);
-    const first = Number(weights[0]?.value);
-    const last = Number(weights[weights.length-1]?.value);
+    const wUnit = data.settings?.weightUnit === 'kg' ? 'kg' : 'lb';
+    const inUnit = (w) => fromLb(toLb(w?.value, w?.unit), wUnit);
+    const first = inUnit(weights[0]);
+    const last = inUnit(weights[weights.length-1]);
     const wd = (Number.isFinite(first) && Number.isFinite(last))
       ? { start: first, current: last, delta: last - first }
       : null;
@@ -103,8 +119,8 @@
       <p class="muted small">Last 90 days · ${shots.length} shots · ${weights.length} weight entries</p>
       <div>
         <div class="stat"><strong>${shots.length}</strong><span>shots (90d)</span></div>
-        ${wd ? `<div class="stat"><strong>${wd.delta < 0 ? '−' : '+'}${Math.abs(wd.delta).toFixed(1)} lb</strong><span>since start</span></div>` : ''}
-        ${wd ? `<div class="stat"><strong>${wd.current.toFixed(1)} lb</strong><span>current weight</span></div>` : ''}
+        ${wd ? `<div class="stat"><strong>${wd.delta < 0 ? '−' : '+'}${Math.abs(wd.delta).toFixed(1)} ${wUnit}</strong><span>since start</span></div>` : ''}
+        ${wd ? `<div class="stat"><strong>${wd.current.toFixed(1)} ${wUnit}</strong><span>current weight</span></div>` : ''}
       </div>
       <h2>Medication</h2>
       <p>${escapeHTML(data.settings?.medication || 'Tirzepatide')} · cadence every ${num(data.settings?.cadenceDays ?? 7)}d · half-life ${num(data.settings?.halfLifeDays ?? 5)}d</p>
@@ -113,7 +129,7 @@
       ${shots.slice(0,60).map(s => `<tr><td>${escapeHTML(fmtWhen(s.when))}</td><td>${num(s.dose)} mg</td><td>${escapeHTML(s.site||'')}</td><td>${escapeHTML(s.notes||'')}</td></tr>`).join('')}
       </tbody></table>
       ${weights.length ? `<h2>Weight (last 30 entries)</h2><table><thead><tr><th>Date</th><th>Weight</th></tr></thead><tbody>
-      ${weights.slice(-30).map(w => `<tr><td>${escapeHTML(w.date)}</td><td>${num(w.value)} ${escapeHTML(w.unit)}</td></tr>`).join('')}
+      ${weights.slice(-30).map(w => { const v = inUnit(w); return `<tr><td>${escapeHTML(w.date)}</td><td>${Number.isFinite(v) ? v.toFixed(1) + ' ' + wUnit : '—'}</td></tr>`; }).join('')}
       </tbody></table>` : ''}
       ${labs.length ? `<h2>Labs</h2><table><thead><tr><th>Date</th><th>Test</th><th>Value</th></tr></thead><tbody>
       ${labs.map(l => `<tr><td>${escapeHTML(l.date)}</td><td>${escapeHTML(l.type)}</td><td>${num(l.value)}</td></tr>`).join('')}

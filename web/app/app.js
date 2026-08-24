@@ -527,6 +527,66 @@ function toCanonicalDate(d) {
   return `${p.year}-${p.month}-${p.day}`;
 }
 
+// ---------- Weight units ----------
+// Rows are stored exactly as the user entered them, unit included, so a backup
+// restores what they typed and a kitchen-scale reading in kg stays a kg reading.
+// Every CALCULATION runs on pounds — the canonical unit for achievement
+// thresholds, the plateau limit, and settings.startWeight/goalWeight. Display
+// converts to settings.weightUnit at the last moment.
+//
+// Mixing the two was the bug this replaces: weightDelta() subtracted raw
+// stored values, so a kg entry minus an lb entry produced a meaningless number
+// that every screen then labelled "lb".
+const LB_PER_KG = 2.20462;
+
+function toLb(value, unit) {
+  const n = parseFloat(value);
+  if (!Number.isFinite(n)) return null;
+  return unit === 'kg' ? n * LB_PER_KG : n;
+}
+
+function fromLb(lb, unit) {
+  const n = parseFloat(lb);
+  if (!Number.isFinite(n)) return null;
+  return unit === 'kg' ? n / LB_PER_KG : n;
+}
+
+// The user's chosen display unit. Anything not explicitly 'kg' is pounds, so a
+// missing or corrupt setting degrades to the historical behaviour.
+function weightUnit() {
+  return settings && settings.weightUnit === 'kg' ? 'kg' : 'lb';
+}
+
+// Canonical pounds -> a display string in the user's unit, e.g. "182.0 lb".
+function fmtWeight(lb, opts) {
+  const o = opts || {};
+  const u = weightUnit();
+  const v = fromLb(lb, u);
+  if (v == null) return '\u2014';
+  const s = v.toFixed(o.dp != null ? o.dp : 1);
+  return o.bare ? s : `${s} ${u}`;
+}
+
+// Canonical pounds -> a signed change, e.g. "\u22122.2 lb". Negative is a loss.
+function fmtWeightDelta(lb, opts) {
+  const o = opts || {};
+  const u = weightUnit();
+  const v = fromLb(lb, u);
+  if (v == null) return '\u2014';
+  const s = Math.abs(v).toFixed(o.dp != null ? o.dp : 1);
+  return `${v < 0 ? '\u2212' : '+'}${s}${o.bare ? '' : ' ' + u}`;
+}
+
+// Stored rows -> the same rows with a canonical `.lb`, dropping unparseable ones.
+function weightsInLb(rows) {
+  const out = [];
+  for (const w of rows || []) {
+    const lb = toLb(w && w.value, w && w.unit);
+    if (lb != null) out.push({ ...w, lb });
+  }
+  return out;
+}
+
 async function getWeightsSorted() {
   const all = (await dbAll(STORES.weights)) || [];
   return all.sort((a, b) => parseDateFlexible(a.date) - parseDateFlexible(b.date));
@@ -1245,8 +1305,21 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
   window.addEventListener('pageshow', () => maybeScheduleNotification());
 
-  $('#set-start-weight').addEventListener('change', async (e) => { settings.startWeight = e.target.value ? parseFloat(e.target.value) : null; await saveSettings(); markSyncDirty(); await renderShots(); });
-  $('#set-goal-weight').addEventListener('change', async (e) => { settings.goalWeight = e.target.value ? parseFloat(e.target.value) : null; await saveSettings(); markSyncDirty(); await renderShots(); });
+  // Typed in the display unit, stored in pounds.
+  const readWeightInput = (el) => (el && el.value !== '' ? toLb(el.value, weightUnit()) : null);
+  $('#set-start-weight').addEventListener('change', async (e) => { settings.startWeight = readWeightInput(e.target); await saveSettings(); markSyncDirty(); await renderShots(); });
+  $('#set-goal-weight').addEventListener('change', async (e) => { settings.goalWeight = readWeightInput(e.target); await saveSettings(); markSyncDirty(); await renderShots(); });
+  const unitSel = $('#set-weight-unit');
+  if (unitSel) unitSel.addEventListener('change', async (e) => {
+    settings.weightUnit = e.target.value === 'kg' ? 'kg' : 'lb';
+    await saveSettings();
+    markSyncDirty();
+    // Nothing stored changes — only how it reads — but every weight on screen
+    // has to be redrawn, including the settings inputs we are standing in.
+    applySettingsToInputs();
+    try { await renderShots(); } catch (_) {}
+    try { await renderWeights(); } catch (_) {}
+  });
   $('#set-maintenance')?.addEventListener('change', async (e) => {
     settings.maintenanceMode = !!e.target.checked;
     await saveSettings();
@@ -1264,8 +1337,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       settings.cadenceDays = parseInt($('#set-cadence').value, 10) || 7;
       settings.halfLifeDays = parseFloat($('#set-halflife').value) || 5;
     } else if (group === 'weight') {
-      settings.startWeight = $('#set-start-weight').value ? parseFloat($('#set-start-weight').value) : null;
-      settings.goalWeight = $('#set-goal-weight').value ? parseFloat($('#set-goal-weight').value) : null;
+      settings.startWeight = $('#set-start-weight').value !== '' ? toLb($('#set-start-weight').value, weightUnit()) : null;
+      settings.goalWeight  = $('#set-goal-weight').value  !== '' ? toLb($('#set-goal-weight').value,  weightUnit()) : null;
     } else if (group === 'reminders') {
       settings.notifyLeadMinutes = parseInt($('#set-lead').value, 10) || 0;
     }
@@ -1451,8 +1524,12 @@ function applySettingsToInputs() {
   renderDoseChips('#set-dose-chips', '#set-dose', settings.medication);
   $('#set-cadence').value = settings.cadenceDays;
   $('#set-halflife').value = settings.halfLifeDays;
-  if ($('#set-start-weight')) $('#set-start-weight').value = settings.startWeight ?? '';
-  if ($('#set-goal-weight'))  $('#set-goal-weight').value = settings.goalWeight ?? '';
+  const wu = weightUnit();
+  if ($('#set-weight-unit')) $('#set-weight-unit').value = wu;
+  $$('.weight-unit-label').forEach(el => { el.textContent = wu; });
+  // Stored in pounds, shown in the user's unit.
+  if ($('#set-start-weight')) $('#set-start-weight').value = settings.startWeight != null ? fmtWeight(settings.startWeight, { bare: true }) : '';
+  if ($('#set-goal-weight'))  $('#set-goal-weight').value  = settings.goalWeight  != null ? fmtWeight(settings.goalWeight,  { bare: true }) : '';
   if ($('#set-maintenance'))  $('#set-maintenance').checked = !!settings.maintenanceMode;
   if ($('#set-mixing-calc'))  $('#set-mixing-calc').checked = !!settings.showMixingCalc;
   applyMixingCalcVisibility();
@@ -1486,14 +1563,13 @@ function applyTheme() {
   if (typeof applyColorTheme === 'function') applyColorTheme(settings.colorTheme || 'teal');
 }
 
-async function getLastWeightUnit() {
-  const ws = await getWeightsSorted();
-  return ws.length ? ws[ws.length - 1].unit : null;
-}
-
 async function openWeightDialog() {
   $('#weight-val').value = '';
-  $('#weight-unit').value = (await getLastWeightUnit()) || 'lb';
+  // The explicit Settings preference wins over the last-logged unit. Otherwise
+  // someone who has just switched to kg opens this dialog, sees "lb" preselected,
+  // types their kg number and silently stores a reading 2.2x too heavy.
+  // The per-entry selector is still here for a one-off in the other unit.
+  $('#weight-unit').value = weightUnit();
   $('#weight-date').value = todayISODate();
   $('#weight-dialog').showModal();
 }
@@ -1514,23 +1590,29 @@ function renderWeightCard(weights) {
     if (todayEl) todayEl.textContent = 'No weight logged yet.';
     return;
   }
-  const latest = ws[ws.length - 1];
-  const unit = latest.unit || 'lb';
+  const rows = weightsInLb(ws);
+  if (!rows.length) {
+    card.classList.remove('logged');
+    if (todayEl) todayEl.textContent = 'No weight logged yet.';
+    return;
+  }
+  const latest = rows[rows.length - 1];
   const loggedToday = toCanonicalDate(latest.date) === todayISODate();
   card.classList.toggle('logged', loggedToday);
   if (todayEl) {
     todayEl.textContent = loggedToday
-      ? `Today: ${latest.value} ${unit}`
-      : `Last: ${latest.value} ${unit} on ${fmtDateShort(latest.date)}`;
+      ? `Today: ${fmtWeight(latest.lb)}`
+      : `Last: ${fmtWeight(latest.lb)} on ${fmtDateShort(latest.date)}`;
   }
-  // Only show a delta when both entries share a unit — subtracting kg from lb
-  // would render a confident-looking wrong number.
-  const prev = ws.length > 1 ? ws[ws.length - 2] : null;
-  if (changeEl && prev && (prev.unit || 'lb') === unit) {
-    const d = latest.value - prev.value;
-    changeEl.textContent = d === 0
+  const prev = rows.length > 1 ? rows[rows.length - 2] : null;
+  if (changeEl && prev) {
+    const d = latest.lb - prev.lb;
+    // Round in the display unit before testing for "no change", so a 0.04 kg
+    // difference that renders as 0.0 doesn't claim to be a change.
+    const shown = fmtWeightDelta(d, { bare: true });
+    changeEl.textContent = parseFloat(shown) === 0
       ? 'no change since last'
-      : `${d < 0 ? '\u2212' : '+'}${Math.abs(d).toFixed(1)} ${unit} since last`;
+      : `${fmtWeightDelta(d)} since last`;
     changeEl.classList.toggle('gain', d > 0);
   }
 }
@@ -1578,8 +1660,10 @@ async function renderWeights() {
     return;
   }
   const labels = ws.map(w => fmtDateShort(w.date));
-  const data = ws.map(w => w.value);
-  const unit = (ws[0] && ws[0].unit) || 'lb';
+  const unit = weightUnit();
+  // Normalise through pounds so a series with mixed entry units plots as one
+  // continuous line instead of a cliff at the point the user switched scales.
+  const data = ws.map(w => Number(fromLb(toLb(w.value, w.unit), unit).toFixed(1)));
   // Compute padded Y-axis bounds. If weights cluster within a small range (very common
   // for short windows like 1M), Chart.js's auto-scale produces a near-flat line at the
   // top of the canvas, which reads as "broken." Force at least a sensible visible range.
@@ -1942,11 +2026,10 @@ async function smartImport(e) {
     const shots = (Array.isArray(j.shots) ? j.shots : [])
       .map(s => sanitizeShot({ ...s, med: s && s.med ? s.med : (settings.medication || 'Tirzepatide') }))
       .filter(Boolean);
-    const weights = (Array.isArray(j.weights) ? j.weights : []).map((w) => {
-      const clean = sanitizeWeight(w);
-      if (clean && clean.unit === 'kg') return { ...clean, value: Number((clean.value * 2.20462).toFixed(2)), unit: 'lb' };
-      return clean;
-    }).filter(Boolean);
+    // kg rows used to be flattened to lb here because kg was not really
+    // supported anywhere downstream. It is now — display converts on the way
+    // out — so keep the reading the user actually recorded.
+    const weights = (Array.isArray(j.weights) ? j.weights : []).map(sanitizeWeight).filter(Boolean);
     if (!shots.length && !weights.length) {
       alert('AI did not find any shots or weights in this file.');
       return;
@@ -2213,6 +2296,7 @@ async function importShotsyCSV(text) {
   const cShotNotes = colIdx('shot notes');
   const cPain = colIdx('pain level');
   const cWeight = header.findIndex(h => h.startsWith('recorded weight'));
+  const csvWeightUnit = (cWeight >= 0 && /\bkgs?\b|kilogram/i.test(header[cWeight] || '')) ? 'kg' : 'lb';
   const cDayNotes = colIdx('day notes');
   if (cDate < 0) throw new Error('CSV missing required "Date" column — is this a tracker export?');
 
@@ -2259,7 +2343,7 @@ async function importShotsyCSV(text) {
       const w = (row[cWeight] || '').trim();
       if (w && !isNaN(parseFloat(w))) {
         const canon = toCanonicalDate(date);
-        if (canon) weightsToAdd.push({ value: parseFloat(w), unit: 'lb', date: canon });
+        if (canon) weightsToAdd.push({ value: parseFloat(w), unit: csvWeightUnit, date: canon });
       }
     }
 
@@ -4696,7 +4780,9 @@ function insight_weightAfterDose(ctx) {
       const first = rows[0], last = rows[rows.length - 1];
       const days = (new Date(last.date) - new Date(first.date)) / 86400000;
       if (days < 7) return null;
-      return (last.value - first.value) / (days / 7);  // lb per week
+      const firstLb = toLb(first.value, first.unit), lastLb = toLb(last.value, last.unit);
+      if (firstLb == null || lastLb == null) return null;
+      return (lastLb - firstLb) / (days / 7);  // canonical lb per week
     };
     return { before: slope(before), after: slope(after) };
   };
@@ -4928,10 +5014,14 @@ function computeStreak(shots, cadenceDays) {
   return streak;
 }
 
+// Returns canonical POUNDS. settings.startWeight is stored in pounds too, so a
+// user switching display units never shifts their own baseline.
 function weightDelta(weights, startOverride) {
-  if (!weights || weights.length < 1) return null;
-  const start = startOverride != null ? parseFloat(startOverride) : weights[0].value;
-  const current = weights[weights.length - 1].value;
+  const rows = weightsInLb(weights);
+  if (!rows.length) return null;
+  const override = parseFloat(startOverride);
+  const start = Number.isFinite(override) ? override : rows[0].lb;
+  const current = rows[rows.length - 1].lb;
   return { start, current, delta: current - start };
 }
 
@@ -4943,8 +5033,7 @@ async function renderHero(shots, weights) {
   const wd = weightDelta(weights, settings.startWeight);
   const deltaEl = $('#hero-weight-delta');
   if (wd) {
-    const sign = wd.delta < 0 ? '−' : '+';
-    deltaEl.textContent = `${sign}${Math.abs(wd.delta).toFixed(1)} lb`;
+    deltaEl.textContent = fmtWeightDelta(wd.delta);
     deltaEl.classList.toggle('gain', wd.delta > 0);
   } else {
     deltaEl.textContent = '—';
@@ -4960,15 +5049,15 @@ async function renderHero(shots, weights) {
     const drift = wd.current - (goal || wd.start);
     $('#hero-goal-fill').style.width = '100%';
     $('#hero-goal-text').textContent = goal
-      ? `🎯 Maintenance · ${wd.current.toFixed(1)} lb (${drift >= 0 ? '+' : ''}${drift.toFixed(1)} from ${goal} lb goal)`
-      : `🎯 Maintenance · staying at ${wd.current.toFixed(1)} lb`;
+      ? `🎯 Maintenance · ${fmtWeight(wd.current)} (${fmtWeightDelta(drift)} from ${fmtWeight(goal)} goal)`
+      : `🎯 Maintenance · staying at ${fmtWeight(wd.current)}`;
     $('#hero-goal-wrap').classList.remove('hidden');
   } else if (wd && goal && goal < wd.start) {
     const total = wd.start - goal;
     const done = wd.start - wd.current;
     const pct = Math.max(0, Math.min(100, (done / total) * 100));
     $('#hero-goal-fill').style.width = pct + '%';
-    $('#hero-goal-text').textContent = `Goal: ${goal} lb · ${pct.toFixed(0)}% there (${(wd.current - goal).toFixed(1)} lb to go)`;
+    $('#hero-goal-text').textContent = `Goal: ${fmtWeight(goal)} · ${pct.toFixed(0)}% there (${fmtWeight(wd.current - goal)} to go)`;
     $('#hero-goal-wrap').classList.remove('hidden');
   } else {
     $('#hero-goal-wrap').classList.add('hidden');
@@ -5425,6 +5514,12 @@ async function renderMoodTrend(moods) {
 
 // ---------- Achievements ----------
 let _badgesExpanded = false;
+
+// Weight milestones carry a second label for kg users; everything else has one.
+function badgeLabel(a) {
+  if (!a) return '';
+  return weightUnit() === 'kg' && a.labelKg ? a.labelKg : a.label;
+}
 function computeStats(shots, weights, moods) {
   const wd = weightDelta(weights, settings.startWeight);
   const delta = wd ? wd.delta : 0;
@@ -5450,7 +5545,9 @@ function computeStats(shots, weights, moods) {
   return {
     shots,
     streak,
-    delta,
+    delta,                       // canonical pounds
+    deltaKg: delta / LB_PER_KG,
+    unit: weightUnit(),
     maxDose: doses.length ? Math.max(...doses) : 0,
     minDose: doses.length ? Math.min(...doses) : 0,
     moodCount: (moods || []).length,
@@ -5492,7 +5589,7 @@ async function renderBadges(shots, weights) {
   });
   const collapsed = !_badgesExpanded && ordered.length > 6;
   const visible = collapsed ? ordered.slice(0, 6) : ordered;
-  const cards = visible.map(a => `<button type="button" class="badge-tile" data-badge-id="${a.id}" aria-label="Share ${escapeHTML(a.label)}"><img class="badge-tile-art" src="icons/achievements/${a.id}.webp" alt="" loading="lazy" onerror="this.style.display='none'"><span class="badge-tile-label">${escapeHTML(a.label)}</span></button>`).join('');
+  const cards = visible.map(a => `<button type="button" class="badge-tile" data-badge-id="${a.id}" aria-label="Share ${escapeHTML(badgeLabel(a))}"><img class="badge-tile-art" src="icons/achievements/${a.id}.webp" alt="" loading="lazy" onerror="this.style.display='none'"><span class="badge-tile-label">${escapeHTML(badgeLabel(a))}</span></button>`).join('');
   const toggleBtn = ordered.length > 6
     ? `<button type="button" id="badges-toggle" class="btn-ghost badges-toggle">${_badgesExpanded ? 'Show fewer' : `Show all (${ordered.length})`}</button>`
     : '';
@@ -5549,7 +5646,7 @@ async function openBadgeShare(badgeId) {
     settings.achievementDates[badgeId] = earned;
     await saveSettings();
   }
-  $('#badge-share-title').textContent = `🎉 ${a.label}`;
+  $('#badge-share-title').textContent = `🎉 ${badgeLabel(a)}`;
   await renderBadgeShareCanvas(a, earned);
   dlg.showModal();
   track('badge_share_opened', { id: badgeId });
@@ -5645,7 +5742,7 @@ async function renderBadgeShareCanvas(a, earnedISO) {
   // Label — large and confident
   ctx.fillStyle = '#fff';
   ctx.font = 'bold 60px -apple-system, "Helvetica Neue", system-ui, sans-serif';
-  wrapText(ctx, a.label, W / 2, ruleY + 65, W - 160, 70);
+  wrapText(ctx, badgeLabel(a), W / 2, ruleY + 65, W - 160, 70);
   // Date — small caps style
   const dateStr = new Date(earnedISO + 'T00:00:00').toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
   ctx.fillStyle = 'rgba(253,224,138,0.92)';
@@ -6576,16 +6673,31 @@ async function renderMeasurements() {
     byType[m.type].push(m);
   }
   const labels = { waist: 'Waist', hips: 'Hips', chest: 'Chest', thigh: 'Thigh', arm: 'Arm', neck: 'Neck' };
+  // Same trap as weight: each row carries its own unit, so subtracting a cm
+  // reading from an inch one produced an unlabelled, wrong trend number.
+  // Normalise through inches, then show the trend in the latest row's unit.
+  const CM_PER_IN = 2.54;
+  const toIn = (m) => {
+    const n = parseFloat(m && m.value);
+    if (!Number.isFinite(n)) return null;
+    return m.unit === 'cm' ? n / CM_PER_IN : n;
+  };
   wrap.innerHTML = Object.entries(byType).map(([type, vals]) => {
     const latest = vals[vals.length - 1];
     const earliest = vals[0];
-    const delta = latest.value - earliest.value;
-    const trendCls = delta < 0 ? 'down' : delta > 0 ? 'up' : '';
-    const sign = delta < 0 ? '−' : '+';
+    const latestIn = toIn(latest), earliestIn = toIn(earliest);
+    const unit = latest.unit === 'cm' ? 'cm' : 'in';
+    let trend = '';
+    if (vals.length > 1 && latestIn != null && earliestIn != null) {
+      const deltaIn = latestIn - earliestIn;
+      const shown = unit === 'cm' ? deltaIn * CM_PER_IN : deltaIn;
+      const trendCls = deltaIn < 0 ? 'down' : deltaIn > 0 ? 'up' : '';
+      trend = `<span class="summary-trend ${trendCls}">${deltaIn < 0 ? '\u2212' : '+'}${Math.abs(shown).toFixed(1)}</span>`;
+    }
     return `<div class="summary-pill">
       <span class="summary-label">${labels[type] || type}</span>
       <span class="summary-value">${latest.value} ${latest.unit}</span>
-      ${vals.length > 1 ? `<span class="summary-trend ${trendCls}">${sign}${Math.abs(delta).toFixed(1)}</span>` : ''}
+      ${trend}
     </div>`;
   }).join('');
 }
@@ -6881,7 +6993,9 @@ async function renderCost(weights) {
   const monthsSinceFirst = earliest ? Math.max(1, Math.ceil((Date.now() - new Date(earliest)) / (30 * 86400000))) : 0;
   const wd = weightDelta(weights, settings.startWeight);
   const lostLb = wd && wd.delta < 0 ? Math.abs(wd.delta) : 0;
-  const dollarsPerLb = lostLb > 0 ? (totalCost / lostLb).toFixed(2) : null;
+  // Cost per unit has to be divided in the unit being displayed, not in pounds.
+  const lostShown = lostLb > 0 ? fromLb(lostLb, weightUnit()) : 0;
+  const dollarsPerLb = lostShown > 0 ? (totalCost / lostShown).toFixed(2) : null;
 
   if (!totalCost) {
     wrap.innerHTML = '';
@@ -6893,7 +7007,7 @@ async function renderCost(weights) {
   wrap.innerHTML = `
     <div class="summary-pill"><span class="summary-label">Total spent</span><span class="summary-value">$${totalCost.toFixed(2)}</span></div>
     ${monthsSinceFirst ? `<div class="summary-pill"><span class="summary-label">Per month</span><span class="summary-value">$${(totalCost / monthsSinceFirst).toFixed(2)}</span></div>` : ''}
-    ${dollarsPerLb ? `<div class="summary-pill"><span class="summary-label">$ per lb lost</span><span class="summary-value">$${dollarsPerLb}</span></div>` : ''}
+    ${dollarsPerLb ? `<div class="summary-pill"><span class="summary-label">$ per ${weightUnit()} lost</span><span class="summary-value">$${dollarsPerLb}</span></div>` : ''}
   `;
   if (list) {
     list.innerHTML = expenses.slice(0, 12).map(e => `
@@ -6942,17 +7056,18 @@ function detectPlateau(weights, shots) {
   const fourWeeksAgo = Date.now() - 28 * 86400000;
   const inWindow = recent.filter(w => new Date(w.date).getTime() >= fourWeeksAgo);
   if (inWindow.length < 4) return null;
-  const first = inWindow[0].value;
-  const last = inWindow[inWindow.length - 1].value;
-  const delta = last - first;
-  if (Math.abs(delta) > 1) return null; // not a plateau
+  const firstLb = toLb(inWindow[0].value, inWindow[0].unit);
+  const lastLb = toLb(inWindow[inWindow.length - 1].value, inWindow[inWindow.length - 1].unit);
+  if (firstLb == null || lastLb == null) return null;
+  const delta = lastLb - firstLb;
+  if (Math.abs(delta) > 1) return null; // not a plateau — 1 lb, canonical
   // Check no recent dose increase
   const recentShotsInWindow = shots.filter(s => new Date(s.when).getTime() >= fourWeeksAgo);
   const doses = recentShotsInWindow.map(s => s.dose);
   const allSame = doses.length === 0 || doses.every(d => d === doses[0]);
   if (!allSame) return null;
   const dose = doses[0] || (shots.length ? shots[0].dose : null);
-  return { weeks: 4, dose, delta: delta.toFixed(1) };
+  return { weeks: 4, dose, delta: delta.toFixed(1), deltaLb: delta };
 }
 
 async function renderPlateau(weights, shots) {
@@ -6964,12 +7079,12 @@ async function renderPlateau(weights, shots) {
   if (!p) { card.classList.add('hidden'); return; }
   // Maintenance mode reframes the same data as a stability win, not a problem to solve.
   if (settings.maintenanceMode) {
-    body.innerHTML = `<p>Weight has stayed within 1 lb for ~${p.weeks} weeks at ${p.dose}mg — exactly what maintenance looks like. Holding steady is the goal here, not a plateau to break.</p>
+    body.innerHTML = `<p>Weight has stayed within ${fmtWeight(1, { dp: weightUnit() === 'kg' ? 1 : 0 })} for ~${p.weeks} weeks at ${p.dose}mg — exactly what maintenance looks like. Holding steady is the goal here, not a plateau to break.</p>
       <p class="muted small">If you ever want to switch back to weight-loss mode, toggle Maintenance off in Settings.</p>`;
   } else {
-    body.innerHTML = `<p>Weight has stayed within 1 lb for ~${p.weeks} weeks at ${p.dose}mg.</p>
+    body.innerHTML = `<p>Weight has stayed within ${fmtWeight(1, { dp: weightUnit() === 'kg' ? 1 : 0 })} for ~${p.weeks} weeks at ${p.dose}mg.</p>
       <p class="muted small">This is normal — most people experience plateaus during titration. Consider:
-      discussing a dose increase with your prescriber, reviewing protein intake (aim for 1g per lb of goal weight),
+      discussing a dose increase with your prescriber, reviewing protein intake (aim for ${weightUnit() === 'kg' ? '2.2g per kg' : '1g per lb'} of goal weight),
       walking 8-10K steps/day, and ensuring you're eating in a sustainable deficit.</p>
       <p class="muted small">Educational only. Not medical advice.</p>`;
   }
@@ -7057,8 +7172,8 @@ async function runPdfExport(opts) {
     <h2>Summary</h2>
     <div>
       ${inc('shots') ? `<div class="stat"><strong>${rShots.length}</strong><span>shots</span></div>` : ''}
-      ${inc('weights') && wd ? `<div class="stat"><strong>${wd.delta < 0 ? '−' : '+'}${Math.abs(wd.delta).toFixed(1)} lb</strong><span>since start</span></div>` : ''}
-      ${inc('weights') && wd ? `<div class="stat"><strong>${wd.current.toFixed(1)} lb</strong><span>current weight</span></div>` : ''}
+      ${inc('weights') && wd ? `<div class="stat"><strong>${fmtWeightDelta(wd.delta)}</strong><span>since start</span></div>` : ''}
+      ${inc('weights') && wd ? `<div class="stat"><strong>${fmtWeight(wd.current)}</strong><span>current weight</span></div>` : ''}
     </div>
     <p class="meta">Medication: ${escapeHTML(settings.medication)} · Cadence: every ${settings.cadenceDays} day${settings.cadenceDays === 1 ? '' : 's'}</p>
 
