@@ -1,4 +1,11 @@
-docker/api.env
+# Runtime secrets. The pattern is deliberately wide: the literal rule used to be
+# "docker/api.env", which did not match docker/api.env.bak-* — so two backups of
+# the file, carrying live Stripe and Resend keys, were committed on 2026-08-24
+# and only GitHub push protection stopped them reaching the remote.
+docker/api.env*
+*.env
+*.env.bak*
+
 web/landing/*.bak.*
 __pycache__/
 *.pyc
