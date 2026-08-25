@@ -3217,9 +3217,15 @@ function setupAccountUI() {
     const cleanUrl = window.location.pathname + (sp.toString() ? '?' + sp.toString() : '') + window.location.hash;
     window.history.replaceState({}, '', cleanUrl);
     if (billing === 'success') {
-      // Webhook is async — give it a moment then refresh /me.
-      setTimeout(() => accountMe().then(onAccountChanged).catch(() => {}), 1500);
-      setTimeout(() => alert('🎉 Welcome to Premium! Your 14-day trial just started.'), 100);
+      // The old code fired a hardcoded "your 14-day trial just started" 100ms in,
+      // before /me had been refreshed. It was wrong for everyone converting mid-trial:
+      // Lin subscribed with 4 days left and was told she had been handed 14 new ones.
+      // Say the true thing, which means waiting for the webhook to land first.
+      try { toast('🎉 Subscribed — thank you!'); } catch (e) {}
+      setTimeout(async () => {
+        try { await accountMe(); await onAccountChanged(); } catch (e) {}
+        alert(billingSuccessMessage());
+      }, 1500);
     } else if (billing === 'canceled') {
       // No-op; user backed out.
     }
@@ -5984,7 +5990,34 @@ function hasPaidPlan() {
   const u = account.user;
   if (!u) return false;
   const st = u.subscriptionStatus;
-  return st === 'lifetime' || (st === 'premium' && !!u.isPremium);
+  if (st === 'lifetime') return true;
+  if (st === 'premium' && !!u.isPremium) return true;
+  // Subscribing mid-trial does not end the trial — the account stays 'trial' until
+  // the days already promised run out. Lin subscribed with 4 days left and the app
+  // went on telling her to subscribe, because status alone cannot tell a paid trial
+  // from an unpaid one.
+  return st === 'trial' && !!u.hasSubscription;
+}
+
+// What to tell someone who has just come back from Stripe. Read off the refreshed
+// account rather than assumed, because the two cases differ in the one detail that
+// matters to them: whether they have been charged.
+function billingSuccessMessage() {
+  const u = account.user;
+  if (u && u.subscriptionStatus === 'trial' && trialSecondsLeft() > 0) {
+    return "🎉 You're subscribed — thank you!\n\nYour trial carries on as normal until "
+      + trialEndDateText().replace(/^on /, '')
+      + ", so nothing is charged until then. It renews automatically after that, "
+      + 'and you can cancel any time from Settings.';
+  }
+  return "🎉 You're subscribed — thank you! Premium is active on your account, "
+    + 'and you can manage or cancel it any time from Settings.';
+}
+
+// Paid, but still inside the trial they had before they paid.
+function isSubscribedInTrial() {
+  const u = account.user;
+  return !!(u && u.subscriptionStatus === 'trial' && u.hasSubscription);
 }
 
 // True while the introductory trial is still running. The checkout call is identical
@@ -5992,7 +6025,7 @@ function hasPaidPlan() {
 // must not promise "start free trial" to someone whose card will be charged today.
 function isOnTrial() {
   const u = account.user;
-  return !!(u && u.subscriptionStatus === 'trial' && u.isPremium);
+  return !!(u && u.subscriptionStatus === 'trial' && u.isPremium && !u.hasSubscription);
 }
 
 function trialSecondsLeft() {
@@ -6367,6 +6400,11 @@ async function onAccountChanged() {
     if (u.subscriptionStatus === 'lifetime' || (u.subscriptionStatus === 'premium' && u.isPremium)) {
       pill.textContent = 'Premium';
       pill.classList.add('premium');
+    } else if (u.subscriptionStatus === 'trial' && u.isPremium && u.hasSubscription) {
+      // Paid, just not billed yet. "Trial · 4d" made Lin think her payment had not
+      // registered at all.
+      pill.textContent = 'Premium';
+      pill.classList.add('premium');
     } else if (u.subscriptionStatus === 'trial' && u.isPremium) {
       const daysLeft = Math.max(0, Math.ceil((u.trialEndsAt - Date.now() / 1000) / 86400));
       pill.textContent = `Trial · ${daysLeft}d`;
@@ -6387,7 +6425,10 @@ async function onAccountChanged() {
     try {
       const teb = $('#trial-end-banner');
       if (teb) {
-        const isTrial = u.subscriptionStatus === 'trial' && u.isPremium && u.trialEndsAt;
+        // A subscriber inside their trial is not "ending" anything — they already did
+        // the thing this banner asks for.
+        const isTrial = u.subscriptionStatus === 'trial' && u.isPremium && u.trialEndsAt
+          && !u.hasSubscription;
         const daysLeft = isTrial ? Math.max(0, Math.ceil((u.trialEndsAt - Date.now() / 1000) / 86400)) : null;
         const todayKey = todayISODate();
         const dismissedKey = (() => { try { return localStorage.getItem('mglp_trial_end_dismissed') || ''; } catch (e) { return ''; } })();
@@ -6418,6 +6459,10 @@ async function onAccountChanged() {
       } else if (u.subscriptionStatus === 'premium' && u.isPremium) {
         phTitle.textContent = '⭐ Premium';
         phSub.textContent = 'You have full access to all premium features.';
+      } else if (u.subscriptionStatus === 'trial' && u.isPremium && u.hasSubscription) {
+        phTitle.textContent = '⭐ Premium — subscribed';
+        phSub.textContent = `You're all set. Your trial runs to ${trialEndDateText().replace(/^on /, '')}, `
+          + 'so nothing is charged until then. It renews automatically after that, and you can cancel any time.';
       } else if (u.subscriptionStatus === 'trial' && u.isPremium) {
         const daysLeft = Math.max(0, Math.ceil((u.trialEndsAt - Date.now() / 1000) / 86400));
         phTitle.textContent = `⭐ Trial · ${daysLeft} day${daysLeft === 1 ? '' : 's'} left`;
@@ -6449,6 +6494,11 @@ function subscriptionStatusText(u) {
   }
   if (u.subscriptionStatus === 'trial' && u.trialEndsAt) {
     const days = Math.max(0, Math.ceil((u.trialEndsAt - Date.now() / 1000) / 86400));
+    if (u.hasSubscription) {
+      return days > 0
+        ? `Subscribed \u2014 first payment ${trialEndDateText()}, nothing charged until then`
+        : 'Subscribed';
+    }
     return days > 0 ? `Premium trial — ${days} day${days === 1 ? '' : 's'} remaining` : 'Trial ended';
   }
   return 'Free tier — upgrade for sync, supply tracking, and more';

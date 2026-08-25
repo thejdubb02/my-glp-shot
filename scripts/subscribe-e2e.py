@@ -170,7 +170,23 @@ sd = sub_data(kw)
 C.ok('past trial grants nothing',
      not sd.get('trial_end') and not sd.get('trial_period_days'), str(sd))
 
-print('\n8. payload sanity')
+print('\n8. Stripe\'s own button says "Start trial" - custom_text has to explain it')
+set_state('trial', now + 9 * DAY)
+r, kw = checkout()
+ct = (kw or {}).get('custom_text') or {}
+msg = (ct.get('submit') or {}).get('message', '')
+C.ok('mid-trial checkout carries an explanation', bool(msg), str(ct))
+C.ok('it says the trial is continued, not restarted',
+     'continues the trial you already have' in msg, msg)
+C.ok('it names the first payment date', 'first payment is on' in msg, msg)
+C.ok('it does not claim 14 new days', '14' not in msg, msg)
+
+set_state('free', now - 30 * DAY)
+r, kw = checkout()
+C.ok('a straight purchase gets no trial explanation',
+     not (kw or {}).get('custom_text'), str((kw or {}).get('custom_text')))
+
+print('\n8b. payload sanity')
 set_state('trial', now + 9 * DAY)
 r, kw = checkout('monthly')
 C.ok('monthly plan uses the monthly price',
@@ -255,6 +271,20 @@ if LIVE:
          str(u['premium_until']))
     C.ok('public_user reports premium', A.public_user(u)['isPremium'] is True,
          str(A.public_user(u)))
+
+    # The flag the app needs to stop asking a paying customer to subscribe.
+    c = db()
+    c.execute("UPDATE users SET subscription_status='trial', trial_ends_at=? WHERE id=?",
+              (now + 4 * DAY, uid))
+    c.commit()
+    u2 = c.execute('SELECT * FROM users WHERE id=?', (uid,)).fetchone()
+    c.close()
+    pu = A.public_user(u2)
+    C.ok('public_user exposes hasSubscription', pu.get('hasSubscription') is True, str(pu))
+    C.ok('...alongside a status that is still trial', pu['subscriptionStatus'] == 'trial',
+         pu['subscriptionStatus'])
+    C.ok('...which is exactly Lin\'s state after paying',
+         pu['isPremium'] is True and pu['hasSubscription'] is True, str(pu))
 else:
     print('\n9-10. LIVE - skipped (pass --live for real Checkout Sessions)')
 

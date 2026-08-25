@@ -49,6 +49,9 @@ const STATES = [
   { name: 'trial expired',     user: { subscriptionStatus: 'trial',    isPremium: false, trialEndsAt: inDays(-2) }, premium: false, paid: false, trial: false },
   { name: 'paid premium',      user: { subscriptionStatus: 'premium',  isPremium: true },                       premium: true,  paid: true,  trial: false },
   { name: 'lifetime',          user: { subscriptionStatus: 'lifetime', isPremium: true },                       premium: true,  paid: true,  trial: false },
+  // Lin's state after she paid on 2026-08-25: still 'trial', because the trial she
+  // already had is what she is being billed at the end of. She has paid.
+  { name: 'subscribed mid-trial', user: { subscriptionStatus: 'trial', isPremium: true, hasSubscription: true, trialEndsAt: inDays(4) }, premium: true, paid: true, trial: false },
 ];
 
 for (const s of STATES) {
@@ -71,6 +74,34 @@ A.check('a trial user has premium access AND still needs to buy',
 // A lifetime supporter is the mirror case — never pitch them a subscription.
 setUser({ subscriptionStatus: 'lifetime', isPremium: true });
 A.check('lifetime is never shown a buy button', hasPaidPlan() === true);
+
+// The other half of the same coin, and the thing Lin reported: having paid must
+// silence the pitch even though the account is still, correctly, on trial.
+const isSubscribedInTrial = R('isSubscribedInTrial');
+setUser({ subscriptionStatus: 'trial', isPremium: true, hasSubscription: true, trialEndsAt: inDays(4) });
+A.check('paying mid-trial silences the buy button', hasPaidPlan() === true);
+A.check('paying mid-trial is not "on trial" for copy purposes', isOnTrial() === false);
+A.check('subscribed-in-trial is detected', isSubscribedInTrial() === true);
+setUser({ subscriptionStatus: 'trial', isPremium: true, hasSubscription: false, trialEndsAt: inDays(4) });
+A.check('an UNPAID trial still gets the buy button', hasPaidPlan() === false);
+A.check('an unpaid trial is not mistaken for a subscription', isSubscribedInTrial() === false);
+
+// ---------- what we tell someone returning from Stripe ----------
+const billingSuccessMessage = R('billingSuccessMessage');
+setUser({ subscriptionStatus: 'trial', isPremium: true, hasSubscription: true, trialEndsAt: inDays(4) });
+const msgTrial = billingSuccessMessage();
+A.check('post-checkout message never claims a fresh 14-day trial',
+  !/14[- ]day/i.test(msgTrial), msgTrial);
+A.check('post-checkout message says nothing is charged yet',
+  /nothing is charged until then/i.test(msgTrial), msgTrial);
+A.check('post-checkout message confirms the subscription',
+  /subscribed/i.test(msgTrial), msgTrial);
+setUser({ subscriptionStatus: 'premium', isPremium: true, hasSubscription: true });
+const msgPaid = billingSuccessMessage();
+A.check('a straight purchase is told premium is active',
+  /premium is active/i.test(msgPaid), msgPaid);
+A.check('a straight purchase is not told about a trial',
+  !/trial/i.test(msgPaid), msgPaid);
 
 // ---------- copy ----------
 // Same checkout call either way (the server refuses a second trial via

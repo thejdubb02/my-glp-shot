@@ -380,6 +380,11 @@ def public_user(user_row):
         'isPremium': is_premium_now(user_row),
         'createdAt': user_row['created_at'],
         'hasStripeCustomer': bool(user_row['stripe_customer_id']),
+        # Subscribing during the trial does NOT end the trial — the account stays
+        # 'trial' until the days already paid for run out. Without this flag the app
+        # cannot tell that apart from a trial nobody has paid for, and goes on asking
+        # a paying customer to subscribe.
+        'hasSubscription': bool(user_row['stripe_subscription_id']),
         'isAdmin': bool(_safe_col(user_row, 'is_admin')),
     }
 
@@ -1179,7 +1184,21 @@ def billing_checkout():
     except stripe.StripeError as e:
         app.logger.warning('subscription list check failed (continuing): %s', e)
     subscription_data = {'metadata': {'user_id': str(user['id']), 'app': 'myglpshot'}}
-    subscription_data.update(_trial_terms(user))
+    terms = _trial_terms(user)
+    subscription_data.update(terms)
+    # Stripe labels its submit button "Start trial" whenever a subscription opens with
+    # a trial period, and there is no way to override that text. For someone converting
+    # mid-trial it reads as "here is a brand new 14-day trial", which is what Lin
+    # reported on 2026-08-25. custom_text is the one place we can correct it in situ.
+    custom_text = {}
+    if terms.get('trial_end'):
+        t = time.gmtime(terms['trial_end'])
+        when = '%s %d, %d' % (time.strftime('%B', t), t.tm_mday, t.tm_year)
+        custom_text['submit'] = {'message': (
+            'This continues the trial you already have rather than starting a new one. '
+            'You keep your remaining days and nothing is charged today \u2014 '
+            'your first payment is on %s.' % when
+        )}
     try:
         sess = stripe.checkout.Session.create(
             mode='subscription',
@@ -1187,6 +1206,7 @@ def billing_checkout():
             line_items=[{'price': price_id, 'quantity': 1}],
             allow_promotion_codes=True,
             subscription_data=subscription_data,
+            custom_text=custom_text or None,
             metadata={'user_id': str(user['id']), 'app': 'myglpshot'},
             success_url=f'{app_base}/?billing=success&session_id={{CHECKOUT_SESSION_ID}}',
             cancel_url=f'{app_base}/?billing=canceled',
