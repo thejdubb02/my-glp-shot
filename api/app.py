@@ -1182,6 +1182,15 @@ def billing_checkout():
     subscription_data = {'metadata': {'user_id': str(user['id']), 'app': 'myglpshot'}}
     if not _has_used_trial(user):
         subscription_data['trial_period_days'] = TRIAL_DAYS
+    else:
+        # Someone converting mid-trial keeps the days they were already promised
+        # instead of being charged today for doing exactly what the app asked them
+        # to do. This is not a second trial: it is the SAME trial_ends_at already on
+        # their row, so cancel-and-resubscribe still gets nothing once that timestamp
+        # has passed.
+        keep = _remaining_trial_end(user)
+        if keep:
+            subscription_data['trial_end'] = keep
     try:
         sess = stripe.checkout.Session.create(
             mode='subscription',
@@ -1232,6 +1241,22 @@ def _period_end(sub):
     items = (sub.get('items') or {}).get('data') or []
     ends = [i.get('current_period_end') for i in items if i.get('current_period_end')]
     return max(ends) if ends else None
+
+
+def _remaining_trial_end(user):
+    """Unix ts of an in-flight trial, or None if there is nothing left to honour.
+
+    Stripe refuses a trial_end less than 48 hours out, so a user converting on the
+    final day is simply billed immediately — which is the right answer: their trial
+    is over. Anyone earlier keeps the rest of their fortnight.
+    """
+    if (user['subscription_status'] or '').lower() != 'trial':
+        return None
+    ends = user['trial_ends_at']
+    if not ends:
+        return None
+    ends = int(ends)
+    return ends if ends - int(time.time()) >= 2 * 86400 else None
 
 
 def _has_used_trial(user):

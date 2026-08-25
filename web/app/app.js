@@ -3104,7 +3104,12 @@ function setupAccountUI() {
   const tebCta = document.getElementById('trial-end-cta');
   if (tebCta) tebCta.addEventListener('click', () => {
     track('trial_end_banner_clicked');
-    document.getElementById('upgrade-cta')?.click();
+    // Open the dialog directly rather than synthesising a click on a button that
+    // may be hidden or absent — the same trap that broke the weight deep link.
+    const err = document.getElementById('upgrade-error');
+    if (err) err.textContent = '';
+    refreshUpgradeCopy();
+    document.getElementById('upgrade-dialog')?.showModal();
   });
   $('#account-form').addEventListener('submit', handleAccountSubmit);
 
@@ -3129,10 +3134,10 @@ function setupAccountUI() {
     await accountLogout(true);
     onAccountChanged();
   });
-  $('#upgrade-cta').addEventListener('click', () => { $('#upgrade-error').textContent = ''; $('#upgrade-dialog').showModal(); });
+  $('#upgrade-cta').addEventListener('click', () => { $('#upgrade-error').textContent = ''; refreshUpgradeCopy(); $('#upgrade-dialog').showModal(); });
   // Premium hero buttons reuse the same dialogs as the Settings card.
   const heroUp = document.getElementById('premium-hero-upgrade');
-  if (heroUp) heroUp.addEventListener('click', () => { $('#upgrade-error').textContent = ''; $('#upgrade-dialog').showModal(); });
+  if (heroUp) heroUp.addEventListener('click', () => { $('#upgrade-error').textContent = ''; refreshUpgradeCopy(); $('#upgrade-dialog').showModal(); });
   const heroMan = document.getElementById('premium-hero-manage');
   if (heroMan) heroMan.addEventListener('click', () => $('#manage-billing-cta').click());
   $('#upgrade-cancel').addEventListener('click', () => $('#upgrade-dialog').close());
@@ -5968,6 +5973,71 @@ function isPremium() {
   return !!(account.user && account.user.isPremium);
 }
 
+// Someone on the free trial IS premium — isPremium() is true for them — but they
+// have not paid, and the trial copy spends the whole fortnight telling them to
+// subscribe before it runs out. Gating the Upgrade buttons on isPremium() therefore
+// hid the only way to act on that: until v0.62.0 a trial user saw "Subscribe before
+// the trial ends to keep access" above an empty button row, and the sole escape was
+// a banner that did not appear until 3 days were left. Hide the button only once
+// there is an actual paid plan behind the access.
+function hasPaidPlan() {
+  const u = account.user;
+  if (!u) return false;
+  const st = u.subscriptionStatus;
+  return st === 'lifetime' || (st === 'premium' && !!u.isPremium);
+}
+
+// True while the introductory trial is still running. The checkout call is identical
+// either way — the server refuses a second trial via _has_used_trial — but the copy
+// must not promise "start free trial" to someone whose card will be charged today.
+function isOnTrial() {
+  const u = account.user;
+  return !!(u && u.subscriptionStatus === 'trial' && u.isPremium);
+}
+
+function trialSecondsLeft() {
+  const u = account.user;
+  if (!u || !u.trialEndsAt) return 0;
+  return Math.max(0, u.trialEndsAt - Date.now() / 1000);
+}
+
+// Stripe's own floor, mirrored here so the copy and the charge agree.
+function trialEndsWithin48h() { return trialSecondsLeft() < 2 * 86400; }
+
+function trialEndDateText() {
+  const u = account.user;
+  if (!u || !u.trialEndsAt) return 'when your trial ends';
+  try { return `on ${new Date(u.trialEndsAt * 1000).toLocaleDateString()}`; }
+  catch (e) { return 'when your trial ends'; }
+}
+
+// Keep every "buy" surface honest about which of the two it is: a first purchase,
+// or converting a trial that is already counting down.
+function refreshUpgradeCopy() {
+  const trial = isOnTrial();
+  const cta = document.getElementById('upgrade-cta');
+  if (cta) cta.textContent = trial ? '\u2b50 Subscribe to keep Premium' : '\u2b50 Upgrade to Premium';
+  const hero = document.getElementById('premium-hero-upgrade');
+  if (hero) hero.textContent = trial ? '\u2b50 Subscribe' : '\u2b50 Upgrade';
+  const title = document.getElementById('upgrade-title');
+  if (title) title.textContent = trial ? 'Keep Premium' : 'Upgrade to Premium';
+  const sub = document.getElementById('upgrade-sub');
+  if (sub) {
+    // Mirror what the server will actually do. Subscribing mid-trial hands Stripe the
+    // trial_end already on the account, so the remaining days are kept and nothing is
+    // charged until then — but Stripe refuses a trial_end under 48h out, so inside the
+    // last two days the card really is charged today. Promising the wrong one of those
+    // is how a first charge becomes a support email.
+    sub.textContent = trial
+      ? (trialEndsWithin48h()
+          ? 'Billed today \u2014 your trial ends within 48 hours \u00b7 cancel anytime \u00b7 no Apple/Google fee'
+          : `You keep the rest of your trial \u2014 first charge ${trialEndDateText()} \u00b7 cancel anytime \u00b7 no Apple/Google fee`)
+      : '14-day free trial \u00b7 cancel anytime \u00b7 no Apple/Google fee';
+  }
+  const confirm = document.getElementById('upgrade-confirm');
+  if (confirm && !confirm.disabled) confirm.textContent = trial ? 'Subscribe \u2192' : 'Start free trial \u2192';
+}
+
 // Persist the derived AES encryption key (NOT the password) for session restore.
 // XSS can still steal this key, but it can't steal a password the user may have reused elsewhere.
 // The auth_token (server-side bcrypt-hashed) is never persisted; the session cookie is the auth credential.
@@ -6329,7 +6399,7 @@ async function onAccountChanged() {
         }
       }
     } catch (e) {}
-    $('#upgrade-cta').classList.toggle('hidden', isPremium());
+    $('#upgrade-cta').classList.toggle('hidden', hasPaidPlan());
     $('#manage-billing-cta').classList.toggle('hidden', !u.hasStripeCustomer);
     const legacySync = $('#legacy-cloud-sync-card');
     if (legacySync) legacySync.classList.add('hidden');
@@ -6338,8 +6408,9 @@ async function onAccountChanged() {
     const phMan = $('#premium-hero-manage');
     const phTitle = $('#premium-hero-title');
     const phSub = $('#premium-hero-sub');
-    if (phUp) phUp.classList.toggle('hidden', isPremium());
+    if (phUp) phUp.classList.toggle('hidden', hasPaidPlan());
     if (phMan) phMan.classList.toggle('hidden', !u.hasStripeCustomer);
+    refreshUpgradeCopy();
     if (phTitle && phSub) {
       if (u.subscriptionStatus === 'lifetime') {
         phTitle.textContent = '⭐ Lifetime Premium';

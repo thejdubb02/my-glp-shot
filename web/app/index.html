@@ -19,7 +19,7 @@
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="icon" type="image/png" sizes="512x512" href="icons/icon-512.png">
 <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png">
-<link rel="stylesheet" href="styles.css?v=423">
+<link rel="stylesheet" href="styles.css?v=424">
 <script>
 (function(){
   // Apply saved theme synchronously to avoid flash. Settings live in IndexedDB; theme also mirrored to localStorage for fast read.
@@ -897,8 +897,8 @@
 
 <dialog id="upgrade-dialog" class="modal">
   <form method="dialog">
-    <h2>Upgrade to Premium</h2>
-    <p class="muted small">14-day free trial · cancel anytime · no Apple/Google fee</p>
+    <h2 id="upgrade-title">Upgrade to Premium</h2>
+    <p id="upgrade-sub" class="muted small">14-day free trial · cancel anytime · no Apple/Google fee</p>
     <ul class="premium-list">
       <li>☁️ Multi-device end-to-end encrypted sync</li>
       <li>💊 Supply / pen tracking + expiration alerts</li>
@@ -1268,7 +1268,7 @@
 <!-- data.js is declarations only and must load before app.js, which reads them
      at evaluation time. Both are classic scripts sharing one global scope —
      see the note at the top of data.js for why this is not an ES module. -->
-<script src="data.js?v=423"></script>
-<script src="app.js?v=423"></script>
+<script src="data.js?v=424"></script>
+<script src="app.js?v=424"></script>
 </body>
 </html>
