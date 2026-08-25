@@ -3221,7 +3221,7 @@ function setupAccountUI() {
       // before /me had been refreshed. It was wrong for everyone converting mid-trial:
       // Lin subscribed with 4 days left and was told she had been handed 14 new ones.
       // Say the true thing, which means waiting for the webhook to land first.
-      try { toast('🎉 Subscribed — thank you!'); } catch (e) {}
+      try { toast('🎉 Subscribed, thank you!'); } catch (e) {}
       setTimeout(async () => {
         try { await accountMe(); await onAccountChanged(); } catch (e) {}
         alert(billingSuccessMessage());
@@ -6005,12 +6005,12 @@ function hasPaidPlan() {
 function billingSuccessMessage() {
   const u = account.user;
   if (u && u.subscriptionStatus === 'trial' && trialSecondsLeft() > 0) {
-    return "🎉 You're subscribed — thank you!\n\nYour trial carries on as normal until "
+    return "🎉 You're subscribed, thank you!\n\nYour trial carries on as normal until "
       + trialEndDateText().replace(/^on /, '')
       + ", so nothing is charged until then. It renews automatically after that, "
       + 'and you can cancel any time from Settings.';
   }
-  return "🎉 You're subscribed — thank you! Premium is active on your account, "
+  return "🎉 You're subscribed, thank you! Premium is active on your account, "
     + 'and you can manage or cancel it any time from Settings.';
 }
 
@@ -6063,8 +6063,8 @@ function refreshUpgradeCopy() {
     // is how a first charge becomes a support email.
     sub.textContent = trial
       ? (trialEndsWithin48h()
-          ? 'Billed today \u2014 your trial ends within 48 hours \u00b7 cancel anytime \u00b7 no Apple/Google fee'
-          : `You keep the rest of your trial \u2014 first charge ${trialEndDateText()} \u00b7 cancel anytime \u00b7 no Apple/Google fee`)
+          ? 'Billed today (your trial ends within 48 hours) \u00b7 cancel anytime \u00b7 no Apple/Google fee'
+          : `You keep the rest of your trial, first charge ${trialEndDateText()} \u00b7 cancel anytime \u00b7 no Apple/Google fee`)
       : '14-day free trial \u00b7 cancel anytime \u00b7 no Apple/Google fee';
   }
   const confirm = document.getElementById('upgrade-confirm');
@@ -6460,7 +6460,7 @@ async function onAccountChanged() {
         phTitle.textContent = '⭐ Premium';
         phSub.textContent = 'You have full access to all premium features.';
       } else if (u.subscriptionStatus === 'trial' && u.isPremium && u.hasSubscription) {
-        phTitle.textContent = '⭐ Premium — subscribed';
+        phTitle.textContent = '⭐ Premium, subscribed';
         phSub.textContent = `You're all set. Your trial runs to ${trialEndDateText().replace(/^on /, '')}, `
           + 'so nothing is charged until then. It renews automatically after that, and you can cancel any time.';
       } else if (u.subscriptionStatus === 'trial' && u.isPremium) {
@@ -6496,7 +6496,7 @@ function subscriptionStatusText(u) {
     const days = Math.max(0, Math.ceil((u.trialEndsAt - Date.now() / 1000) / 86400));
     if (u.hasSubscription) {
       return days > 0
-        ? `Subscribed \u2014 first payment ${trialEndDateText()}, nothing charged until then`
+        ? `Subscribed. First payment ${trialEndDateText()}, nothing charged until then`
         : 'Subscribed';
     }
     return days > 0 ? `Premium trial — ${days} day${days === 1 ? '' : 's'} remaining` : 'Trial ended';

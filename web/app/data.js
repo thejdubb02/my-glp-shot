@@ -28,7 +28,7 @@ const DB_NAME = 'shotclock';
 //   asked for something the app had nowhere to put.
 const DB_VERSION = 11;
 
-const APP_VERSION = '0.63.0';
+const APP_VERSION = '0.63.1';
 
 const STORES = { shots: 'shots', weights: 'weights', settings: 'settings', moods: 'moods', supplies: 'supplies' };
 

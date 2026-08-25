@@ -1196,8 +1196,8 @@ def billing_checkout():
         when = '%s %d, %d' % (time.strftime('%B', t), t.tm_mday, t.tm_year)
         custom_text['submit'] = {'message': (
             'This continues the trial you already have rather than starting a new one. '
-            'You keep your remaining days and nothing is charged today \u2014 '
-            'your first payment is on %s.' % when
+            'You keep your remaining days and nothing is charged today. '
+            'Your first payment is on %s.' % when
         )}
     try:
         sess = stripe.checkout.Session.create(

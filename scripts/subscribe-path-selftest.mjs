@@ -96,12 +96,16 @@ A.check('post-checkout message says nothing is charged yet',
   /nothing is charged until then/i.test(msgTrial), msgTrial);
 A.check('post-checkout message confirms the subscription',
   /subscribed/i.test(msgTrial), msgTrial);
+A.check('post-checkout message has no em/en dash',
+  !/[\u2013\u2014]/.test(msgTrial), msgTrial);
 setUser({ subscriptionStatus: 'premium', isPremium: true, hasSubscription: true });
 const msgPaid = billingSuccessMessage();
 A.check('a straight purchase is told premium is active',
   /premium is active/i.test(msgPaid), msgPaid);
 A.check('a straight purchase is not told about a trial',
   !/trial/i.test(msgPaid), msgPaid);
+A.check('straight-purchase message has no em/en dash',
+  !/[\u2013\u2014]/.test(msgPaid), msgPaid);
 
 // ---------- copy ----------
 // Same checkout call either way (the server refuses a second trial via
@@ -121,6 +125,14 @@ A.check('trial dialog does not promise a second free trial',
   !/14-day free trial/i.test(sub.textContent), sub.textContent);
 A.check('mid-trial copy says the remaining days are kept',
   /keep the rest of your trial/i.test(sub.textContent), sub.textContent);
+
+// No em dashes in anything a user reads (CLAUDE.md, 2026-08-25). These are the
+// strings this suite already has in hand, so the check is free here.
+for (const [what, val] of [['dialog sub', sub.textContent], ['dialog title', title.textContent],
+                           ['settings CTA', cta.textContent], ['hero button', hero.textContent],
+                           ['confirm button', confirm.textContent]]) {
+  A.check(`${what} has no em/en dash`, !/[\u2013\u2014]/.test(val), val);
+}
 A.check('mid-trial copy is not "billed today"',
   !/billed today/i.test(sub.textContent), sub.textContent);
 
