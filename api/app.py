@@ -1178,19 +1178,8 @@ def billing_checkout():
                 return jsonify(url=portal.url, alreadySubscribed=True)
     except stripe.StripeError as e:
         app.logger.warning('subscription list check failed (continuing): %s', e)
-    # Only first-time subscribers get the introductory trial.
     subscription_data = {'metadata': {'user_id': str(user['id']), 'app': 'myglpshot'}}
-    if not _has_used_trial(user):
-        subscription_data['trial_period_days'] = TRIAL_DAYS
-    else:
-        # Someone converting mid-trial keeps the days they were already promised
-        # instead of being charged today for doing exactly what the app asked them
-        # to do. This is not a second trial: it is the SAME trial_ends_at already on
-        # their row, so cancel-and-resubscribe still gets nothing once that timestamp
-        # has passed.
-        keep = _remaining_trial_end(user)
-        if keep:
-            subscription_data['trial_end'] = keep
+    subscription_data.update(_trial_terms(user))
     try:
         sess = stripe.checkout.Session.create(
             mode='subscription',
@@ -1241,6 +1230,25 @@ def _period_end(sub):
     items = (sub.get('items') or {}).get('data') or []
     ends = [i.get('current_period_end') for i in items if i.get('current_period_end')]
     return max(ends) if ends else None
+
+
+def _trial_terms(user):
+    """The trial half of subscription_data for this user, as a dict to merge in.
+
+    One function so the live checkout and the admin test checkout cannot disagree.
+    They did disagree until 2026-08-25: the test path hardcoded trial_period_days,
+    so stripe-smoke.sh happily passed while trial users had no Upgrade button at all
+    and mid-trial converts were being charged on the spot.
+
+    Three outcomes:
+      * never trialled            -> trial_period_days, the introductory offer
+      * trial still running       -> trial_end, the SAME timestamp already on the row
+      * trial spent, or under 48h -> nothing, bill today
+    """
+    if not _has_used_trial(user):
+        return {'trial_period_days': TRIAL_DAYS}
+    keep = _remaining_trial_end(user)
+    return {'trial_end': keep} if keep else {}
 
 
 def _remaining_trial_end(user):
@@ -2031,10 +2039,12 @@ def admin_test_checkout():
             customer=cust_id,
             line_items=[{'price': price_id, 'quantity': 1}],
             allow_promotion_codes=True,
-            subscription_data={
-                'trial_period_days': TRIAL_DAYS,
-                'metadata': {'user_id': str(user['id']), 'app': 'myglpshot', 'mode': 'test'},
-            },
+            # Same trial decision as the live path, so a test-mode run reproduces
+            # what a real customer would get rather than always granting 14 days.
+            subscription_data=dict(
+                _trial_terms(user),
+                metadata={'user_id': str(user['id']), 'app': 'myglpshot', 'mode': 'test'},
+            ),
             metadata={'user_id': str(user['id']), 'app': 'myglpshot', 'mode': 'test'},
             success_url=f'{app_base}/?billing=test-success&session_id={{CHECKOUT_SESSION_ID}}',
             cancel_url=f'{app_base}/?billing=test-canceled',
