@@ -1,0 +1,5 @@
+- [HIGH] api/app.py:497 — Inconsistent Stripe API Key Usage in `admin_delete_user`. The live subscription cancellation `stripe.Subscription.delete(u['stripe_subscription_id'])` does not explicitly pass `api_key=STRIPE_API_KEY`. If `STRIPE_API_KEY` is not set globally (e.g., in a test-only environment), this call will fail, leaving the live subscription active. The test subscription deletion correctly passes `api_key=STRIPE_API_KEY_TEST`. Fix: Explicitly pass `api_key=STRIPE_API_KEY` to `stripe.Subscription.delete` for live subscriptions.
+
+- [MEDIUM] api/app.py:100 — Inconsistent Busy Timeout in `init_db`. `init_db` sets `PRAGMA busy_timeout=10000` (10 seconds), but `_configure_connection` (used for all request-scoped DB connections) sets `PRAGMA busy_timeout=5000` (5 seconds). This inconsistency could lead to different timeout behaviors depending on the context. Fix: Standardize on a single `busy_timeout` value (e.g., 5000ms) and apply it consistently in both `init_db` and `_configure_connection`.
+
+- [MEDIUM] api/app.py: Missing Content-Security-Policy (CSP) Header. The API does not explicitly set a `Content-Security-Policy`
