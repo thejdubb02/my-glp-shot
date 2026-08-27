@@ -6,7 +6,7 @@ set -euo pipefail
 
 DB_HOST_PATH=/var/lib/docker/volumes/docker_mgs-data/_data/api.db
 KEYS_JSON=/root/.openclaw/workspace/daily/wsg-api-keys.json
-VPS2_HOST=root@187.124.65.189
+VPS2_HOST=root@100.99.25.17  # tailscale — vps2 ufw now blocks :22 on the public IP (changed 2026-08-26)
 VPS2_DIR=/opt/backups/my-glp-shot
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
