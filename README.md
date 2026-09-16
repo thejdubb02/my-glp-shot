@@ -9,7 +9,7 @@ Privacy-first GLP-1 / peptide injection tracker. PWA + end-to-end encrypted clou
 ```
 my-glp-shot/
 ├── web/         Static PWA (HTML/CSS/JS, served by nginx on the host)
-├── api/         Flask backend (Dockerized — auth, sync, sharing, reports)
+├── api/         Flask backend (Dockerized: auth, sync, sharing, reports)
 ├── docker/      Dockerfile + docker-compose.yml
 ├── scripts/     Admin / migration tools
 └── docs/        Internal documentation
@@ -24,8 +24,8 @@ my-glp-shot/
 
 ## Pricing
 
-- **Free** — local-first tracking, body diagram, heatmap, weight chart, side effects, mood, streaks, reconstitution calculator, single-device cloud backup
-- **Premium** ($1.99/mo or $19.99/yr, 14-day free trial) — multi-device sync, supply tracking, body measurements, lab tracking, plateau detection, PDF export, doctor share link, advanced insights
+- **Free**: local-first tracking, body diagram, heatmap, weight chart, side effects, mood, streaks, reconstitution calculator, single-device cloud backup
+- **Premium** ($1.99/mo or $19.99/yr, 14-day free trial): multi-device sync, supply tracking, body measurements, lab tracking, plateau detection, PDF export, doctor share link, advanced insights
 
 ## Privacy
 
