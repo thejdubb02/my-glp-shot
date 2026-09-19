@@ -28,7 +28,7 @@ const DB_NAME = 'shotclock';
 //   asked for something the app had nowhere to put.
 const DB_VERSION = 11;
 
-const APP_VERSION = '0.63.1';
+const APP_VERSION = '0.64.0';
 
 const STORES = { shots: 'shots', weights: 'weights', settings: 'settings', moods: 'moods', supplies: 'supplies' };
 
@@ -277,7 +277,8 @@ const INFO_TOPICS = {
   },
   'measurements': {
     title: 'Body measurements',
-    body: `<p>Track waist, hips, chest, thighs, arms, neck. Useful when the scale isn't moving but you're losing inches.</p>
+    body: `<p>Track waist, hips, bust, chest, thighs, arms, neck. Useful when the scale isn't moving but you're losing inches.</p>
+      <p>Bust and hips each come in two readings, because most sizing charts use both. <strong>High bust</strong> goes above the bust and under the arms; <strong>bust</strong> goes round the fullest point. <strong>High hip</strong> sits across the top of the hip bones, about 3 in / 8 cm below the waist; <strong>hips</strong> goes round the fullest point. Pick the type and the app tells you where the tape goes.</p>
       <p>Each card shows the latest value plus the change from your earliest entry.</p>`,
   },
   'labs': {
@@ -550,6 +551,30 @@ const CANONICAL_SITES = [
   'Thigh — Left', 'Thigh — Right',
   'Upper arm — Left', 'Upper arm — Right',
 ];
+
+// Body measurement sites, in the order the dropdown offers them.
+//
+// The original six (waist, hips, chest, thigh, arm, neck) were a men's sizing
+// list. Lin, our first user, pointed out on 2026-09-19 that women rarely measure
+// a neck, and that bust and hip each split into two readings in any women's
+// sizing chart: the fullest point, and the "high" one taken further up. Chest
+// and neck stay because entries already exist under those keys and men do use
+// them. Keys are what IndexedDB and the sync payload store, so they never change.
+const MEASUREMENT_TYPES = [
+  { key: 'waist',     label: 'Waist',     hint: 'Narrowest point, usually just above the navel' },
+  { key: 'high_hip',  label: 'High hip',  hint: 'Across the top of the hip bones, roughly 3 in / 8 cm below the waist' },
+  { key: 'hips',      label: 'Hips',      hint: 'Fullest point around the hips and seat' },
+  { key: 'high_bust', label: 'High bust', hint: 'Above the bust and under the arms, straight across the back' },
+  { key: 'bust',      label: 'Bust',      hint: 'Fullest point of the bust, tape level all the way round' },
+  { key: 'chest',     label: 'Chest',     hint: 'Fullest point of the chest, under the arms' },
+  { key: 'thigh',     label: 'Thigh',     hint: 'Fullest point of the upper thigh' },
+  { key: 'arm',       label: 'Arm',       hint: 'Around the bicep with the arm relaxed' },
+  { key: 'neck',      label: 'Neck',      hint: 'Around the base of the neck' },
+];
+
+// key -> label, for the summary pills, the PDF and anywhere a stored row has to
+// be shown. An unknown key falls back to itself rather than vanishing.
+const MEASUREMENT_LABELS = Object.fromEntries(MEASUREMENT_TYPES.map(t => [t.key, t.label]));
 
 const ACHIEVEMENTS = [
   // Shot count milestones — covers the full journey, with early wins to keep momentum

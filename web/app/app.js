@@ -3302,6 +3302,21 @@ function setupSupplyUI() {
 }
 
 function setupMeasurementUI() {
+  const sel = $('#measurement-type');
+  const hint = $('#measurement-hint');
+  if (sel) {
+    sel.innerHTML = MEASUREMENT_TYPES
+      .map(t => `<option value="${t.key}">${t.label}</option>`).join('');
+    // Nobody is born knowing where a "high bust" is measured, and a tape held in
+    // the wrong place makes every later reading meaningless.
+    const showHint = () => {
+      if (!hint) return;
+      const t = MEASUREMENT_TYPES.find(x => x.key === sel.value);
+      hint.textContent = t ? t.hint : '';
+    };
+    sel.addEventListener('change', showHint);
+    showHint();
+  }
   $('#add-measurement-btn').addEventListener('click', () => {
     if (!isPremium() && account.user) { $('#upgrade-dialog').showModal(); return; }
     $('#measurement-value').value = '';
@@ -6793,7 +6808,6 @@ async function renderMeasurements() {
     if (!byType[m.type]) byType[m.type] = [];
     byType[m.type].push(m);
   }
-  const labels = { waist: 'Waist', hips: 'Hips', chest: 'Chest', thigh: 'Thigh', arm: 'Arm', neck: 'Neck' };
   // Same trap as weight: each row carries its own unit, so subtracting a cm
   // reading from an inch one produced an unlabelled, wrong trend number.
   // Normalise through inches, then show the trend in the latest row's unit.
@@ -6803,7 +6817,10 @@ async function renderMeasurements() {
     if (!Number.isFinite(n)) return null;
     return m.unit === 'cm' ? n / CM_PER_IN : n;
   };
-  wrap.innerHTML = Object.entries(byType).map(([type, vals]) => {
+  // Show them in the dropdown's head-to-toe order, so bust sits next to high
+  // bust rather than wherever each one happened to be logged first.
+  const rank = (k) => { const i = MEASUREMENT_TYPES.findIndex(t => t.key === k); return i < 0 ? 99 : i; };
+  wrap.innerHTML = Object.entries(byType).sort((a, b) => rank(a[0]) - rank(b[0])).map(([type, vals]) => {
     const latest = vals[vals.length - 1];
     const earliest = vals[0];
     const latestIn = toIn(latest), earliestIn = toIn(earliest);
@@ -6816,7 +6833,7 @@ async function renderMeasurements() {
       trend = `<span class="summary-trend ${trendCls}">${deltaIn < 0 ? '\u2212' : '+'}${Math.abs(shown).toFixed(1)}</span>`;
     }
     return `<div class="summary-pill">
-      <span class="summary-label">${labels[type] || type}</span>
+      <span class="summary-label">${MEASUREMENT_LABELS[type] || type}</span>
       <span class="summary-value">${latest.value} ${latest.unit}</span>
       ${trend}
     </div>`;
@@ -7312,7 +7329,7 @@ async function runPdfExport(opts) {
     </tbody></table>` : ''}
 
     ${inc('measurements') && measurements.length ? `<h2>Body measurements</h2><table><thead><tr><th>Date</th><th>Type</th><th>Value</th></tr></thead><tbody>
-    ${measurements.map(m => `<tr><td>${m.date}</td><td>${m.type}</td><td>${m.value} ${m.unit}</td></tr>`).join('')}
+    ${measurements.map(m => `<tr><td>${m.date}</td><td>${MEASUREMENT_LABELS[m.type] || m.type}</td><td>${m.value} ${m.unit}</td></tr>`).join('')}
     </tbody></table>` : ''}
 
     ${inc('moods') && moodsAll.length ? `<h2>Mood log</h2><table><thead><tr><th>Date</th><th>Mood</th></tr></thead><tbody>
