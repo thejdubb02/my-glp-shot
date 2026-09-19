@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
-# my-glp-shot daily backup: SQLite online .backup -> openssl AES-256-CBC encrypt -> rsync to VPS2.
-# Retention on VPS2: 30 daily + 12 monthly (1st of month preserved).
+# my-glp-shot daily backup: SQLite online .backup -> openssl AES-256-CBC encrypt -> rclone to Hetzner.
+# Named for vps2 because systemd, the runner and the docs all point at this path; the
+# destination moved on 2026-09-19, the filename did not.
+# Retention: last 7 locally on vps1. Nothing is pruned on Hetzner yet, see step 5b.
 # Passphrase: wsg-api-keys.json -> mgs_backup_passphrase. Never rotate without re-encrypting old backups.
 set -euo pipefail
 
 DB_HOST_PATH=/var/lib/docker/volumes/docker_mgs-data/_data/api.db
 KEYS_JSON=/root/.openclaw/workspace/daily/wsg-api-keys.json
-VPS2_HOST=root@100.99.25.17  # tailscale — vps2 ufw now blocks :22 on the public IP (changed 2026-08-26)
-VPS2_DIR=/opt/backups/my-glp-shot
+# VPS2_HOST / VPS2_DIR removed 2026-09-19: vps2 retired, this ships to Hetzner now.
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 
@@ -47,34 +48,32 @@ cat > "$WORK/mgs-${TS}.manifest.json" <<EOF
 }
 EOF
 
-# 5. Ship to VPS2 (also keep last 7 local on VPS1 for fast restore).
+# 5. Keep the last 7 locally on vps1 for a fast restore.
 mkdir -p /opt/backups/my-glp-shot
 cp "$WORK/mgs-${TS}.db.gz.enc" "$WORK/mgs-${TS}.manifest.json" /opt/backups/my-glp-shot/
 ls -1t /opt/backups/my-glp-shot/mgs-*.db.gz.enc 2>/dev/null | tail -n +8 | xargs -r rm -f
 ls -1t /opt/backups/my-glp-shot/mgs-*.manifest.json 2>/dev/null | tail -n +8 | xargs -r rm -f
 
-rsync -a --partial --timeout=120 \
-  "$WORK/mgs-${TS}.db.gz.enc" "$WORK/mgs-${TS}.manifest.json" \
-  "${VPS2_HOST}:${VPS2_DIR}/"
+# 5b. Ship to Hetzner.
+#
+# This used to rsync to vps2 and prune there. vps2 was never offsite: same
+# provider, same account, one box away, and it was retired on 2026-09-19. Same
+# reasoning as the Mattermost job, which moved for the same reason.
+#
+# Retention on the remote is deliberately absent, matching every other stream
+# here: nothing is pruned from Hetzner until a restore has been proven end to
+# end. See BACKUP-PLAN.md Stage 2. Local 7-copy retention above is unchanged.
+RCLONE_DEST="hetzner:Backups/$HOSTLABEL/my-glp-shot"
+rclone copy "$WORK/mgs-${TS}.db.gz.enc" "$RCLONE_DEST/" --no-traverse
+rclone copy "$WORK/mgs-${TS}.manifest.json" "$RCLONE_DEST/" --no-traverse
 
-# 6. VPS2-side retention: 30 daily + monthly (keep 1st-of-month forever, prune any non-1st older than 30d).
-ssh "$VPS2_HOST" bash <<'REMOTE'
-set -euo pipefail
-cd /opt/backups/my-glp-shot
-# Find encrypted blobs older than 30 days where the date in the filename isn't the 1st.
-find . -maxdepth 1 -name 'mgs-*.db.gz.enc' -mtime +30 | while read f; do
-  fname=$(basename "$f")
-  # filename: mgs-YYYYMMDDTHHMMSSZ.db.gz.enc -> day = chars 12-13 (0-indexed)
-  day="${fname:11:2}"
-  if [ "$day" != "01" ]; then
-    rm -f "$f" "${f%.db.gz.enc}.manifest.json"
-  fi
-done
-# Hard cap: keep at most 12 monthlies (oldest pruned).
-# `|| true` so a no-match glob doesn't trip `set -o pipefail` (no monthlies yet).
-{ ls -1 mgs-*01T*.db.gz.enc 2>/dev/null || true; } | sort | head -n -12 | while read f; do
-  rm -f "$f" "${f%.db.gz.enc}.manifest.json"
-done
-REMOTE
+# Verify it actually arrived, at the right size. An upload that half-lands is
+# the case the old rsync could not detect either.
+REMOTE_SIZE=$(rclone size "$RCLONE_DEST/mgs-${TS}.db.gz.enc" --json 2>/dev/null \
+              | grep -oE '"bytes":[0-9]+' | cut -d: -f2)
+if [ "$REMOTE_SIZE" != "$SIZE" ]; then
+  echo "FAIL upload size mismatch: local=$SIZE remote=${REMOTE_SIZE:-none}" >&2
+  exit 3
+fi
 
 echo "OK $TS size=$SIZE sha256=$SHA"
