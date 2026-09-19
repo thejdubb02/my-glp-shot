@@ -58,7 +58,12 @@
 <meta name="twitter:description" content="Track Tirzepatide, Semaglutide, and other GLP-1 shots privately. Your data stays on your device.">
 <meta name="twitter:image" content="https://app.myglpshot.com/twitter-image.png">
 <meta name="twitter:image:alt" content="My GLP Shot — private shot tracker for GLP-1 medications">
-<script defer src="https://analytics.willhitestrategy.org/script.js" data-website-id="cba04d75-419e-452a-adfd-b9a861ae2140"></script>
+<!-- async, never defer. A deferred script must execute before DOMContentLoaded
+     fires, and the whole app boots off DOMContentLoaded. A tracker blocker that
+     black-holes this request (rather than failing it fast) therefore stopped the
+     app booting at all, which is a poor trade for a page view. Caught 2026-09-19
+     on a browser with blocking on: the app rendered static HTML and nothing else. -->
+<script async src="https://analytics.willhitestrategy.org/script.js" data-website-id="cba04d75-419e-452a-adfd-b9a861ae2140"></script>
 </head>
 <body>
 

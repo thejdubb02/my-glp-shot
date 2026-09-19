@@ -52,6 +52,19 @@ ok('categories declared', Array.isArray(manifest.categories) && manifest.categor
 const metaTheme = (html.match(/<meta name="theme-color" content="([^"]+)"/) || [])[1];
 eq('index.html theme-color matches the manifest', metaTheme, manifest.theme_color);
 
+// The app boots off DOMContentLoaded, and DOMContentLoaded waits for every
+// deferred script, including ones on somebody else's host. A tracker blocker
+// that black-holes such a request rather than failing it fast then stops the
+// app booting at all. Third-party scripts in the shell are async, never defer.
+{
+  const thirdParty = [...html.matchAll(/<script\s+([^>]*?)src="(https?:\/\/[^"]+)"/g)]
+    .filter(m => !m[2].includes('app.myglpshot.com'));
+  for (const m of thirdParty) {
+    ok(`third-party script is not deferred: ${m[2]}`, !/\bdefer\b/.test(m[1]));
+    ok(`third-party script is async: ${m[2]}`, /\basync\b/.test(m[1]));
+  }
+}
+
 // ---------- icons ----------
 {
   const icons = manifest.icons || [];
