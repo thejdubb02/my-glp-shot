@@ -52,6 +52,9 @@ const STATES = [
   // Lin's state after she paid on 2026-08-25: still 'trial', because the trial she
   // already had is what she is being billed at the end of. She has paid.
   { name: 'subscribed mid-trial', user: { subscriptionStatus: 'trial', isPremium: true, hasSubscription: true, trialEndsAt: inDays(4) }, premium: true, paid: true, trial: false },
+  // Cancelled in the portal during the trial. Checkout stays hidden (a second one
+  // would start a second subscription); resuming happens in the portal.
+  { name: 'cancelled mid-trial', user: { subscriptionStatus: 'trial', isPremium: true, hasSubscription: true, cancelAtPeriodEnd: true, hasStripeCustomer: true, trialEndsAt: inDays(4) }, premium: true, paid: true, trial: false },
 ];
 
 for (const s of STATES) {
@@ -182,5 +185,23 @@ A.check('trial-end banner opens the dialog directly',
 for (const id of ['upgrade-title', 'upgrade-sub', 'upgrade-cta', 'premium-hero-upgrade', 'upgrade-confirm']) {
   A.check(`index.html has #${id}`, INDEX_HTML.includes(`id="${id}"`));
 }
+
+// ---------- a pending cancellation is said out loud ----------
+const subscriptionStatusText = R('subscriptionStatusText');
+const isCancelling = R('isCancelling');
+const cancelledTrial = { subscriptionStatus: 'trial', isPremium: true, hasSubscription: true, cancelAtPeriodEnd: true, trialEndsAt: inDays(4) };
+setUser(cancelledTrial);
+A.check('cancelled mid-trial is recognised', isCancelling() === true);
+const cText = subscriptionStatusText(cancelledTrial);
+A.check('cancelled mid-trial no longer promises a first payment',
+  /^Cancelled\. Access until /.test(cText) && !/First payment/.test(cText), cText);
+const cancelledPaid = { subscriptionStatus: 'premium', isPremium: true, hasSubscription: true, cancelAtPeriodEnd: true, premiumUntil: inDays(20) };
+setUser(cancelledPaid);
+A.check('cancelled paid plan says it will not renew', /^Cancelled\./.test(subscriptionStatusText(cancelledPaid)));
+const renewing = { subscriptionStatus: 'premium', isPremium: true, hasSubscription: true, premiumUntil: inDays(20) };
+setUser(renewing);
+A.check('a renewing plan says renews, not until', /^Premium, renews /.test(subscriptionStatusText(renewing)), subscriptionStatusText(renewing));
+A.check('a renewing plan is not cancelling', isCancelling() === false);
+A.check('cancel copy has no em dash', !/[\u2014\u2013\u2026]/.test(cText));
 
 A.report();

@@ -383,6 +383,8 @@ def public_user(user_row):
         # cannot tell that apart from a trial nobody has paid for, and goes on asking
         # a paying customer to subscribe.
         'hasSubscription': bool(user_row['stripe_subscription_id']),
+        # Still running, but cancelled and will not renew.
+        'cancelAtPeriodEnd': bool(user_row['stripe_subscription_id']) and bool(_safe_col(user_row, 'cancel_at_period_end')),
         'isAdmin': bool(_safe_col(user_row, 'is_admin')),
     }
 
@@ -1333,7 +1335,9 @@ def _apply_subscription(sub):
         return
     current_period_end = _period_end(sub)
     trial_end = sub.get('trial_end')
-    cancel_at_period_end = sub.get('cancel_at_period_end')
+    # Newer Stripe API versions record a portal cancel as cancel_at rather than
+    # cancel_at_period_end, so either one means "will not renew".
+    cancelling = 1 if (sub.get('cancel_at_period_end') or sub.get('cancel_at')) else 0
 
     if status in ('active', 'trialing'):
         new_status = 'premium' if status == 'active' else 'trial'
@@ -1345,9 +1349,10 @@ def _apply_subscription(sub):
                SET subscription_status = ?,
                    premium_until = ?,
                    trial_ends_at = COALESCE(?, trial_ends_at),
-                   stripe_subscription_id = ?
+                   stripe_subscription_id = ?,
+                   cancel_at_period_end = ?
                WHERE id = ?""",
-            (new_status, until, trial_end, sub_id, user['id']),
+            (new_status, until, trial_end, sub_id, cancelling, user['id']),
         )
         # Only on the transition into paid — renewals fire this same webhook every
         # billing period and shouldn't ping.
@@ -1370,7 +1375,8 @@ def _apply_subscription(sub):
                        WHEN premium_until IS NOT NULL AND premium_until > ? THEN 'premium'
                        ELSE 'free'
                    END,
-                   stripe_subscription_id = NULL
+                   stripe_subscription_id = NULL,
+                   cancel_at_period_end = 0
                WHERE id = ?""",
             (now, now, user['id']),
         )
@@ -2496,6 +2502,10 @@ def init_db():
             'ALTER TABLE users ADD COLUMN signup_utm_source TEXT',
             'ALTER TABLE users ADD COLUMN signup_utm_medium TEXT',
             'ALTER TABLE users ADD COLUMN signup_utm_campaign TEXT',
+            # Set while a subscription is still running but will not renew (cancelled
+            # in the billing portal). Without it a cancelled trial still read
+            # "Subscribed, first payment on ...".
+            'ALTER TABLE users ADD COLUMN cancel_at_period_end INTEGER NOT NULL DEFAULT 0',
         ):
             try:
                 c.execute(stmt)

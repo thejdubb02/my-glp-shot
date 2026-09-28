@@ -251,6 +251,31 @@ replay('sub_e2e_trialsub', 'trialing')
 u = replay('sub_e2e_trialsub', 'canceled')
 C.ok('status stays trial', u['subscription_status'] == 'trial', u['subscription_status'])
 C.ok('no live subscription on file', u['stripe_subscription_id'] is None, str(u['stripe_subscription_id']))
+print('\n8f. a cancel in the portal is recorded, and undone by a resume')
+c = db()
+c.execute("UPDATE users SET subscription_status='trial', trial_ends_at=?, stripe_subscription_id=NULL WHERE id=?",
+          (now + 5 * DAY, uid))
+c.commit()
+c.close()
+def replay_full(sub):
+    with A.app.app_context():
+        A._apply_subscription(dict({'customer': fake_cust, 'metadata': {'user_id': str(uid)},
+                                    'items': {'data': [{'current_period_end': now + 30 * DAY}]}}, **sub))
+        c = db()
+        row = c.execute('SELECT * FROM users WHERE id=?', (uid,)).fetchone()
+        c.close()
+        return row, A.public_user(row)
+row, pub = replay_full({'id': 'sub_e2e_cxl', 'status': 'trialing', 'trial_end': now + 5 * DAY, 'cancel_at_period_end': True})
+C.ok('cancel_at_period_end stored', int(row['cancel_at_period_end']) == 1, str(row['cancel_at_period_end']))
+C.ok('app is told it will not renew', pub['cancelAtPeriodEnd'] is True, str(pub.get('cancelAtPeriodEnd')))
+C.ok('access is kept through the trial', pub['isPremium'] is True and row['subscription_status'] == 'trial', row['subscription_status'])
+row, pub = replay_full({'id': 'sub_e2e_cxl', 'status': 'trialing', 'trial_end': now + 5 * DAY, 'cancel_at': now + 5 * DAY})
+C.ok('newer API style (cancel_at) counts as cancelling too', pub['cancelAtPeriodEnd'] is True)
+row, pub = replay_full({'id': 'sub_e2e_cxl', 'status': 'trialing', 'trial_end': now + 5 * DAY, 'cancel_at_period_end': False})
+C.ok('resuming clears it', pub['cancelAtPeriodEnd'] is False and int(row['cancel_at_period_end']) == 0)
+row, pub = replay_full({'id': 'sub_e2e_cxl', 'status': 'canceled', 'trial_end': now + 5 * DAY, 'cancel_at_period_end': True})
+C.ok('once ended, no pending-cancel flag lingers', pub['cancelAtPeriodEnd'] is False)
+
 c = db()
 c.execute('UPDATE users SET stripe_customer_id=?, stripe_subscription_id=?, subscription_status=?, '
           'premium_until=?, trial_ends_at=? WHERE id=?', tuple(orig) + (uid,))

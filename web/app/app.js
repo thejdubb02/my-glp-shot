@@ -6093,6 +6093,20 @@ function isSubscribedInTrial() {
 // True while the introductory trial is still running. The checkout call is identical
 // either way — the server refuses a second trial via _has_used_trial — but the copy
 // must not promise "start free trial" to someone whose card will be charged today.
+// Cancelled in the billing portal: the subscription runs to the end of what is
+// already paid (or the trial) and then stops. Checkout must stay hidden, because a
+// second checkout would start a second subscription; resuming happens in the portal.
+function isCancelling() {
+  const u = account.user;
+  return !!(u && u.hasSubscription && u.cancelAtPeriodEnd);
+}
+function accessUntilText() {
+  const u = account.user;
+  const ts = u && (u.subscriptionStatus === 'trial' ? u.trialEndsAt : u.premiumUntil);
+  if (!ts) return 'the end of the current period';
+  try { return new Date(ts * 1000).toLocaleDateString(); } catch (e) { return 'the end of the current period'; }
+}
+
 function isOnTrial() {
   const u = account.user;
   return !!(u && u.subscriptionStatus === 'trial' && u.isPremium && !u.hasSubscription);
@@ -6512,6 +6526,7 @@ async function onAccountChanged() {
     } catch (e) {}
     $('#upgrade-cta').classList.toggle('hidden', hasPaidPlan());
     $('#manage-billing-cta').classList.toggle('hidden', !u.hasStripeCustomer);
+    $('#manage-billing-cta').textContent = isCancelling() ? 'Resume subscription' : 'Manage subscription';
     const legacySync = $('#legacy-cloud-sync-card');
     if (legacySync) legacySync.classList.add('hidden');
     // Premium hero card on the Premium tab — mirrors upgrade/manage state and shows clear status text.
@@ -6520,10 +6535,17 @@ async function onAccountChanged() {
     const phTitle = $('#premium-hero-title');
     const phSub = $('#premium-hero-sub');
     if (phUp) phUp.classList.toggle('hidden', hasPaidPlan());
-    if (phMan) phMan.classList.toggle('hidden', !u.hasStripeCustomer);
+    if (phMan) {
+      phMan.classList.toggle('hidden', !u.hasStripeCustomer);
+      phMan.textContent = isCancelling() ? 'Resume subscription' : 'Manage subscription';
+    }
     refreshUpgradeCopy();
     if (phTitle && phSub) {
-      if (u.subscriptionStatus === 'lifetime') {
+      if (isCancelling() && u.isPremium) {
+        phTitle.textContent = '⭐ Premium, cancelled';
+        phSub.textContent = `Your plan stays active until ${accessUntilText()} and will not renew, so nothing more `
+          + 'is charged. Changed your mind? Resume it any time before then, with no new trial or second charge.';
+      } else if (u.subscriptionStatus === 'lifetime') {
         phTitle.textContent = '⭐ Lifetime Premium';
         phSub.textContent = 'You have full access. Thanks for being a founding supporter.';
       } else if (u.subscriptionStatus === 'premium' && u.isPremium) {
@@ -6558,9 +6580,12 @@ async function onAccountChanged() {
 function subscriptionStatusText(u) {
   if (!u) return '';
   if (u.subscriptionStatus === 'lifetime') return '⭐ Lifetime Premium — thank you for being a founding supporter!';
+  if (u.hasSubscription && u.cancelAtPeriodEnd) {
+    return `Cancelled. Access until ${accessUntilText()}, nothing more will be charged`;
+  }
   if (u.subscriptionStatus === 'premium' && u.premiumUntil) {
     const d = new Date(u.premiumUntil * 1000).toLocaleDateString();
-    return `Premium until ${d}`;
+    return u.hasSubscription ? `Premium, renews ${d}` : `Premium until ${d}`;
   }
   if (u.subscriptionStatus === 'trial' && u.trialEndsAt) {
     const days = Math.max(0, Math.ceil((u.trialEndsAt - Date.now() / 1000) / 86400));
