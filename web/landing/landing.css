@@ -6,6 +6,7 @@
   --teal-lt:#d6f5ef;
   --mint:#5eead4;
   --orange:#c25205;  /* darkened from #f97316 for WCAG AA white-text contrast, SEN-53 */
+  --sky:#0a77a8;  /* darkened from #0ea5e9 for WCAG AA text contrast in light mode; dark mode keeps the brighter value below, SEN-53 */
   --bg:#f8fafb;
   --surface:#ffffff;
   --surface-alt:#f1f6f5;
@@ -18,6 +19,7 @@
 }
 [data-theme="dark"]{
   --bg:#0a0f1a;
+  --sky:#0ea5e9;
   --surface:#131c2b;
   --surface-alt:#1b2536;
   --ink:#e6edf3;
@@ -31,6 +33,7 @@
 @media (prefers-color-scheme: dark){
   :root:not([data-theme="light"]){
     --bg:#0a0f1a;
+    --sky:#0ea5e9;
     --surface:#131c2b;
     --surface-alt:#1b2536;
     --ink:#e6edf3;
