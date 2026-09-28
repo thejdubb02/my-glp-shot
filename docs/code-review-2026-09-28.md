@@ -34,8 +34,20 @@ already counts only users whose access is current).
   device comes back from another. Needs tombstones.
 - **Importing the same CSV twice doubles it.** File imports do not dedupe
   against what is already stored.
-- **Cancelling during a trial still reads "Subscribed".** A cancel from the
-  billing portal sets `cancel_at_period_end`; the subscription stays
-  `trialing` until the trial ends, and nothing records the pending cancel.
 
-All three are on the GLP board in Kaneo.
+Both are on the GLP board in Kaneo.
+
+## Follow-ups the same day
+
+- **0.65.1: a pending cancellation is shown.** A cancel from the billing
+  portal sets `cancel_at_period_end` and the subscription runs to the end of
+  the trial or period. It is now stored and the app says "Cancelled. Access
+  until DATE" with a Resume button, instead of promising a first payment.
+- **0.65.2: doctor share links and password reset worked again.** Found by
+  running the release in the Android and iPhone test browsers. The site's CSP
+  (added in August) blocks inline script, and `view.html`, `reset.html` and
+  the theme snippet were all inline, so a share link sat on "Loading..." and
+  the reset form did nothing. Only production sends the header, which is why
+  no Node test could see it. The scripts are now separate files and
+  `pwa-selftest` fails on any inline script. Verified end to end on live with
+  a throwaway account on both engines.
