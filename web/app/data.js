@@ -26,9 +26,9 @@ const DB_NAME = 'shotclock';
 // v11 bump: 'symptoms' store added — side effects for a day you didn't inject. They
 //   used to live only on a shot record, which meant the daily side-effect reminder
 //   asked for something the app had nowhere to put.
-const DB_VERSION = 11;
+const DB_VERSION = 12;  // 12: tombstones store, so deletions sync
 
-const APP_VERSION = '0.65.2';
+const APP_VERSION = '0.66.0';
 
 const STORES = { shots: 'shots', weights: 'weights', settings: 'settings', moods: 'moods', supplies: 'supplies' };
 

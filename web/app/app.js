@@ -203,6 +203,9 @@ function openDB() {
       if (!db.objectStoreNames.contains('symptoms')) {
         db.createObjectStore('symptoms', { keyPath: 'date' });
       }
+      if (!db.objectStoreNames.contains('tombstones')) {
+        db.createObjectStore('tombstones', { keyPath: 'key' });
+      }
     };
     req.onsuccess = () => {
       const db = req.result;
@@ -1193,7 +1196,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const id = parseInt($('#shot-id').value, 10);
     if (!id) return;
     if (!confirm('Delete this shot?')) return;
-    await dbDel(STORES.shots, id);
+    await dbDelSynced(STORES.shots, id);
     $('#shot-dialog').close();
     await renderShots();
     markSyncDirty();
@@ -4171,21 +4174,10 @@ async function saveCycle(c) {
   // rows could only be matched across devices by content.
   return dbPut('cycles', c);
 }
-async function deleteCycle(id) {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const t = db.transaction('cycles', 'readwrite');
-    t.objectStore('cycles').delete(id);
-    t.oncomplete = resolve; t.onerror = () => reject(t.error);
-  });
-}
+async function deleteCycle(id) { return dbDelSynced('cycles', id); }
 async function clearAllCycles() {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const t = db.transaction('cycles', 'readwrite');
-    t.objectStore('cycles').clear();
-    t.oncomplete = resolve; t.onerror = () => reject(t.error);
-  });
+  // One tombstone per row, so the clear reaches other devices too.
+  for (const c of (await dbAll('cycles')) || []) await dbDelSynced('cycles', c.id);
 }
 function renderCycleSymptomsForm(checked) {
   const wrap = $('#cycle-symptoms');
@@ -4489,14 +4481,7 @@ async function saveMedChange(entry) {
   // rows could only be matched across devices by content.
   return dbPut('medChanges', entry);
 }
-async function deleteMedChange(id) {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const t = db.transaction('medChanges', 'readwrite');
-    t.objectStore('medChanges').delete(id);
-    t.oncomplete = resolve; t.onerror = () => reject(t.error);
-  });
-}
+async function deleteMedChange(id) { return dbDelSynced('medChanges', id); }
 async function renderMedChanges() {
   const wrap = $('#medchanges-list');
   if (!wrap) return;
@@ -6734,14 +6719,7 @@ async function saveSupply(s) {
   return dbPut('supplies', s);
 }
 
-async function deleteSupply(id) {
-  const db = await openDB();
-  return new Promise((res) => {
-    const t = db.transaction('supplies', 'readwrite');
-    t.objectStore('supplies').delete(id);
-    t.oncomplete = res;
-  });
-}
+async function deleteSupply(id) { return dbDelSynced('supplies', id); }
 
 // How much of each supply has been used. The rule is the one people actually
 // follow: you open a pen, finish it, then open the next — so a supply owns
@@ -7160,14 +7138,7 @@ async function saveExpense(e) {
   return dbPut('expenses', e);
 }
 
-async function deleteExpense(id) {
-  const db = await openDB();
-  return new Promise((res, rej) => {
-    const t = db.transaction('expenses', 'readwrite');
-    t.objectStore('expenses').delete(id);
-    t.oncomplete = res; t.onerror = () => rej(t.error);
-  });
-}
+async function deleteExpense(id) { return dbDelSynced('expenses', id); }
 
 const EXPENSE_LABELS = {
   medication: '💊 Medication',
@@ -7529,12 +7500,17 @@ async function buildPayload(opts) {
     // v10 adds `symptoms` — side-effect entries for days with no shot. Bumped
     //     rather than added silently: a v9 client would drop them on the next
     //     push, which is exactly the data loss the version guard exists to stop.
-    version: 10,
+    // v11 adds `tombstones` — deletions, so they sync. Bumped for the same reason:
+    //     a v10 client would drop them and bring deleted rows back.
+    version: 11,
     exportedAt: new Date().toISOString(),
     range: opts && opts.range ? opts.range : 'all',
     settings,
     shots, weights, moods, appetites, foodNoise, cycles, medChanges, notes, symptoms,
     supplies, measurements, labs, expenses,
+    // Full syncs and backups only. A doctor share or ranged export is a
+    // snapshot for a reader, and has no use for a list of what was deleted.
+    tombstones: opts ? [] : await liveTombstones(),
   };
 }
 
@@ -7584,6 +7560,49 @@ const CONTENT_KEYS = {
   medChanges: (r) => `x|${r.when || r.date || ''}|${r.medication || r.from || ''}|${r.to || ''}`,
 };
 
+// A deletion has to travel between devices, or the other device's next push
+// brings the row straight back: merges only ever add. A tombstone records what
+// was deleted and when. It rides in the sync payload and removes the row on every
+// device that still has it, unless that copy was edited after the delete.
+// Rows from before uids existed are tombstoned by content key instead.
+const TOMBSTONE_TTL_MS = 180 * 86400000;
+function tombstoneKey(store, row) {
+  return row && row.uid ? row.uid : `ck|${store}|${CONTENT_KEYS[store](row)}`;
+}
+async function dbDelSynced(store, id) {
+  const row = await dbGet(store, id);
+  if (row && UID_STORES.has(store)) {
+    await dbPutExact('tombstones', { key: tombstoneKey(store, row), store, deletedAt: Date.now() });
+  }
+  return dbDel(store, id);
+}
+async function liveTombstones() {
+  const cutoff = Date.now() - TOMBSTONE_TTL_MS;
+  const all = (await dbAll('tombstones')) || [];
+  const live = [];
+  for (const t of all) {
+    if (t && t.deletedAt > cutoff) live.push(t);
+    else await dbDel('tombstones', t.key);
+  }
+  return live;
+}
+// Fold incoming tombstones into ours (latest delete wins) and return every live
+// one as a Map for mergeStore.
+async function mergeTombstones(incoming) {
+  for (const t of Array.isArray(incoming) ? incoming : []) {
+    if (!t || typeof t.key !== 'string' || t.key.length > 300 || !UID_STORES.has(t.store)) continue;
+    const at = Number(t.deletedAt);
+    if (!Number.isFinite(at) || at <= 0) continue;
+    const mine = await dbGet('tombstones', t.key);
+    if (!mine || at > mine.deletedAt) await dbPutExact('tombstones', { key: t.key, store: t.store, deletedAt: at });
+  }
+  return new Map((await liveTombstones()).map(t => [t.key, t]));
+}
+const buriedBy = (tombs, key, row) => {
+  const t = tombs && tombs.get(key);
+  return !!t && t.deletedAt >= (Number(row.updatedAt) || 0);
+};
+
 // Union-merge one auto-increment store: keep every local row, add cloud rows we
 // don't already have. Never deletes — a pull can only ever add.
 //
@@ -7594,22 +7613,25 @@ const CONTENT_KEYS = {
 // updatedAt, which is how an edit reaches the other device. Before this a known
 // uid was always skipped, so edits never propagated and the two devices kept
 // flipping the cloud copy between their versions.
-async function mergeStore(storeName, incoming, contentKey) {
+async function mergeStore(storeName, incoming, contentKey, tombs) {
   const rows = Array.isArray(incoming) ? incoming : [];
-  if (!rows.length) return { added: 0, updated: 0, skipped: 0 };
   const existing = (await dbAll(storeName)) || [];
   const byUid = new Map();
   const seenContent = new Set();
+  let added = 0, updated = 0, skipped = 0, removed = 0;
   for (const r of existing) {
-    if (r && r.uid) byUid.set(r.uid, r);
-    if (r) seenContent.add(contentKey(r));
+    if (!r) continue;
+    // Deleted on another device after this copy was last edited.
+    if (buriedBy(tombs, tombstoneKey(storeName, r), r)) { await dbDel(storeName, r.id); removed++; continue; }
+    if (r.uid) byUid.set(r.uid, r);
+    seenContent.add(contentKey(r));
   }
-  let added = 0, updated = 0, skipped = 0;
   for (const raw of rows) {
     if (!raw || typeof raw !== 'object') { skipped++; continue; }
     const rec = { ...raw };
     delete rec.id;                 // local autoincrement ids are device-scoped
     const ck = contentKey(rec);
+    if (buriedBy(tombs, rec.uid || `ck|${storeName}|${ck}`, rec)) { skipped++; continue; }
     const mine = rec.uid ? byUid.get(rec.uid) : null;
     if (mine) {
       if ((Number(rec.updatedAt) || 0) > (Number(mine.updatedAt) || 0)) {
@@ -7630,7 +7652,7 @@ async function mergeStore(storeName, incoming, contentKey) {
     await dbAddExact(storeName, rec);
     added++;
   }
-  return { added, updated, skipped };
+  return { added, updated, skipped, removed };
 }
 
 // Notes are the one daily store that can't take last-write-wins. Mood is a number
@@ -7670,7 +7692,7 @@ async function mergeNotes(incoming) {
 async function applyPulledPayload(payload) {
   // Refuse newer payloads we can't safely interpret — avoids silent data loss
   // if a stale client pulls a blob written by a future schema.
-  const SUPPORTED_PAYLOAD_VERSION = 10;
+  const SUPPORTED_PAYLOAD_VERSION = 11;
   const pv = Number(payload && payload.version) || 1;
   if (pv > SUPPORTED_PAYLOAD_VERSION) {
     throw new Error(`This cloud backup was written by a newer version of the app (payload v${pv}). Please update before restoring.`);
@@ -7681,14 +7703,15 @@ async function applyPulledPayload(payload) {
   // every store first, which silently destroyed anything logged on this device
   // since its last push — and left the database empty if the tab closed midway.
   const stats = {};
-  stats.shots = await mergeStore(STORES.shots, (payload.shots || []).map(sanitizeShot).filter(Boolean), CONTENT_KEYS.shots);
-  stats.weights = await mergeStore(STORES.weights, (payload.weights || []).map(sanitizeWeight).filter(Boolean), CONTENT_KEYS.weights);
-  stats.supplies = await mergeStore('supplies', payload.supplies, CONTENT_KEYS.supplies);
-  stats.measurements = await mergeStore('measurements', payload.measurements, CONTENT_KEYS.measurements);
-  stats.labs = await mergeStore('labs', payload.labs, CONTENT_KEYS.labs);
-  stats.expenses = await mergeStore('expenses', payload.expenses, CONTENT_KEYS.expenses);
-  stats.cycles = await mergeStore('cycles', payload.cycles, CONTENT_KEYS.cycles);
-  stats.medChanges = await mergeStore('medChanges', payload.medChanges, CONTENT_KEYS.medChanges);
+  const tombs = await mergeTombstones(payload.tombstones);
+  stats.shots = await mergeStore(STORES.shots, (payload.shots || []).map(sanitizeShot).filter(Boolean), CONTENT_KEYS.shots, tombs);
+  stats.weights = await mergeStore(STORES.weights, (payload.weights || []).map(sanitizeWeight).filter(Boolean), CONTENT_KEYS.weights, tombs);
+  stats.supplies = await mergeStore('supplies', payload.supplies, CONTENT_KEYS.supplies, tombs);
+  stats.measurements = await mergeStore('measurements', payload.measurements, CONTENT_KEYS.measurements, tombs);
+  stats.labs = await mergeStore('labs', payload.labs, CONTENT_KEYS.labs, tombs);
+  stats.expenses = await mergeStore('expenses', payload.expenses, CONTENT_KEYS.expenses, tombs);
+  stats.cycles = await mergeStore('cycles', payload.cycles, CONTENT_KEYS.cycles, tombs);
+  stats.medChanges = await mergeStore('medChanges', payload.medChanges, CONTENT_KEYS.medChanges, tombs);
 
   // Date-keyed daily stores: last write wins per day, which is the intent — one
   // mood/appetite/food-noise reading per date.

@@ -18,7 +18,8 @@
 import { loadApp, Assert } from './lib/app-harness.mjs';
 
 const A = new Assert('sync-merge');
-const { R } = await loadApp();
+// 'stub': applyPulledPayload re-renders the shot list when it finishes.
+const { R } = await loadApp({ domMode: 'stub' });
 const call = (expr) => R(expr);
 
 const all = (store) => call(`dbAll(${JSON.stringify(store)})`);
@@ -106,7 +107,62 @@ rows = await all('shots');
 A.eq('an older copy does not undo the edit', rows[0].dose, 5);
 A.eq('still one row', rows.length, 1);
 
-// ---------- 5. offline: a signed-in user stays signed in ----------
+// ---------- 5. deletions sync (tombstones) ----------
+await clear('shots'); await clear('tombstones');
+const deviceB = [
+  { when: '2026-09-10T15:00:00.000Z', dose: 5, uid: 'eeeeeeee-1', updatedAt: 100 },
+  { when: '2026-09-17T15:00:00.000Z', dose: 5, uid: 'eeeeeeee-2', updatedAt: 100 },
+];
+await merge('shots', deviceB);
+const victim = (await all('shots')).find(r => r.uid === 'eeeeeeee-1');
+await call(`dbDelSynced('shots', ${victim.id})`);
+let tombs = await all('tombstones');
+A.check('deleting records a tombstone', tombs.length === 1 && tombs[0].key === 'eeeeeeee-1', JSON.stringify(tombs));
+// Device B has not heard about the delete and pushes the row back.
+r = await call(`applyPulledPayload({ version: 11, shots: ${JSON.stringify(deviceB)} })`);
+rows = await all('shots');
+A.check('a pull that still has the deleted row does not bring it back',
+  rows.length === 1 && rows[0].uid === 'eeeeeeee-2', JSON.stringify(rows.map(x => x.uid)));
+const payload = await call('buildPayload()');
+A.check('full sync payload carries the tombstone', (payload.tombstones || []).some(t => t.key === 'eeeeeeee-1'));
+A.eq('payload version is 11', payload.version, 11);
+const sharePayload = await call("buildPayload({ range: '90' })");
+A.eq('a doctor share carries no tombstones', (sharePayload.tombstones || []).length, 0);
+
+// The other direction: device B receives A's tombstone and drops its copy.
+await clear('shots'); await clear('tombstones');
+await merge('shots', deviceB);
+// Real timestamps: a tombstone dated 1970 is older than 180 days and is pruned.
+await call(`applyPulledPayload({ version: 11, shots: [], tombstones: [{ key: 'eeeeeeee-1', store: 'shots', deletedAt: Date.now() }] })`);
+rows = await all('shots');
+A.check('a pulled tombstone deletes the local copy', rows.length === 1 && rows[0].uid === 'eeeeeeee-2', JSON.stringify(rows.map(x => x.uid)));
+
+// An edit made after the delete wins over it.
+await clear('shots'); await clear('tombstones');
+await merge('shots', [{ when: '2026-09-10T15:00:00.000Z', dose: 7.5, uid: 'eeeeeeee-1', updatedAt: Date.now() + 60000 }]);
+await call(`applyPulledPayload({ version: 11, shots: [], tombstones: [{ key: 'eeeeeeee-1', store: 'shots', deletedAt: Date.now() }] })`);
+A.eq('an edit made after the delete survives it', (await all('shots')).length, 1);
+
+// Junk tombstones are ignored.
+await clear('tombstones');
+await call(`applyPulledPayload({ version: 11, tombstones: [{ key: 'x', store: 'settings', deletedAt: 5 }, { key: 5, store: 'shots', deletedAt: 5 }, { key: 'y', store: 'shots', deletedAt: 'soon' }] })`);
+A.eq('tombstones for unknown stores or with bad fields are dropped', (await all('tombstones')).length, 0);
+
+// Rows from before uids existed are tombstoned by content key.
+await clear('supplies'); await clear('tombstones');
+await call(`withStore('supplies', 'readwrite', s => s.add({ type: 'pen', total_mg: 10, opened_at: '2026-01-01' }))`);
+const legacy = (await all('supplies'))[0];
+await call(`dbDelSynced('supplies', ${legacy.id})`);
+await call(`applyPulledPayload({ version: 11, supplies: [{ type: 'pen', total_mg: 10, opened_at: '2026-01-01' }] })`);
+A.eq('a legacy row without a uid stays deleted too', (await all('supplies')).length, 0);
+
+// Old tombstones expire.
+await clear('tombstones');
+await call(`dbPutExact('tombstones', { key: 'old-1', store: 'shots', deletedAt: Date.now() - 200 * 86400000 })`);
+await call('liveTombstones()');
+A.eq('tombstones older than 180 days are pruned', (await all('tombstones')).length, 0);
+
+// ---------- 6. offline: a signed-in user stays signed in ----------
 const user = { id: 16, email: 'x@example.com', subscriptionStatus: 'premium', isPremium: true };
 call(`localStorage.setItem(LAST_USER_KEY, ${JSON.stringify(JSON.stringify(user))})`);
 call(`fetch = async () => { throw new TypeError('Failed to fetch'); }`);

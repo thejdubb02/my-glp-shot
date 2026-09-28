@@ -41,8 +41,9 @@ await openDB();
 {
   const db = await openDB();
   const dbStores = Array.from(db.objectStoreNames);
-  // 'settings' rides as its own payload key, not as an array of records.
-  const dataStores = dbStores.filter(n => n !== 'settings');
+  // 'settings' rides as its own payload key, not as an array of records, and so
+  // do 'tombstones' (a list of deletions, not data a restore prompt should count).
+  const dataStores = dbStores.filter(n => n !== 'settings' && n !== 'tombstones');
   const missing = dataStores.filter(n => !EXPORT_STORE_KEYS.includes(n));
   t.check('every IndexedDB store is covered by the backup', missing.length === 0,
     `not in EXPORT_STORE_KEYS: ${missing.join(', ')}`);
