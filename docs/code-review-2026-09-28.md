@@ -30,12 +30,10 @@ already counts only users whose access is current).
 
 ## Not fixed
 
-- **Deletions do not sync.** Merges only ever add, so an entry deleted on one
-  device comes back from another. Needs tombstones.
 - **Importing the same CSV twice doubles it.** File imports do not dedupe
   against what is already stored.
 
-Both are on the GLP board in Kaneo.
+It is on the GLP board in Kaneo.
 
 ## Follow-ups the same day
 
@@ -51,3 +49,7 @@ Both are on the GLP board in Kaneo.
   no Node test could see it. The scripts are now separate files and
   `pwa-selftest` fails on any inline script. Verified end to end on live with
   a throwaway account on both engines.
+- **0.66.0: deletions sync.** Deleting records a tombstone that travels in
+  full syncs and backups (payload v11, IndexedDB v12) and removes the row on
+  every other device unless that copy was edited after the delete. Tombstones
+  expire after 180 days and stay out of doctor shares.
