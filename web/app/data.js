@@ -28,7 +28,7 @@ const DB_NAME = 'shotclock';
 //   asked for something the app had nowhere to put.
 const DB_VERSION = 11;
 
-const APP_VERSION = '0.64.1';
+const APP_VERSION = '0.65.0';
 
 const STORES = { shots: 'shots', weights: 'weights', settings: 'settings', moods: 'moods', supplies: 'supplies' };
 
@@ -49,7 +49,7 @@ const INFO_TOPICS = {
     title: 'Next shot countdown',
     body: async () => {
       const shots = await getShotsSorted();
-      const latest = shots.length ? shots[shots.length - 1] : null;
+      const latest = shots.length ? shots[0] : null;  // getShotsSorted is newest first
       const med = settings.medication || 'Tirzepatide';
       const cadence = settings.cadenceDays || 7;
       let yourLine = '';
@@ -610,7 +610,7 @@ const ACHIEVEMENTS = [
   { id: 'lost100',   icon: '🏔️', label: '100 lb lost — life-changing', labelKg: '45 kg lost — life-changing', test: (s) => s.unit === 'kg' ? s.deltaKg <= -45 : s.delta <= -100 },
   // Dose ladder — recognizes the titration journey
   { id: 'titrate',   icon: '📈', label: 'First dose increase',          test: ({maxDose, minDose, shots}) => shots.length >= 2 && maxDose > minDose },
-  { id: 'maintain',  icon: '⚖️', label: 'Holding steady',               test: ({shots, maxDose}) => shots.length >= 8 && shots.slice(-4).every(s => s.dose === maxDose) },
+  { id: 'maintain',  icon: '⚖️', label: 'Holding steady',               test: ({shots, maxDose}) => shots.length >= 8 && [...shots].sort((a, b) => new Date(a.when) - new Date(b.when)).slice(-4).every(s => s.dose === maxDose) },
   // Engagement — rewards using the tracker
   { id: 'mood7',     icon: '😊', label: 'Mood tracked 7 days',          test: ({moodCount}) => moodCount >= 7 },
   { id: 'mood30',    icon: '💭', label: 'Mood tracked 30 days',         test: ({moodCount}) => moodCount >= 30 },

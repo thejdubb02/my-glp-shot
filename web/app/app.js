@@ -273,8 +273,28 @@ const withUid = (store, val) =>
   (UID_STORES.has(store) && val && typeof val === 'object' && !val.uid)
     ? { ...val, uid: newUid() }
     : val;
-const dbAdd = (store, val) => withStore(store, 'readwrite', s => s.add(withUid(store, val)));
-const dbPut = (store, val) => withStore(store, 'readwrite', s => s.put(withUid(store, val)));
+// updatedAt (ms) is what lets an edit on one device win over the older copy on
+// another; see mergeStore. Local writes stamp it. Merges write the incoming row
+// exactly as received (dbAddExact/dbPutExact), because restamping a received row
+// with this device's clock would make a stale copy look newer than a real edit.
+const syncedRow = (store, val) => UID_STORES.has(store) && val && typeof val === 'object';
+const dbAdd = (store, val) => withStore(store, 'readwrite', s => s.add(withUid(store,
+  syncedRow(store, val) && !val.updatedAt ? { ...val, updatedAt: Date.now() } : val)));
+async function dbPut(store, val) {
+  if (syncedRow(store, val)) {
+    val = { ...val, updatedAt: Date.now() };
+    // Edit forms rebuild the record from their fields, so it arrives with its id
+    // but without the uid the row already had. Minting a fresh uid made every
+    // edited entry look brand new to other devices, which then kept both copies.
+    if (!val.uid && val.id != null) {
+      const prev = await withStore(store, 'readonly', s => s.get(val.id));
+      if (prev && prev.uid) val.uid = prev.uid;
+    }
+  }
+  return withStore(store, 'readwrite', s => s.put(withUid(store, val)));
+}
+const dbAddExact = (store, val) => withStore(store, 'readwrite', s => s.add(val));
+const dbPutExact = (store, val) => withStore(store, 'readwrite', s => s.put(val));
 const dbDel = (store, id) => withStore(store, 'readwrite', s => s.delete(id));
 const dbAll = (store) => withStore(store, 'readonly', s => s.getAll());
 const dbGet = (store, key) => withStore(store, 'readonly', s => s.get(key));
@@ -406,10 +426,12 @@ function nextDailyTriggerAt(hhmm) {
   const [hh, mm] = hhmm.split(':').map(Number);
   const tz = getUserTz();
   const now = new Date();
+  // Step by calendar day. Adding 24 hours instead skipped a day across the
+  // 23-hour spring-forward day: late Saturday plus 24h is already Monday.
+  const t0 = _tzParts(now, tz);
   for (let offset = 0; offset < 2; offset++) {
-    const base = new Date(now.getTime() + offset * 86400000);
-    const p = _tzParts(base, tz);
-    const fire = zonedWallToUtc(tz, `${p.year}-${p.month}-${p.day}`, hh, mm);
+    const day = new Date(Date.UTC(+t0.year, +t0.month - 1, +t0.day + offset)).toISOString().slice(0, 10);
+    const fire = zonedWallToUtc(tz, day, hh, mm);
     if (fire.getTime() - now.getTime() > 30000) return fire;
   }
   return null;
@@ -484,7 +506,10 @@ function parseDateFlexible(d) {
   // one, or their device's after they travel — lands on the previous or next
   // day. Noon has ~12 hours of slack in both directions, which no real offset
   // crosses, so the day label survives the round trip.
-  const ymd = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  // Anchored at both ends. Without the $, a full timestamp like a shot's
+  // '2026-09-28T02:00:00.000Z' matched here, lost its time, and was filed under
+  // the UTC date: any evening shot west of UTC landed on the next day.
+  const ymd = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (ymd) {
     const t = new Date(+ymd[1], +ymd[2] - 1, +ymd[3], 12, 0, 0).getTime();
     return Number.isFinite(t) ? t : NaN;
@@ -516,7 +541,11 @@ function toCanonicalDate(d) {
     const bare = d.trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
     if (bare) return `${bare[1]}-${bare[2]}-${bare[3]}`;
   }
-  const t = parseDateFlexible(d);
+  // A timestamp with a time of day is one instant: bucket it directly. Going
+  // through parseDateFlexible would re-anchor it to device-local midnight first,
+  // which is a day off whenever the device and the setting disagree.
+  const instant = (typeof d === 'string' && /T\d{2}:\d{2}/.test(d)) ? Date.parse(d) : NaN;
+  const t = Number.isFinite(instant) ? instant : parseDateFlexible(d);
   if (!Number.isFinite(t)) return null;
   // Bucket by the user's configured timezone, the same basis todayISODate()
   // uses. These used to disagree — this read the device clock while "today"
@@ -1415,6 +1444,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           throw new Error(j.message || `Failed (${r.status})`);
         }
         clearRememberedSignIn();
+        forgetCachedAccountUser();
         alert('Account deleted. Local data on this device is still here — use "Erase all data on this device" to wipe it too.');
         account = { user: null, encryptionKey: null };
         await onAccountChanged();
@@ -2100,6 +2130,18 @@ function sanitizeShot(s) {
   };
   const se = sanitizeSideEffectMap(s.sideEffects);
   if (se) out.sideEffects = se;
+  const hl = safeNum(s.halfLifeDays, { min: 0.01, max: 60, dp: 3 });
+  if (hl != null) out.halfLifeDays = hl;
+  return keepSyncIdentity(s, out);
+}
+
+// uid and updatedAt are how a synced row is recognised and how an edit wins.
+// The sanitizers used to rebuild records without them, so every pulled shot and
+// weight arrived as a stranger and an edited one came in as a second entry.
+function keepSyncIdentity(src, out) {
+  if (typeof src.uid === 'string' && /^[A-Za-z0-9-]{8,64}$/.test(src.uid)) out.uid = src.uid;
+  const ua = Number(src.updatedAt);
+  if (Number.isFinite(ua) && ua > 0) out.updatedAt = ua;
   return out;
 }
 
@@ -2124,7 +2166,7 @@ function sanitizeWeight(w) {
   const value = safeNum(w.value, { min: 0, max: 2000, dp: 2 });
   const date = toCanonicalDate(w.date);
   if (value == null || !date) return null;
-  return { date, value, unit: w.unit === 'kg' ? 'kg' : 'lb' };
+  return keepSyncIdentity(w, { date, value, unit: w.unit === 'kg' ? 'kg' : 'lb' });
 }
 
 // A note is free text, so it is never interpreted — only length-capped and, at
@@ -4125,12 +4167,9 @@ async function getCyclesSorted() {
   return all.sort((a, b) => (b.startDate || '').localeCompare(a.startDate || ''));  // newest first
 }
 async function saveCycle(c) {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const t = db.transaction('cycles', 'readwrite');
-    t.objectStore('cycles').put(c);
-    t.oncomplete = () => resolve(); t.onerror = () => reject(t.error);
-  });
+  // Through dbPut, not a raw put: a raw put skipped uid assignment, so these
+  // rows could only be matched across devices by content.
+  return dbPut('cycles', c);
 }
 async function deleteCycle(id) {
   const db = await openDB();
@@ -4446,12 +4485,9 @@ async function getMedChangesSorted() {
   return all.sort((a, b) => (a.when || '').localeCompare(b.when || ''));
 }
 async function saveMedChange(entry) {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const t = db.transaction('medChanges', 'readwrite');
-    t.objectStore('medChanges').put(entry);
-    t.oncomplete = () => resolve(); t.onerror = () => reject(t.error);
-  });
+  // Through dbPut, not a raw put: a raw put skipped uid assignment, so these
+  // rows could only be matched across devices by content.
+  return dbPut('medChanges', entry);
 }
 async function deleteMedChange(id) {
   const db = await openDB();
@@ -5954,6 +5990,7 @@ async function accountSignup(email, password) {
   account = { user: j.user, encryptionKey: creds.aesKey };
   rememberSignedIn(creds.email, creds.aesKey);
   if (j.token) try { localStorage.setItem('mgs_session_token', j.token); } catch (_) {}
+  if (j.user) try { localStorage.setItem(LAST_USER_KEY, JSON.stringify(j.user)); } catch (_) {}
   return j.user;
 }
 
@@ -5968,6 +6005,7 @@ async function accountLogin(email, password) {
   account = { user: j.user, encryptionKey: creds.aesKey };
   rememberSignedIn(creds.email, creds.aesKey);
   if (j.token) try { localStorage.setItem('mgs_session_token', j.token); } catch (_) {}
+  if (j.user) try { localStorage.setItem(LAST_USER_KEY, JSON.stringify(j.user)); } catch (_) {}
   return j.user;
 }
 
@@ -5975,6 +6013,7 @@ async function accountLogout(forgetDevice) {
   try { await accountFetch('logout', { method: 'POST' }); } catch (e) {}
   account = { user: null, encryptionKey: null };
   try { localStorage.removeItem('mgs_session_token'); } catch (_) {}
+  forgetCachedAccountUser();
   if (forgetDevice) clearRememberedSignIn();
 }
 
@@ -5983,10 +6022,26 @@ async function accountForgot(email) {
   return r.ok;
 }
 
+// The last account the server confirmed, so a signed-in user who opens the app
+// with no signal (or while the API is down) still gets their own data. Before
+// this, a failed /api/me meant "not signed in", and the auth screen covered a
+// paying user's entire log until the network came back. Only a 401/403 from the
+// server means the session is really gone.
+const LAST_USER_KEY = 'mgs_last_user';
+function cachedAccountUser() {
+  try { return JSON.parse(localStorage.getItem(LAST_USER_KEY) || 'null'); } catch (_) { return null; }
+}
+function forgetCachedAccountUser() {
+  try { localStorage.removeItem(LAST_USER_KEY); } catch (_) {}
+}
 async function accountMe() {
-  const r = await accountFetch('me');
-  if (!r.ok) return null;
+  let r;
+  try { r = await accountFetch('me'); }
+  catch (e) { return cachedAccountUser(); }            // offline
+  if (r.status === 401 || r.status === 403) { forgetCachedAccountUser(); return null; }
+  if (!r.ok) return cachedAccountUser();                // server trouble, not a sign-out
   const j = await r.json();
+  try { localStorage.setItem(LAST_USER_KEY, JSON.stringify(j.user)); } catch (_) {}
   return j.user;
 }
 
@@ -6649,13 +6704,9 @@ async function getSupplies() {
 
 async function saveSupply(s) {
   await ensureStore('supplies');
-  const db = await openDB();
-  return new Promise((res, rej) => {
-    const t = db.transaction('supplies', 'readwrite');
-    t.objectStore('supplies').put(s);
-    t.oncomplete = res;
-    t.onerror = () => rej(t.error);
-  });
+  // Through dbPut, not a raw put: a raw put skipped uid assignment, so these
+  // rows could only be matched across devices by content.
+  return dbPut('supplies', s);
 }
 
 async function deleteSupply(id) {
@@ -6787,12 +6838,9 @@ async function getMeasurements() {
 
 async function saveMeasurement(m) {
   await ensureStore('measurements');
-  const db = await openDB();
-  return new Promise((res, rej) => {
-    const t = db.transaction('measurements', 'readwrite');
-    t.objectStore('measurements').put(m);
-    t.oncomplete = res; t.onerror = () => rej(t.error);
-  });
+  // Through dbPut, not a raw put: a raw put skipped uid assignment, so these
+  // rows could only be matched across devices by content.
+  return dbPut('measurements', m);
 }
 
 async function renderMeasurements() {
@@ -6867,12 +6915,9 @@ async function getLabs() {
 
 async function saveLab(l) {
   await ensureStore('labs');
-  const db = await openDB();
-  return new Promise((res, rej) => {
-    const t = db.transaction('labs', 'readwrite');
-    t.objectStore('labs').put(l);
-    t.oncomplete = res; t.onerror = () => rej(t.error);
-  });
+  // Through dbPut, not a raw put: a raw put skipped uid assignment, so these
+  // rows could only be matched across devices by content.
+  return dbPut('labs', l);
 }
 
 async function renderLabs() {
@@ -7085,12 +7130,9 @@ async function getExpenses() {
 }
 
 async function saveExpense(e) {
-  const db = await openDB();
-  return new Promise((res, rej) => {
-    const t = db.transaction('expenses', 'readwrite');
-    t.objectStore('expenses').put(e);
-    t.oncomplete = res; t.onerror = () => rej(t.error);
-  });
+  // Through dbPut, not a raw put: a raw put skipped uid assignment, so these
+  // rows could only be matched across devices by content.
+  return dbPut('expenses', e);
 }
 
 async function deleteExpense(id) {
@@ -7429,7 +7471,10 @@ async function buildPayload(opts) {
   const all = !opts || !opts.sections || !opts.sections.length;
   const inc = (k) => all || opts.sections.includes(k);
   const since = opts && opts.range ? rangeCutoff(opts.range) : new Date(0);
-  const filterByWhen = (rows) => rows.filter(r => new Date(r.when || r.date) >= since);
+  // parseDateFlexible, not new Date(): a bare 'YYYY-MM-DD' parses as UTC midnight,
+  // which is the previous evening west of UTC, so a ranged export dropped the
+  // entry on its first day.
+  const filterByWhen = (rows) => rows.filter(r => parseDateFlexible(r.when || r.date) >= since.getTime());
   const shots = inc('shots') ? filterByWhen((await dbAll(STORES.shots)) || []) : [];
   const weights = inc('weights') ? filterByWhen((await dbAll(STORES.weights)) || []) : [];
   const moods = inc('moods') ? filterByWhen((await dbAll(STORES.moods)) || []) : [];
@@ -7502,12 +7547,16 @@ function newUid() {
 const CONTENT_KEYS = {
   shots: (r) => `s|${String(r.when).slice(0, 16)}|${r.dose}`,
   weights: (r) => `w|${r.date}`,
-  supplies: (r) => `p|${r.med || ''}|${r.openedAt || ''}|${r.mg || ''}`,
+  // These four named fields the records never had (med/openedAt/mg, type,
+  // start, from/to), so every supply shared one key, as did every cycle and every
+  // med change. A restore or a pull onto a new device then kept only the first
+  // of each and dropped the rest as "duplicates". Legacy names kept as fallbacks.
+  supplies: (r) => `p|${r.type ?? r.med ?? ''}|${r.opened_at ?? r.openedAt ?? ''}|${r.total_mg ?? r.mg ?? ''}|${r.expires_at || ''}|${r.batch || ''}`,
   measurements: (r) => `m|${r.date}|${r.type}`,
   labs: (r) => `l|${r.date}|${r.type}`,
-  expenses: (r) => `e|${r.date}|${r.type}|${r.amount}`,
-  cycles: (r) => `c|${r.start || r.date || ''}`,
-  medChanges: (r) => `x|${r.date}|${r.from || ''}|${r.to || ''}`,
+  expenses: (r) => `e|${r.date}|${r.category ?? r.type ?? ''}|${r.amount}`,
+  cycles: (r) => `c|${r.startDate || r.start || r.date || ''}`,
+  medChanges: (r) => `x|${r.when || r.date || ''}|${r.medication || r.from || ''}|${r.to || ''}`,
 };
 
 // Union-merge one auto-increment store: keep every local row, add cloud rows we
@@ -7515,30 +7564,48 @@ const CONTENT_KEYS = {
 //
 // A record matches if EITHER its uid or its content key is already present, so
 // uid-bearing and legacy rows both dedupe correctly and a pull is idempotent.
+//
+// A row both sides know (same uid) is replaced only by a copy with a newer
+// updatedAt, which is how an edit reaches the other device. Before this a known
+// uid was always skipped, so edits never propagated and the two devices kept
+// flipping the cloud copy between their versions.
 async function mergeStore(storeName, incoming, contentKey) {
   const rows = Array.isArray(incoming) ? incoming : [];
-  if (!rows.length) return { added: 0, skipped: 0 };
+  if (!rows.length) return { added: 0, updated: 0, skipped: 0 };
   const existing = (await dbAll(storeName)) || [];
-  const seenUid = new Set();
+  const byUid = new Map();
   const seenContent = new Set();
   for (const r of existing) {
-    if (r && r.uid) seenUid.add(r.uid);
+    if (r && r.uid) byUid.set(r.uid, r);
     if (r) seenContent.add(contentKey(r));
   }
-  let added = 0, skipped = 0;
+  let added = 0, updated = 0, skipped = 0;
   for (const raw of rows) {
     if (!raw || typeof raw !== 'object') { skipped++; continue; }
     const rec = { ...raw };
     delete rec.id;                 // local autoincrement ids are device-scoped
     const ck = contentKey(rec);
-    if ((rec.uid && seenUid.has(rec.uid)) || seenContent.has(ck)) { skipped++; continue; }
+    const mine = rec.uid ? byUid.get(rec.uid) : null;
+    if (mine) {
+      if ((Number(rec.updatedAt) || 0) > (Number(mine.updatedAt) || 0)) {
+        const next = { ...rec, id: mine.id };
+        await dbPutExact(storeName, next);
+        byUid.set(rec.uid, next);
+        seenContent.add(ck);
+        updated++;
+      } else {
+        skipped++;
+      }
+      continue;
+    }
+    if (seenContent.has(ck)) { skipped++; continue; }
     if (!rec.uid) rec.uid = newUid();
-    seenUid.add(rec.uid);
+    byUid.set(rec.uid, rec);
     seenContent.add(ck);
-    await dbAdd(storeName, rec);
+    await dbAddExact(storeName, rec);
     added++;
   }
-  return { added, skipped };
+  return { added, updated, skipped };
 }
 
 // Notes are the one daily store that can't take last-write-wins. Mood is a number
