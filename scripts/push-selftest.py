@@ -148,6 +148,40 @@ def main():
     left = con.execute('SELECT COUNT(*) FROM push_subscriptions').fetchone()[0]
     check('410 from push service prunes the dead device', left == 0, f'rows={left}')
 
+    # --- a transient failure is retried, not dropped ----------------------
+    client.post('/api/push/subscribe', json=sub, headers=hdr)
+    con.execute('DELETE FROM push_reminders')
+    con.commit()
+    client.put('/api/push/schedule', json={'reminders': [{'kind': 'shot', 'fireAt': now + 300}]}, headers=hdr)
+    con.execute('UPDATE push_reminders SET fire_at = ? WHERE sent_at IS NULL', (now - 5,))
+    con.commit()
+
+    class Resp503:
+        status_code = 503
+
+    def flaky_webpush(**kw):
+        raise push_send.WebPushException('unavailable', response=Resp503())
+
+    with mock.patch.object(push_send, 'webpush', flaky_webpush):
+        push_dispatch.main()
+    pending = con.execute('SELECT COUNT(*) FROM push_reminders WHERE sent_at IS NULL').fetchone()[0]
+    check('503 from push service leaves the reminder queued for retry', pending == 1, f'pending={pending}')
+    retry_calls = []
+    with mock.patch.object(push_send, 'webpush', lambda **kw: retry_calls.append(kw) or True):
+        push_dispatch.main()
+    check('next run delivers it', len(retry_calls) == 1, f'calls={len(retry_calls)}')
+
+    # --- turning off one device keeps the other's reminders ---------------
+    laptop = dict(sub, endpoint=sub['endpoint'] + '-laptop')
+    client.post('/api/push/subscribe', json=laptop, headers=hdr)
+    client.put('/api/push/schedule', json={'reminders': [{'kind': 'shot', 'fireAt': now + 900}]}, headers=hdr)
+    client.post('/api/push/unsubscribe', json={'endpoint': laptop['endpoint']}, headers=hdr)
+    subs = con.execute('SELECT COUNT(*) FROM push_subscriptions').fetchone()[0]
+    queued = con.execute('SELECT COUNT(*) FROM push_reminders WHERE sent_at IS NULL').fetchone()[0]
+    check('unsubscribing one device keeps the other and the queue', subs == 1 and queued == 1,
+          f'subs={subs} queued={queued}')
+    client.post('/api/push/unsubscribe', json={}, headers=hdr)
+
     # --- unsubscribe clears the queue ------------------------------------
     client.post('/api/push/subscribe', json=sub, headers=hdr)
     client.put('/api/push/schedule', json={'reminders': [{'kind': 'shot', 'fireAt': now + 900}]}, headers=hdr)

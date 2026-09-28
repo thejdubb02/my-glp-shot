@@ -44,13 +44,11 @@ STRIPE_PRICE_MONTHLY_TEST = os.environ.get('STRIPE_PRICE_MONTHLY_TEST', '')
 STRIPE_PRICE_YEARLY_TEST = os.environ.get('STRIPE_PRICE_YEARLY_TEST', '')
 # Admin bearer token. If unset, admin endpoints are disabled.
 MGS_ADMIN_TOKEN = os.environ.get('MGS_ADMIN_TOKEN', '')
-# Addresses that get is_admin=1 the moment they sign up. The operator's own
-# account is otherwise a chicken-and-egg problem: the in-app admin view needs a
-# signed-in admin, and promoting one by hand means a shell on the box every time.
-# Server-side env only — never anything a request can influence.
-MGS_ADMIN_EMAILS = {
-    e.strip().lower() for e in os.environ.get('MGS_ADMIN_EMAILS', '').split(',') if e.strip()
-}
+# Admin is never granted at signup. It used to be, for any address listed in
+# MGS_ADMIN_EMAILS, but signup does not verify the address, so whoever registered
+# a listed address first became an admin over every user's data. On 2026-09-28 one
+# of the two listed addresses had no account, which left admin open to anyone who
+# typed it in. Promote with scripts/promote-admin.py on the box instead.
 # Smart Import goes through the LiteLLM gateway, not Google directly: the gateway
 # holds the spend cap, the fallback chain, and the only key that appears in the
 # fleet's registry. Google's own API is deliberately no longer reachable from here.
@@ -605,7 +603,7 @@ def signup():
 
     pw_hash = bcrypt.hashpw(auth_token.encode('utf-8'), bcrypt.gensalt(rounds=12)).decode()
     trial_ends = now_ts() + TRIAL_DAYS * 86400
-    is_admin = 1 if email in MGS_ADMIN_EMAILS else 0
+    is_admin = 0
     attrib = _clean_attribution(data.get('attribution'))
     try:
         cur = db.execute(
@@ -1324,6 +1322,15 @@ def _apply_subscription(sub):
 
     status = sub.get('status')  # trialing | active | past_due | canceled | unpaid | incomplete | incomplete_expired
     sub_id = sub.get('id')
+    # Stripe does not deliver webhooks in order. A late cancel for a subscription
+    # the user has since replaced would overwrite the live subscription id with
+    # the dead one, and account deletion would then cancel the dead one and leave
+    # the live one billing. Only a new active or trialing subscription may replace
+    # the one on file; anything else about another subscription is history.
+    current_sub = user['stripe_subscription_id']
+    if current_sub and sub_id and sub_id != current_sub and status not in ('active', 'trialing'):
+        db.commit()  # keep a customer-id backfill made above
+        return
     current_period_end = _period_end(sub)
     trial_end = sub.get('trial_end')
     cancel_at_period_end = sub.get('cancel_at_period_end')
@@ -1349,16 +1356,23 @@ def _apply_subscription(sub):
                 f"{MGS_EMOJI} **{MGS_APP_NAME}** · 💳 paid subscription — {user['email']}"
             )
     elif status in ('canceled', 'unpaid', 'incomplete_expired'):
-        # Don't yank premium mid-period — keep premium_until, just flip status when it lapses.
+        # Don't yank premium mid-period: keep premium_until, just flip status when
+        # it lapses. A trial user who cancels keeps the trial they already had,
+        # rather than being promoted to 'premium' because premium_until held the
+        # trial end. The subscription id is cleared because there is no live
+        # subscription any more; leaving it set made the app go on telling a
+        # cancelled user "Subscribed, first payment on ...".
+        now = now_ts()
         db.execute(
             """UPDATE users
                SET subscription_status = CASE
+                       WHEN subscription_status = 'trial' AND trial_ends_at IS NOT NULL AND trial_ends_at > ? THEN 'trial'
                        WHEN premium_until IS NOT NULL AND premium_until > ? THEN 'premium'
                        ELSE 'free'
                    END,
-                   stripe_subscription_id = ?
+                   stripe_subscription_id = NULL
                WHERE id = ?""",
-            (now_ts(), sub_id, user['id']),
+            (now, now, user['id']),
         )
     elif status == 'past_due':
         # Keep current state; Stripe is dunning.
@@ -1410,7 +1424,12 @@ def stripe_webhook():
                 sub = stripe.Subscription.retrieve(sub_id, api_key=STRIPE_API_KEY)
                 _apply_subscription(sub)
         elif et in ('customer.subscription.created', 'customer.subscription.updated', 'customer.subscription.deleted'):
-            _apply_subscription(obj)
+            # Apply Stripe's current view of the subscription, not the snapshot in
+            # the event. Events arrive out of order, so a delayed 'updated: active'
+            # landing after 'deleted' used to revive a cancelled subscription.
+            # Stripe's docs recommend exactly this re-fetch.
+            sub = stripe.Subscription.retrieve(obj['id'], api_key=STRIPE_API_KEY) if obj.get('id') else obj
+            _apply_subscription(sub)
         elif et == 'invoice.payment_failed':
             app.logger.warning('Payment failed for customer %s', obj.get('customer'))
         # Any other event type is ignored.
@@ -2244,8 +2263,12 @@ def push_unsubscribe():
         db.execute('DELETE FROM push_subscriptions WHERE endpoint = ? AND user_id = ?', (endpoint, user['id']))
     else:
         db.execute('DELETE FROM push_subscriptions WHERE user_id = ?', (user['id'],))
-    # A device that stops receiving reminders should stop having them queued.
-    db.execute('DELETE FROM push_reminders WHERE user_id = ? AND sent_at IS NULL', (user['id'],))
+    # Reminders are queued per account, not per device, so only drop them once no
+    # device is left to receive them. Deleting them on every unsubscribe meant
+    # turning notifications off on a laptop silently stopped the phone's too.
+    left = db.execute('SELECT COUNT(*) FROM push_subscriptions WHERE user_id = ?', (user['id'],)).fetchone()[0]
+    if not left:
+        db.execute('DELETE FROM push_reminders WHERE user_id = ? AND sent_at IS NULL', (user['id'],))
     db.commit()
     return jsonify(ok=True)
 

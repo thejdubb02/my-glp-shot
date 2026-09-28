@@ -195,6 +195,68 @@ C.ok('subscription mode', kw['mode'] == 'subscription')
 C.ok('user_id in metadata', kw['metadata']['user_id'] == str(uid))
 C.ok('promo codes allowed', kw['allow_promotion_codes'] is True)
 
+print('\n8c. signup never grants admin')
+c = db()
+C.ok('a fresh signup is not an admin',
+     int(c.execute('SELECT is_admin FROM users WHERE id=?', (uid,)).fetchone()[0] or 0) == 0)
+c.close()
+C.ok('no address list can grant admin at signup any more',
+     not hasattr(A, 'MGS_ADMIN_EMAILS'), 'MGS_ADMIN_EMAILS is back in app.py')
+
+print('\n8d. a late cancel for an old subscription cannot replace the live one')
+# Stripe does not deliver webhooks in order. Replays run against a customer id
+# this account does not have, so nothing here can touch a real Stripe object.
+c = db()
+orig = c.execute('SELECT stripe_customer_id, stripe_subscription_id, subscription_status, '
+                 'premium_until, trial_ends_at FROM users WHERE id=?', (uid,)).fetchone()
+c.execute('UPDATE users SET stripe_customer_id=NULL, stripe_subscription_id=NULL WHERE id=?', (uid,))
+c.commit()
+c.close()
+fake_cust = 'cus_e2e_offline_%s' % uid
+def replay(sub_id, status):
+    with A.app.app_context():
+        A._apply_subscription({
+            'id': sub_id, 'customer': fake_cust, 'status': status,
+            'trial_end': None, 'cancel_at_period_end': False,
+            'items': {'data': [{'current_period_end': now + 30 * DAY}]},
+            'metadata': {'user_id': str(uid)},
+        })
+    c = db()
+    u = c.execute('SELECT stripe_subscription_id, subscription_status FROM users WHERE id=?',
+                  (uid,)).fetchone()
+    c.close()
+    return u
+u = replay('sub_e2e_old', 'active')
+C.ok('first subscription recorded', u['stripe_subscription_id'] == 'sub_e2e_old', str(u['stripe_subscription_id']))
+u = replay('sub_e2e_new', 'active')
+C.ok('replacement subscription takes over', u['stripe_subscription_id'] == 'sub_e2e_new', str(u['stripe_subscription_id']))
+u = replay('sub_e2e_old', 'canceled')
+C.ok('late cancel of the old one leaves the live id alone',
+     u['stripe_subscription_id'] == 'sub_e2e_new', str(u['stripe_subscription_id']))
+C.ok('late cancel of the old one leaves the user premium',
+     u['subscription_status'] == 'premium', u['subscription_status'])
+u = replay('sub_e2e_new', 'canceled')
+C.ok('cancelling the live one keeps access to period end',
+     u['subscription_status'] == 'premium', u['subscription_status'])
+C.ok('and clears the id, so the app stops saying "Subscribed"',
+     u['stripe_subscription_id'] is None, str(u['stripe_subscription_id']))
+
+print('\n8e. a trial user who cancels keeps their trial, not "premium"')
+c = db()
+c.execute("UPDATE users SET subscription_status='trial', trial_ends_at=?, premium_until=?, "
+          "stripe_subscription_id=NULL WHERE id=?", (now + 5 * DAY, now + 5 * DAY, uid))
+c.commit()
+c.close()
+replay('sub_e2e_trialsub', 'trialing')
+u = replay('sub_e2e_trialsub', 'canceled')
+C.ok('status stays trial', u['subscription_status'] == 'trial', u['subscription_status'])
+C.ok('no live subscription on file', u['stripe_subscription_id'] is None, str(u['stripe_subscription_id']))
+c = db()
+c.execute('UPDATE users SET stripe_customer_id=?, stripe_subscription_id=?, subscription_status=?, '
+          'premium_until=?, trial_ends_at=? WHERE id=?', tuple(orig) + (uid,))
+c.commit()
+c.close()
+
 # ---------- real calls, so Stripe itself validates the payload ----------
 # amount_total is the proof, and it is Stripe's own arithmetic rather than ours:
 # a session that honours the remaining trial shows 0 due today, and one inside the

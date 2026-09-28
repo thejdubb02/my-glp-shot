@@ -63,6 +63,16 @@ def main():
         sent, failed = send_to_user(db, r['user_id'], r['title'], r['body'], r['url'] or '/')
         sent_total += sent
         failed_total += failed
+        # Nothing delivered but a device is still registered: a transient failure
+        # (timeout, push service 5xx). Release the claim so the next minute's run
+        # retries, until GRACE_SECONDS retires it. Devices that keep failing are
+        # removed by send_to_user after MAX_FAILURES, which ends the retries.
+        if not sent and failed:
+            still = db.execute('SELECT COUNT(*) FROM push_subscriptions WHERE user_id = ?',
+                               (r['user_id'],)).fetchone()[0]
+            if still:
+                db.execute('UPDATE push_reminders SET sent_at = NULL WHERE id = ?', (r['id'],))
+                db.commit()
 
     if due:
         log.info('%d due — %d delivered, %d failed', len(due), sent_total, failed_total)
