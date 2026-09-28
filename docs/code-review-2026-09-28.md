@@ -1,0 +1,41 @@
+# Code review, 28 September 2026
+
+A read-only review in four areas (accounts, billing and push, sync and data,
+core logic), run with the agy CLI, then every finding checked against the code
+by hand. Twelve were real and are fixed in `194612c` (server) and `002af7a`
+(client), release 0.65.0. Each fix has a test that fails on the previous code.
+
+## Fixed
+
+| Area | Defect | Effect |
+|---|---|---|
+| Accounts | Signup granted admin to any address in `MGS_ADMIN_EMAILS`, unverified | One listed address had no account, so anyone could claim admin over all user data. Not exploited. |
+| Accounts | A failed `/api/me` was read as "signed out" | Opening the app offline, or during an API outage, hid a signed-in user's whole log behind the sign-in screen |
+| Sync | Content keys for supplies, cycles, med changes and expenses named fields the records never had | A restore or a pull onto a new device kept one supply, one cycle and one med change and dropped the rest |
+| Sync | Editing a shot minted a new uid; pull-side sanitizers stripped uid and updatedAt; a known uid was always skipped | Edits duplicated on other devices or never reached them |
+| Sync | Six savers wrote with a raw `put` | Those rows never got a uid |
+| Billing | Webhooks applied from the event snapshot | A delayed "active" could revive a cancelled subscription |
+| Billing | A late cancel for an old subscription overwrote the live subscription id | Account deletion would cancel the dead one and leave the live one billing |
+| Billing | Cancelling kept the subscription id, and a trial user who cancelled became "premium" | The app went on saying "Subscribed" |
+| Push | Unsubscribing one device deleted the account's queued reminders | Other devices went silent |
+| Push | A transient send failure marked the reminder sent | Never retried |
+| Dates | Shot timestamps were filed under their UTC date | Evening shots west of UTC counted toward the next day |
+| Dates | The daily reminder stepped forward 24 hours, not one day | Skipped a day across spring-forward |
+| UI | "Holding steady" read the oldest shots; the next-shot panel quoted the first shot ever | Wrong badge, wrong "last shot" |
+
+Checked and rejected: the CSRF claim (the session cookie is `SameSite=Lax`, so
+a cross-site POST carries no session), the admin-token shape claim (the
+configured token is not session-shaped), and the metrics claim (the dashboard
+already counts only users whose access is current).
+
+## Not fixed
+
+- **Deletions do not sync.** Merges only ever add, so an entry deleted on one
+  device comes back from another. Needs tombstones.
+- **Importing the same CSV twice doubles it.** File imports do not dedupe
+  against what is already stored.
+- **Cancelling during a trial still reads "Subscribed".** A cancel from the
+  billing portal sets `cancel_at_period_end`; the subscription stays
+  `trialing` until the trial ends, and nothing records the pending cancel.
+
+All three are on the GLP board in Kaneo.
