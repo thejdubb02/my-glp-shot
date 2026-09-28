@@ -5,7 +5,7 @@
   --teal-darker:#134e4a;
   --teal-lt:#d6f5ef;
   --mint:#5eead4;
-  --orange:#f97316;
+  --orange:#c25205;  /* darkened from #f97316 for WCAG AA white-text contrast, SEN-53 */
   --bg:#f8fafb;
   --surface:#ffffff;
   --surface-alt:#f1f6f5;
@@ -143,7 +143,7 @@ section h2{font-size:2rem;text-align:center;margin:0 0 40px;font-weight:700;lett
 
 /* Footer */
 /* Footer is a fixed dark surface in both themes — using var(--ink) inverts in dark mode and turns text invisible. Hardcode dark navy. */
-.ftr{background:#0f172a;color:#cbd5e1;padding:60px 32px 30px}
+.ftr{background:#0f172a;color:#cbd5e1;padding:60px 32px 30px;--muted:#8b9bb0}  /* footer bg is always dark; reuse the dark-theme muted value so .muted text clears WCAG AA, SEN-53 */
 [data-theme="dark"] .ftr{background:#020617;border-top:1px solid #1e293b}
 .ftr a{color:#cbd5e1}
 .ftr-cols strong,.ftr a:hover{color:#fff}
