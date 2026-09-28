@@ -1,5 +1,5 @@
 // My GLP Shot service worker — network-first for app shell so updates are picked up on every visit; cache fallback for offline.
-const CACHE = 'mglp-v0.65.1';
+const CACHE = 'mglp-v0.65.2';
 // Without these three the app cannot boot offline at all, so a failure to cache
 // them must fail the install rather than leaving a service worker that claims
 // offline support it can't deliver.
@@ -11,6 +11,7 @@ const CRITICAL = [
   'app.js',
 ];
 const OPTIONAL = [
+  'theme-boot.js',
   'lib/chart.min.js',
   'manifest.webmanifest',
   'icons/icon-192.png',

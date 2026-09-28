@@ -1,0 +1,130 @@
+// Doctor-share page logic. A separate file because the site's CSP allows no
+// inline script: while this lived inline in view.html, every share link sat
+// on "Loading..." from August to 28 September 2026.
+(async function(){
+  const root = document.getElementById('root');
+  const HEX = (s) => new Uint8Array(s.match(/.{1,2}/g).map(b => parseInt(b, 16)));
+  const params = new URLSearchParams(location.hash.slice(1));
+  const token = params.get('t');
+  const keyHex = params.get('k');
+  if (!token || !keyHex || !/^[a-f0-9]{64}$/.test(keyHex)) {
+    root.innerHTML = '<p class="err">Invalid or incomplete share link.</p>';
+    return;
+  }
+  try {
+    const r = await fetch(`/api/share/${token}`);
+    if (r.status === 404) { root.innerHTML = '<p class="err">This share link expired or has been revoked.</p>'; return; }
+    if (!r.ok) throw new Error('Failed to fetch shared data.');
+    const j = await r.json();
+    const iv = Uint8Array.from(atob(j.iv), c => c.charCodeAt(0));
+    const ct = Uint8Array.from(atob(j.ciphertext), c => c.charCodeAt(0));
+    const aesKey = await crypto.subtle.importKey('raw', HEX(keyHex), 'AES-GCM', false, ['decrypt']);
+    const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, aesKey, ct);
+    const data = await decodePayload(new Uint8Array(pt));
+    render(data, j);
+  } catch (e) {
+    root.textContent = '';
+    const p = document.createElement('p');
+    p.className = 'err';
+    p.textContent = 'Could not decrypt: ' + e.message;
+    root.appendChild(p);
+  }
+
+  // Share blobs are gzip-compressed behind a magic header from v0.48 on;
+  // anything older is plain JSON.
+  async function decodePayload(bytes) {
+    const MAGIC = 'MGSZ1:';
+    const head = new TextDecoder().decode(bytes.subarray(0, MAGIC.length));
+    if (head !== MAGIC) return JSON.parse(new TextDecoder().decode(bytes));
+    const stream = new Blob([bytes.subarray(MAGIC.length)]).stream()
+      .pipeThrough(new DecompressionStream('gzip'));
+    return JSON.parse(new TextDecoder().decode(await new Response(stream).arrayBuffer()));
+  }
+
+  function escapeHTML(s){return String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));}
+  // Numeric fields still arrive from a patient-authored blob, so never trust the
+  // type — a crafted share link would otherwise run script in the doctor's browser.
+  function num(v, dp) {
+    const n = Number(v);
+    if (!Number.isFinite(n)) return '—';
+    return dp === undefined ? String(n) : n.toFixed(dp);
+  }
+
+  function fmtWhen(v) {
+    const d = new Date(v);
+    return Number.isNaN(d.getTime()) ? '—' : d.toLocaleString();
+  }
+
+  // This page is standalone, so it carries its own copy of the unit rules the
+  // app uses: maths in pounds, display in the patient's chosen unit.
+  const LB_PER_KG = 2.20462;
+  function toLb(value, unit){
+    const n = parseFloat(value);
+    if (!Number.isFinite(n)) return null;
+    return unit === 'kg' ? n * LB_PER_KG : n;
+  }
+  function fromLb(lb, unit){
+    const n = parseFloat(lb);
+    if (!Number.isFinite(n)) return null;
+    return unit === 'kg' ? n / LB_PER_KG : n;
+  }
+
+  function render(data, meta){
+    const since = new Date(); since.setDate(since.getDate() - 90);
+    const arr = (v) => Array.isArray(v) ? v : [];
+    const shots = arr(data.shots).filter(s => new Date(s.when) >= since).sort((a,b) => new Date(b.when) - new Date(a.when));
+    const weights = arr(data.weights).slice().sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+    const labs = arr(data.labs);
+    const measurements = arr(data.measurements);
+    // This page is standalone by design (it must decrypt and render without the
+    // app's scripts), so it carries its own copy of the two label tables.
+    // measurements-selftest.mjs pins this copy against MEASUREMENT_LABELS in
+    // data.js, because a doctor reading "high_hip" is our bug, not theirs.
+    const M_LABELS = {
+      waist: 'Waist', high_hip: 'High hip', hips: 'Hips', high_bust: 'High bust',
+      bust: 'Bust', chest: 'Chest', thigh: 'Thigh', arm: 'Arm', neck: 'Neck',
+    };
+    const L_LABELS = {
+      a1c: 'A1c', glucose_fasting: 'Fasting glucose', bp_systolic: 'BP systolic',
+      bp_diastolic: 'BP diastolic', cholesterol_total: 'Total cholesterol',
+      cholesterol_hdl: 'HDL', cholesterol_ldl: 'LDL', triglycerides: 'Triglycerides', alt: 'ALT',
+    };
+    const wUnit = data.settings?.weightUnit === 'kg' ? 'kg' : 'lb';
+    const inUnit = (w) => fromLb(toLb(w?.value, w?.unit), wUnit);
+    const first = inUnit(weights[0]);
+    const last = inUnit(weights[weights.length-1]);
+    const wd = (Number.isFinite(first) && Number.isFinite(last))
+      ? { start: first, current: last, delta: last - first }
+      : null;
+    const expires = new Date(meta.expiresAt * 1000);
+    root.innerHTML = `
+      <div class="doctor-banner">
+        <strong>Doctor share — read-only snapshot.</strong>
+        <p class="muted small" style="margin:4px 0 0">${meta.label ? escapeHTML(meta.label) + ' · ' : ''}Expires ${expires.toLocaleString()}. Generated by the patient via My GLP Shot.</p>
+      </div>
+      <h1>My GLP Shot — Patient summary</h1>
+      <p class="muted small">Last 90 days · ${shots.length} shots · ${weights.length} weight entries</p>
+      <div>
+        <div class="stat"><strong>${shots.length}</strong><span>shots (90d)</span></div>
+        ${wd ? `<div class="stat"><strong>${wd.delta < 0 ? '−' : '+'}${Math.abs(wd.delta).toFixed(1)} ${wUnit}</strong><span>since start</span></div>` : ''}
+        ${wd ? `<div class="stat"><strong>${wd.current.toFixed(1)} ${wUnit}</strong><span>current weight</span></div>` : ''}
+      </div>
+      <h2>Medication</h2>
+      <p>${escapeHTML(data.settings?.medication || 'Tirzepatide')} · cadence every ${num(data.settings?.cadenceDays ?? 7)}d · half-life ${num(data.settings?.halfLifeDays ?? 5)}d</p>
+      <h2>Recent shots</h2>
+      <table><thead><tr><th>Date</th><th>Dose</th><th>Site</th><th>Notes</th></tr></thead><tbody>
+      ${shots.slice(0,60).map(s => `<tr><td>${escapeHTML(fmtWhen(s.when))}</td><td>${num(s.dose)} mg</td><td>${escapeHTML(s.site||'')}</td><td>${escapeHTML(s.notes||'')}</td></tr>`).join('')}
+      </tbody></table>
+      ${weights.length ? `<h2>Weight (last 30 entries)</h2><table><thead><tr><th>Date</th><th>Weight</th></tr></thead><tbody>
+      ${weights.slice(-30).map(w => { const v = inUnit(w); return `<tr><td>${escapeHTML(w.date)}</td><td>${Number.isFinite(v) ? v.toFixed(1) + ' ' + wUnit : '—'}</td></tr>`; }).join('')}
+      </tbody></table>` : ''}
+      ${labs.length ? `<h2>Labs</h2><table><thead><tr><th>Date</th><th>Test</th><th>Value</th></tr></thead><tbody>
+      ${labs.map(l => `<tr><td>${escapeHTML(l.date)}</td><td>${escapeHTML(L_LABELS[l.type] || l.type)}</td><td>${num(l.value)}</td></tr>`).join('')}
+      </tbody></table>` : ''}
+      ${measurements.length ? `<h2>Body measurements</h2><table><thead><tr><th>Date</th><th>Type</th><th>Value</th></tr></thead><tbody>
+      ${measurements.map(m => `<tr><td>${escapeHTML(m.date)}</td><td>${escapeHTML(M_LABELS[m.type] || m.type)}</td><td>${num(m.value)} ${escapeHTML(m.unit)}</td></tr>`).join('')}
+      </tbody></table>` : ''}
+      <p class="muted small">This snapshot was decrypted in your browser using the key in the URL. The server cannot read this data.</p>
+    `;
+  }
+})();

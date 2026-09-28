@@ -8,9 +8,7 @@
 <title>Reset password — My GLP Shot</title>
 <link rel="icon" href="icons/favicon.ico">
 <link rel="stylesheet" href="styles.css?v=18">
-<script>
-(function(){ try { var t = localStorage.getItem('theme'); if (t === 'dark' || t === 'light') document.documentElement.setAttribute('data-theme', t); } catch(e){} })();
-</script>
+<script src="theme-boot.js"></script>
 <style>body{padding:24px;max-width:480px;margin:40px auto;background:var(--bg);color:var(--ink)}</style>
 </head>
 <body>
@@ -32,36 +30,8 @@
     </div>
   </form>
 </section>
-<script src="/app.js?v=8"></script>
-<script>
-(async function(){
-  const params = new URLSearchParams(location.hash.slice(1));
-  const token = params.get('token');
-  if (!token || !/^[a-f0-9]{32,}$/.test(token)) {
-    document.getElementById('reset-status').textContent = 'Invalid or missing reset token.';
-    return;
-  }
-  document.getElementById('reset-form').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const email = document.getElementById('reset-email').value.trim();
-    const pw = document.getElementById('reset-pw').value;
-    document.getElementById('reset-status').textContent = 'Deriving keys…';
-    try {
-      const creds = await deriveAccountCreds(email, pw);
-      const r = await fetch('/api/reset', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token, authToken: creds.authToken }),
-      });
-      const j = await r.json();
-      if (!r.ok) throw new Error(j.message || 'Reset failed');
-      document.getElementById('reset-status').textContent = '✓ Password reset. Redirecting…';
-      setTimeout(() => location.href = '/', 1500);
-    } catch (e) {
-      document.getElementById('reset-status').textContent = 'Failed: ' + e.message;
-    }
-  });
-})();
-</script>
+<script src="data.js?v=430"></script>
+<script src="app.js?v=430"></script>
+<script src="reset.js?v=1"></script>
 </body>
 </html>

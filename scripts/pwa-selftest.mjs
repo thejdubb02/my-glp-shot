@@ -65,6 +65,23 @@ eq('index.html theme-color matches the manifest', metaTheme, manifest.theme_colo
   }
 }
 
+// The CSP in deploy/mgs-security-headers.conf allows no inline script, so an
+// inline <script> is blocked in production and nowhere else. That silently broke
+// the doctor-share page, password reset and the theme boot from August 2026 to
+// 28 September: every share link sat on "Loading...". No page may carry one.
+for (const f of fs.readdirSync(APP).filter(n => n.endsWith('.html'))) {
+  const page = fs.readFileSync(path.join(APP, f), 'utf8');
+  const inline = [...page.matchAll(/<script(\s[^>]*)?>([\s\S]*?)<\/script>/g)]
+    .filter(m => !/\bsrc=/.test(m[1] || '') && !/type="application\/ld\+json"/.test(m[1] || '') && m[2].trim());
+  ok(`${f} has no inline script (the CSP would block it)`, inline.length === 0, inline.map(m => m[2].trim().slice(0, 40)).join(' | '));
+  const handlers = page.match(/\son(click|load|error|submit|change|input)=/g) || [];
+  ok(`${f} has no inline event handlers`, handlers.length === 0, handlers.join(','));
+}
+{
+  const csp = fs.readFileSync(path.join(APP, '..', '..', 'deploy', 'mgs-security-headers.conf'), 'utf8');
+  ok('the CSP this guards against still forbids inline script', /script-src[^;"]*/.test(csp) && !/script-src[^;"]*'unsafe-inline'/.test(csp));
+}
+
 // ---------- icons ----------
 {
   const icons = manifest.icons || [];

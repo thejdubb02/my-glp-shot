@@ -23,7 +23,8 @@ import { loadApp, Assert } from './lib/app-harness.mjs';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const APP_DIR = path.join(HERE, '..', 'web', 'app');
 const INDEX_HTML = fs.readFileSync(path.join(APP_DIR, 'index.html'), 'utf8');
-const VIEW_HTML = fs.readFileSync(path.join(APP_DIR, 'view.html'), 'utf8');
+// The doctor-share logic lives in view.js (the CSP allows no inline script).
+const VIEW_HTML = fs.readFileSync(path.join(APP_DIR, 'view.js'), 'utf8');
 const APP_JS = fs.readFileSync(path.join(APP_DIR, 'app.js'), 'utf8');
 
 const A = new Assert('measurements');
