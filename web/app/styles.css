@@ -760,3 +760,11 @@ select, textarea { min-height: 44px; }
   select, textarea { min-height: 34px; }
   .info-btn::after { width: 24px; height: 24px; }
 }
+
+/* Weight history: entries grouped by week, tap one to edit */
+.weight-history{margin-top:10px}
+.weight-history summary{cursor:pointer;color:var(--bronze-dk);font-weight:600;padding:6px 0}
+.weight-week{margin-top:8px}
+.weight-week-head{display:flex;justify-content:space-between;font-size:.75rem;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;font-weight:600;padding:4px 0}
+.weight-week-change.gain{color:var(--accent-dk)}
+.weight-entry{display:flex;justify-content:space-between;width:100%;padding:8px 0;background:none;border:0;border-top:1px solid var(--line);color:var(--ink);font:inherit;cursor:pointer;text-align:left}

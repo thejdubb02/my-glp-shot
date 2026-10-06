@@ -624,6 +624,43 @@ async function getWeightsSorted() {
   return all.sort((a, b) => parseDateFlexible(a.date) - parseDateFlexible(b.date));
 }
 
+// Weight rows -> one group per calendar week (Monday start, local), newest week
+// first. changeLb is the week's last reading minus the last reading of the
+// previous week that has any, in pounds; null for the earliest week.
+function weeklyWeightSummary(weights) {
+  const weeks = new Map();
+  for (const w of weights || []) {
+    const day = toCanonicalDate(w.date);
+    if (!day || toLb(w.value, w.unit) == null) continue;
+    const d = new Date(`${day}T00:00:00`);
+    d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+    const key = toCanonicalDate(d);
+    if (!weeks.has(key)) weeks.set(key, []);
+    weeks.get(key).push({ ...w, _day: day });
+  }
+  const asc = [...weeks.keys()].sort();
+  const out = [];
+  let prevLast = null;
+  for (const weekStart of asc) {
+    // Oldest first within the week (id breaks same-day ties), so the last is the latest reading.
+    const rows = weeks.get(weekStart).sort((a, b) => a._day.localeCompare(b._day) || (a.id || 0) - (b.id || 0));
+    const last = toLb(rows[rows.length - 1].value, rows[rows.length - 1].unit);
+    out.push({
+      weekStart,
+      entries: rows.reverse().map(({ _day, ...w }) => w),
+      changeLb: prevLast == null ? null : last - prevLast,
+    });
+    prevLast = last;
+  }
+  return out.reverse();
+}
+
+// A reading more than 10% away from a neighbouring one is almost always a
+// slipped digit (1xx for 2xx), so the form asks before saving it.
+function weightLooksLikeTypo(prevLb, newLb) {
+  return Math.abs(newLb - prevLb) > 0.1 * prevLb;
+}
+
 // One-time normalizer: rewrite any weights row whose .date isn't already canonical
 // local YYYY-MM-DD. Idempotent — re-runs on every boot but only writes when needed.
 // This unblocks users who have legacy entries from CSV imports or sync round-trips
@@ -1207,16 +1244,36 @@ document.addEventListener('DOMContentLoaded', async () => {
   $('#weight-cancel').addEventListener('click', () => $('#weight-dialog').close());
   $('#weight-form').addEventListener('submit', async (e) => {
     e.preventDefault();
-    await dbAdd(STORES.weights, {
+    const row = {
       value: parseFloat($('#weight-val').value),
       unit: $('#weight-unit').value,
       date: $('#weight-date').value,
-    });
+    };
+    // Typo guard: compare with the nearest other weigh-in on or before this
+    // date (else the nearest after) and ask before saving a big jump.
+    const others = (await getWeightsSorted()).filter(w => w.id !== _editingWeightId && toCanonicalDate(w.date) && toLb(w.value, w.unit) != null);
+    const day = toCanonicalDate(row.date);
+    const near = others.filter(w => toCanonicalDate(w.date) <= day).pop() || others.find(w => toCanonicalDate(w.date) > day);
+    const newLb = toLb(row.value, row.unit);
+    if (near && newLb != null && weightLooksLikeTypo(toLb(near.value, near.unit), newLb)) {
+      const nearLb = toLb(near.value, near.unit);
+      if (!confirm(`That's ${fmtWeightDelta(newLb - nearLb)} from your weigh-in on ${fmtDateShort(`${toCanonicalDate(near.date)}T00:00:00`)} (${fmtWeight(nearLb)}). Save anyway?`)) return;
+    }
+    if (_editingWeightId != null) await dbPut(STORES.weights, { id: _editingWeightId, ...row });
+    else await dbAdd(STORES.weights, row);
     await ensurePersisted();
     $('#weight-dialog').close();
     await renderWeights();
     markSyncDirty();
-    track('weight_logged', { unit: $('#weight-unit').value });
+    track(_editingWeightId != null ? 'weight_edited' : 'weight_logged', { unit: $('#weight-unit').value });
+  });
+  $('#weight-delete').addEventListener('click', async () => {
+    if (_editingWeightId == null) return;
+    if (!confirm('Delete this weight entry?')) return;
+    await dbDelSynced(STORES.weights, _editingWeightId);
+    $('#weight-dialog').close();
+    await renderWeights();
+    markSyncDirty();
   });
 
   $('#set-med').addEventListener('change', async (e) => {
@@ -1596,7 +1653,11 @@ function applyTheme() {
   if (typeof applyColorTheme === 'function') applyColorTheme(settings.colorTheme || 'teal');
 }
 
+let _editingWeightId = null; // null = logging a new weight
 async function openWeightDialog() {
+  _editingWeightId = null;
+  $('#weight-dialog h2').textContent = 'Log Weight';
+  $('#weight-delete').classList.add('hidden');
   $('#weight-val').value = '';
   // The explicit Settings preference wins over the last-logged unit. Otherwise
   // someone who has just switched to kg opens this dialog, sees "lb" preselected,
@@ -1605,6 +1666,41 @@ async function openWeightDialog() {
   $('#weight-unit').value = weightUnit();
   $('#weight-date').value = todayISODate();
   $('#weight-dialog').showModal();
+}
+
+async function openWeightEdit(id) {
+  const w = await dbGet(STORES.weights, id);
+  if (!w) return;
+  _editingWeightId = id;
+  $('#weight-dialog h2').textContent = 'Edit Weight';
+  $('#weight-delete').classList.remove('hidden');
+  $('#weight-val').value = w.value;
+  $('#weight-unit').value = w.unit === 'kg' ? 'kg' : 'lb';
+  $('#weight-date').value = toCanonicalDate(w.date) || todayISODate();
+  $('#weight-dialog').showModal();
+}
+
+// Insights weight card: every entry (tap to edit or delete) grouped by week,
+// with how much each week moved.
+function renderWeightHistory(wsAll) {
+  const box = $('#weight-history');
+  const list = $('#weight-history-list');
+  if (!box || !list) return;
+  const weeks = weeklyWeightSummary(wsAll);
+  box.classList.toggle('hidden', !weeks.length);
+  list.innerHTML = weeks.map(wk => {
+    let change = '';
+    if (wk.changeLb != null) {
+      // Round in the display unit first so a 0.04 kg move doesn't claim a direction.
+      const shown = parseFloat(fmtWeightDelta(wk.changeLb, { bare: true }));
+      change = `<span class="weight-week-change${shown > 0 ? ' gain' : ''}">${escapeHTML(fmtWeightDelta(wk.changeLb))}</span>`;
+    }
+    const rows = wk.entries.map(w => `<button type="button" class="weight-entry" data-weight-id="${Number(w.id)}"><span>${escapeHTML(fmtDateShort(`${toCanonicalDate(w.date)}T00:00:00`))}</span><span>${escapeHTML(fmtWeight(toLb(w.value, w.unit)))}</span></button>`).join('');
+    return `<div class="weight-week"><div class="weight-week-head"><span>Week of ${escapeHTML(fmtDateShort(`${wk.weekStart}T00:00:00`))}</span>${change}</div>${rows}</div>`;
+  }).join('');
+  list.querySelectorAll('.weight-entry[data-weight-id]').forEach(el => {
+    el.addEventListener('click', () => openWeightEdit(parseInt(el.dataset.weightId, 10)));
+  });
 }
 
 // Home-tab weight card. The Weight card with the chart lives on the Insights
@@ -1658,6 +1754,7 @@ async function renderWeights() {
   const shots = await getShotsSorted();
   await renderHero(shots, wsAll);
   renderWeightCard(wsAll);
+  renderWeightHistory(wsAll);
   const empty = $('#empty-weight');
   const ctx = $('#weight-chart');
   if (!wsAll.length) {
@@ -5603,6 +5700,16 @@ function computeStats(shots, weights, moods) {
     appDays,
   };
 }
+// Drop recorded unlocks the data no longer earns (a badge from a mistyped
+// weight), so the real unlock later celebrates. Returns true when it changed.
+function revokeStaleAchievements(unlockedIds) {
+  const keep = new Set(unlockedIds);
+  const had = settings.achievements || [];
+  if (!had.some(id => !keep.has(id))) return false;
+  settings.achievements = [...keep];
+  for (const id of had) if (!keep.has(id)) delete (settings.achievementDates || {})[id];
+  return true;
+}
 async function renderBadges(shots, weights) {
   const moods = (await dbAll(STORES.moods)) || [];
   const stats = computeStats(shots, weights, moods);
@@ -5649,6 +5756,8 @@ async function renderBadges(shots, weights) {
     _badgesExpanded = !_badgesExpanded;
     await renderBadges(shots, weights);
   });
+
+  if (revokeStaleAchievements(unlocked.map(a => a.id))) await saveSettings();
 
   // Detect newly unlocked → confetti + stamp earned date
   const prev = new Set(settings.achievements || []);

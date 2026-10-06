@@ -19,8 +19,8 @@
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="icon" type="image/png" sizes="512x512" href="icons/icon-512.png">
 <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png">
-<link rel="stylesheet" href="styles.css?v=431">
-<script src="theme-boot.js?v=431"></script>
+<link rel="stylesheet" href="styles.css?v=432">
+<script src="theme-boot.js?v=432"></script>
 <meta name="description" content="Offline-first GLP-1 / peptide injection tracker. Log doses, sites, weight, side effects. Your data stays on your device.">
 <script type="application/ld+json">
 {
@@ -375,6 +375,7 @@
     <p id="empty-weight" class="empty">
       <span class="empty-illus">⚖</span><br>No weight entries yet — tap <strong>+ Add</strong> to log your first one.
     </p>
+    <details class="weight-history hidden" id="weight-history"><summary>Entries and weekly change</summary><div id="weight-history-list"></div></details>
     <div id="dose-timeline-wrap" class="dose-timeline-wrap"></div>
   </section>
 
@@ -1132,6 +1133,7 @@
     </label>
     <label>Date <input id="weight-date" type="date" required></label>
     <div class="modal-actions">
+      <button type="button" id="weight-delete" class="btn-danger hidden">Delete</button>
       <span class="spacer"></span>
       <button type="button" id="weight-cancel" class="btn-ghost">Cancel</button>
       <button type="submit" class="btn-primary">Save</button>
@@ -1261,7 +1263,7 @@
 <!-- data.js is declarations only and must load before app.js, which reads them
      at evaluation time. Both are classic scripts sharing one global scope —
      see the note at the top of data.js for why this is not an ES module. -->
-<script src="data.js?v=431"></script>
-<script src="app.js?v=431"></script>
+<script src="data.js?v=432"></script>
+<script src="app.js?v=432"></script>
 </body>
 </html>
