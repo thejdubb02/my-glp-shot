@@ -53,3 +53,17 @@ It is on the GLP board in Kaneo.
   full syncs and backups (payload v11, IndexedDB v12) and removes the row on
   every other device unless that copy was edited after the delete. Tombstones
   expire after 180 days and stay out of doctor shares.
+
+## Later
+
+- **0.67.0 (2026-10-06): weight entries can be fixed.** A user typed 118
+  for 218, the app showed a 100 lb weekly loss and awarded a badge, and there
+  was no way to correct it. Insights > Weight now has "Entries and weekly
+  change": every weigh-in grouped by Monday-start week with that week's
+  change, and a tap opens the entry to edit or delete. A new weight more than
+  10% from the nearest other weigh-in asks "Save anyway?". Badges the data no
+  longer earns are removed from settings. Test: `weight-edit-selftest`.
+  Verified on both test browsers and live.
+- **Open: legacy `myglpshot.com/app/` cannot reach the API.** The account API
+  path is relative, so `/app/api/me` gets `index.html` and session restore
+  fails. `app.myglpshot.com` is unaffected. Kaneo GLP-13.
