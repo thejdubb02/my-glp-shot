@@ -33,10 +33,12 @@ INCLUDE = [
     'web/app/sw.js', 'web/app/manifest.webmanifest',
 ]
 
+# Jobs, not model slugs: OpenRouter presets (agent-infra docs/openrouter-presets.md).
+# Three different presets keep the cross-model diversity this audit relies on.
 MODELS = [
-    ('gemini-2.5-flash', 'gemini'),
-    ('openai/gpt-oss-120b', 'openrouter'),
-    ('deepseek/deepseek-v3.2', 'openrouter'),
+    ('@preset/smart-text', 'gemini'),
+    ('@preset/cheap-text', 'openrouter'),
+    ('@preset/coding', 'openrouter'),
 ]
 
 
@@ -84,7 +86,7 @@ REPO DIGEST FOLLOWS:
 def run_gemini(prompt):
     # Was direct Google AI Studio; moved to OpenRouter 2026-10-07 (prepay ends 2026-10-12).
     body = {
-        'model': 'google/gemini-2.5-flash',
+        'model': '@preset/smart-text',
         'messages': [{'role': 'user', 'content': prompt}],
         'temperature': 0.2,
         'max_tokens': 8192,
@@ -165,7 +167,7 @@ def main():
     with ThreadPoolExecutor(max_workers=4) as ex:
         futs = {}
         for model, kind in MODELS:
-            slug = model.replace('/', '_').replace(':', '-')
+            slug = model.lstrip('@').replace('/', '_').replace(':', '-')
             fn = (lambda m: run_gemini(prompt)) if kind == 'gemini' else (lambda m=model: run_openrouter(m, prompt))
             futs[ex.submit(fn, model)] = slug
         for f in futs:
