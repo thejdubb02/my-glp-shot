@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
-# Pre-generate achievement hero art via Google Imagen 4 (fast).
+# Pre-generate achievement hero art via Gemini image via OpenRouter.
 # One PNG per achievement id, 1024x1024, saved to web/app/icons/achievements/.
 # Re-run is idempotent: skips files that already exist unless --force.
 
 import base64, json, os, sys, time, urllib.request, urllib.error, re
 
-KEY_FILE = "/root/.openclaw/openclaw.json"
 OUT_DIR  = "/opt/my-glp-shot/web/app/icons/achievements"
-MODEL    = "gemini-3.1-flash-image"  # migrated from imagen-4.0-generate-001 (discontinued 2026-08-17)
+MODEL    = "google/gemini-2.5-flash-image"  # via OpenRouter since 2026-10-07 (Google prepay ends 2026-10-12)
 
 # Same ids as ACHIEVEMENTS in app.js. Each prompt is a self-contained scene
 # so the icons feel distinct, not just colour-shifted versions of one shape.
@@ -68,27 +67,26 @@ PROMPTS = {
 }
 
 def load_key():
-    txt = open(KEY_FILE).read()
-    m = re.search(r'"GOOGLE_AI_API_KEY":\s*"([^"]+)"', txt)
-    if not m: raise SystemExit("GOOGLE_AI_API_KEY not found")
-    return m.group(1)
+    for line in open("/opt/or-keys/secrets/keys.env").read().splitlines():
+        if line.startswith("MYGLPSHOT_OR_KEY="):
+            return line.split("=", 1)[1].strip().strip('"')
+    raise SystemExit("MYGLPSHOT_OR_KEY not found in /opt/or-keys/secrets/keys.env")
 
 def gen(api_key, badge_id, prompt):
-    # Gemini image gen via :generateContent (Imagen 4 :predict was discontinued 2026-08-17).
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:generateContent?key={api_key}"
+    url = "https://openrouter.ai/api/v1/chat/completions"
     body = json.dumps({
-        "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {"responseModalities": ["IMAGE"], "imageConfig": {"aspectRatio": "1:1"}},
+        "model": MODEL,
+        "modalities": ["image", "text"],
+        "messages": [{"role": "user", "content": prompt + " Aspect ratio 1:1."}],
     }).encode()
-    req = urllib.request.Request(url, data=body, headers={"content-type": "application/json"})
+    req = urllib.request.Request(url, data=body, headers={"content-type": "application/json", "Authorization": f"Bearer {api_key}"})
     with urllib.request.urlopen(req, timeout=90) as r:
         data = json.loads(r.read())
-    parts = data.get("candidates", [{}])[0].get("content", {}).get("parts", [])
-    for p in parts:
-        inline = p.get("inlineData") or p.get("inline_data")
-        if inline and inline.get("data"):
-            return base64.b64decode(inline["data"])
-    raise RuntimeError(f"no image in response for {badge_id}: {str(data)[:400]}")
+    try:
+        url_ = data["choices"][0]["message"]["images"][0]["image_url"]["url"]
+        return base64.b64decode(url_.split(",", 1)[1])
+    except (KeyError, IndexError, TypeError):
+        raise RuntimeError(f"no image in response for {badge_id}: {str(data)[:400]}")
 
 def main():
     force = "--force" in sys.argv

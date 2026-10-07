@@ -24,6 +24,7 @@ from pathlib import Path
 REPO = Path('/opt/my-glp-shot')
 HIST = REPO / 'audit-history'
 ENV_FILE = Path('/root/.openclaw/workspace/daily/wsg-cp/.env')
+KEYS_ENV = Path('/opt/or-keys/secrets/keys.env')  # holds MYGLPSHOT_OR_KEY (own OpenRouter child key)
 
 INCLUDE = [
     'api/app.py', 'api/requirements.txt', 'api/Dockerfile',
@@ -40,14 +41,14 @@ MODELS = [
 ]
 
 
-def envkey(name):
-    for line in ENV_FILE.read_text().splitlines():
+def envkey(name, path=ENV_FILE):
+    for line in path.read_text().splitlines():
         if line.startswith(name + '='):
             return line.split('=', 1)[1].strip()
     return ''
 
 
-GEMINI_KEY = envkey('GEMINI_API_KEY')
+MGS_OR_KEY = envkey('MYGLPSHOT_OR_KEY', KEYS_ENV)
 OR_KEY = envkey('OPENROUTER_API_KEY')
 
 
@@ -82,12 +83,20 @@ REPO DIGEST FOLLOWS:
 
 
 def run_gemini(prompt):
-    url = f'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_KEY}'
+    # Was direct Google AI Studio; moved to OpenRouter 2026-10-07 (prepay ends 2026-10-12).
     body = {
-        'contents': [{'parts': [{'text': prompt}]}],
-        'generationConfig': {'temperature': 0.2, 'maxOutputTokens': 8192},
+        'model': 'google/gemini-2.5-flash',
+        'messages': [{'role': 'user', 'content': prompt}],
+        'temperature': 0.2,
+        'max_tokens': 8192,
     }
-    return _post(url, {'Content-Type': 'application/json'}, body, extract='gemini')
+    headers = {
+        'Authorization': f'Bearer {MGS_OR_KEY}',
+        'HTTP-Referer': 'https://myglpshot.com',
+        'X-Title': 'My GLP Shot Weekly Audit',
+        'Content-Type': 'application/json',
+    }
+    return _post('https://openrouter.ai/api/v1/chat/completions', headers, body, extract='openai')
 
 
 def run_openrouter(model, prompt):
@@ -116,8 +125,6 @@ def _post(url, headers, body, extract):
     except Exception as e:
         return f'[error] {e}'
     try:
-        if extract == 'gemini':
-            return data['candidates'][0]['content']['parts'][0]['text']
         return data['choices'][0]['message']['content']
     except (KeyError, IndexError, TypeError):
         return f'[malformed response] {json.dumps(data)[:300]}'
