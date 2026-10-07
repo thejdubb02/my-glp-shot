@@ -105,7 +105,7 @@
     </ul>
     <p>We cannot read the blob. We do not store your password or your encryption key. If you lose your password, the cloud copy cannot be recovered. Your local copy on this device is unchanged.</p>
 
-    <h2>Smart Import — the one plaintext exception</h2>
+    <h2>Smart Import: the one plaintext exception</h2>
     <p>Smart Import is optional and only runs if you are signed in and you choose to upload an export from another tracker (or a CSV). The file is sent to our server, then to an AI model (Google Gemini, reached through our own LiteLLM gateway / OpenRouter) so it can be turned into shots and weights.</p>
     <ul>
       <li>The uploaded text is readable to that parser. It can include doses, dates, and weights.</li>
@@ -134,13 +134,13 @@
       <dd>The app runs on your device and saves your data on your device. Nothing leaves the phone or computer unless you turn on Cloud Sync, create a doctor-share link, or use Smart Import.</dd>
 
       <dt>IndexedDB</dt>
-      <dd>A built-in storage area inside your web browser where the app keeps your shots, weight, and settings. It stays on your device — like the notes app on your phone.</dd>
+      <dd>A built-in storage area inside your web browser where the app keeps your shots, weight, and settings. It stays on your device (like the notes app on your phone).</dd>
 
       <dt>End-to-end encrypted (E2EE)</dt>
       <dd>Your data is scrambled on your device before it&#39;s sent to our server, and only your device has the key to unscramble it. We can&#39;t read it. Same approach used by Signal and Bitwarden.</dd>
 
       <dt>Ciphertext</dt>
-      <dd>Scrambled data. Without the key, it&#39;s a jumble of random-looking bytes — useless to anyone who steals it, including us.</dd>
+      <dd>Scrambled data. Without the key, it&#39;s a jumble of random-looking bytes, useless to anyone who steals it, including us.</dd>
 
       <dt>Encryption key</dt>
       <dd>The secret that turns ciphertext back into your readable data. We never see it. It&#39;s derived from your password on your device and never leaves.</dd>
@@ -164,7 +164,7 @@
       <dd>A website you can install to your phone or computer like an app. Works offline, sends notifications, no app-store middleman.</dd>
 
       <dt>HIPAA, GDPR, CCPA</dt>
-      <dd>Health and privacy laws — U.S. health (HIPAA), European general privacy (GDPR), and California consumer privacy (CCPA/CPRA). They give you rights like exporting your data and deleting it. The export/delete buttons in the app cover those rights.</dd>
+      <dd>Health and privacy laws: U.S. health (HIPAA), European general privacy (GDPR), and California consumer privacy (CCPA/CPRA). They give you rights like exporting your data and deleting it. The export/delete buttons in the app cover those rights.</dd>
     </dl>
 
     <h2>Server logs</h2>
@@ -174,10 +174,10 @@
     <p>The marketing site and the app both load our own self-hosted Umami analytics at <code>analytics.willhitestrategy.org</code>. It counts page views and a few in-app events (for example: signed up, tried without an account). It does not set an advertising cookie, does not sell data, and does not follow you across other sites. We do not embed ad networks, social pixels, or other companies&#39; trackers.</p>
     <p>Third parties that can see something, and only when you use that feature:</p>
     <ul>
-      <li><strong>Stripe</strong> — if you pay for Premium</li>
-      <li><strong>Resend</strong> — if we email you a password-reset link</li>
-      <li><strong>Google Gemini via our LiteLLM gateway / OpenRouter</strong> — if you use Smart Import</li>
-      <li><strong>Your browser&#39;s push service</strong> (Apple, Google, or Mozilla) — if you turn on reminders</li>
+      <li><strong>Stripe</strong>: if you pay for Premium</li>
+      <li><strong>Resend</strong>: if we email you a password-reset link</li>
+      <li><strong>Google Gemini via our LiteLLM gateway / OpenRouter</strong>: if you use Smart Import</li>
+      <li><strong>Your browser&#39;s push service</strong> (Apple, Google, or Mozilla): if you turn on reminders</li>
     </ul>
     <p>Cloudflare sits in front of the site for TLS and abuse protection. It sees the same request metadata any CDN would.</p>
 
@@ -194,7 +194,7 @@
     <p>My GLP Shot is a personal tracking tool used directly by individuals. It is not a Covered Entity under HIPAA, is not integrated with healthcare providers or insurers, and does not handle Protected Health Information on behalf of any covered entity. Nothing in this app constitutes medical advice. Talk to your doctor about your medication.</p>
 
     <h2>Breaches</h2>
-    <p>If our server is ever compromised, an attacker would obtain encrypted ciphertext only — not your data in any readable form. We will still notify users if any breach occurs that we believe could affect them, in accordance with applicable law including the FTC Health Breach Notification Rule.</p>
+    <p>If our server is ever compromised, an attacker would obtain encrypted ciphertext only, not your data in any readable form. We will still notify users if any breach occurs that we believe could affect them, in accordance with applicable law including the FTC Health Breach Notification Rule.</p>
 
     <h2>Children</h2>
     <p>My GLP Shot is not directed to children under 13. We do not knowingly collect data from children.</p>
