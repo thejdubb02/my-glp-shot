@@ -35,9 +35,8 @@ INCLUDE = [
 
 MODELS = [
     ('gemini-2.5-flash', 'gemini'),
-    ('openai/gpt-oss-120b:free', 'openrouter'),
-    ('z-ai/glm-4.5-air:free', 'openrouter'),
-    ('qwen/qwen3-coder:free', 'openrouter'),
+    ('openai/gpt-oss-120b', 'openrouter'),
+    ('deepseek/deepseek-v3.2', 'openrouter'),
 ]
 
 
