@@ -49,11 +49,11 @@ MGS_ADMIN_TOKEN = os.environ.get('MGS_ADMIN_TOKEN', '')
 # a listed address first became an admin over every user's data. On 2026-09-28 one
 # of the two listed addresses had no account, which left admin open to anyone who
 # typed it in. Promote with scripts/promote-admin.py on the box instead.
-# Smart Import goes through the LiteLLM gateway, not Google directly: the gateway
-# holds the spend cap, the fallback chain, and the only key that appears in the
-# fleet's registry. Google's own API is deliberately no longer reachable from here.
-LITELLM_BASE_URL = os.environ.get('LITELLM_BASE_URL', 'http://litellm-gateway:4000')
-LITELLM_API_KEY = os.environ.get('LITELLM_API_KEY', '')
+# Smart Import calls OpenRouter directly with this service's own capped child key
+# (orkeys: myglpshot-import) and the @preset/smart-text job, so a retired model is
+# fixed in the preset, not here. Google's own API is deliberately not reachable.
+OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1'
+OPENROUTER_API_KEY = os.environ.get('OPENROUTER_API_KEY', '')
 # Web Push (VAPID). Generate once with scripts/gen-vapid-keys.py and put both in
 # docker/api.env. Without them the push endpoints report unavailable and the
 # client falls back to in-page timers.
@@ -2390,7 +2390,7 @@ def import_parse():
     user = require_user()
     if not user:
         return err('unauthorized', 'Not signed in.', 401)
-    if not LITELLM_API_KEY:
+    if not OPENROUTER_API_KEY:
         return err('llm_unavailable', 'LLM import is not configured on this server.', 503)
     data = request.get_json(silent=True) or {}
     text = (data.get('text') or '')
@@ -2421,7 +2421,7 @@ def import_parse():
     all_shots, all_weights = [], []
     for idx, chunk in enumerate(chunks):
         body = {
-            'model': 'gemini-2.5-flash',
+            'model': '@preset/smart-text',
             'messages': [{'role': 'user', 'content': IMPORT_PROMPT + chunk}],
             'temperature': 0.0,
             'max_tokens': 32768,
@@ -2431,8 +2431,8 @@ def import_parse():
             # The key goes in a header, not the query string: URLs end up in
             # nginx access logs, proxy logs and error traces.
             r = _r.post(
-                f'{LITELLM_BASE_URL}/v1/chat/completions',
-                headers={'Authorization': f'Bearer {LITELLM_API_KEY}',
+                f'{OPENROUTER_BASE_URL}/chat/completions',
+                headers={'Authorization': f'Bearer {OPENROUTER_API_KEY}',
                          'Content-Type': 'application/json'},
                 json=body, timeout=150,
             )
