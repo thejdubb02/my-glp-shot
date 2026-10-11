@@ -162,6 +162,22 @@ await call(`dbPutExact('tombstones', { key: 'old-1', store: 'shots', deletedAt: 
 await call('liveTombstones()');
 A.eq('tombstones older than 180 days are pruned', (await all('tombstones')).length, 0);
 
+// ---------- 5b. file imports dedupe: same file twice adds nothing ----------
+await clear('shots');
+await clear('weights');
+const impShots = [
+  { when: '2026-09-01T15:00:00.000Z', dose: 2.5, med: 'Tirzepatide' },
+  { when: '2026-09-08T15:00:00.000Z', dose: 2.5, med: 'Tirzepatide' },
+];
+const impWeights = [{ value: 200, date: '2026-09-01' }, { value: 198, date: '2026-09-08' }];
+const imp = (store, rows) => call(`importRows(${JSON.stringify(store)}, ${JSON.stringify(rows)})`);
+A.eq('first import adds the shots', (await imp('shots', impShots)).added, 2);
+A.eq('first import adds the weights', (await imp('weights', impWeights)).added, 2);
+A.eq('second import of the same shots adds nothing', (await imp('shots', impShots)).added, 0);
+A.eq('second import of the same weights adds nothing', (await imp('weights', impWeights)).added, 0);
+A.eq('stores hold no duplicates', (await all('shots')).length + (await all('weights')).length, 4);
+A.check('imported rows get a uid and updatedAt', (await all('shots')).every(r => r.uid && r.updatedAt > 0));
+
 // ---------- 6. offline: a signed-in user stays signed in ----------
 const user = { id: 16, email: 'x@example.com', subscriptionStatus: 'premium', isPremium: true };
 call(`localStorage.setItem(LAST_USER_KEY, ${JSON.stringify(JSON.stringify(user))})`);

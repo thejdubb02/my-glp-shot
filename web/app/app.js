@@ -2165,8 +2165,8 @@ async function smartImport(e) {
       return;
     }
     if (!confirm(`Found ${shots.length} shots and ${weights.length} weight entries. Import them now?`)) return;
-    for (const s of shots) await dbAdd(STORES.shots, s);
-    for (const w of weights) await dbAdd(STORES.weights, { value: w.value, date: w.date });
+    await importRows(STORES.shots, shots);
+    await importRows(STORES.weights, weights.map(w => ({ value: w.value, date: w.date })));
     await renderShots();
     await renderWeights();
     markSyncDirty();
@@ -2351,8 +2351,8 @@ async function importData(e) {
         const dropped = (parsed.shots.length - shots.length) + ((parsed.weights || []).length - weights.length);
         const warn = dropped > 0 ? `\n\n${dropped} row(s) will be skipped — missing or unreadable date/value.` : '';
         if (!confirm(`Import ${shots.length} shots and ${weights.length} weight entries? This will MERGE with existing data.${warn}`)) return;
-        for (const s of shots) await dbAdd(STORES.shots, s);
-        for (const w of weights) await dbAdd(STORES.weights, w);
+        const shotStats = await importRows(STORES.shots, shots);
+        const weightStats = await importRows(STORES.weights, weights);
         if (parsed.settings) {
           settings = { ...settings, ...sanitizeSettings(parsed.settings) };
           await saveSettings();
@@ -2360,7 +2360,7 @@ async function importData(e) {
         }
         await renderShots();
         await renderWeights();
-        alert(`Imported ${shots.length} shots and ${weights.length} weight entries.`);
+        alert(`Imported ${shotStats.added} shots and ${weightStats.added} weight entries.`);
       }
     }
   } catch (err) {
@@ -2526,8 +2526,8 @@ async function importShotsyCSV(text) {
 
   // A CSV is untrusted input like any other file, so it goes through the same
   // door as the JSON and LLM paths rather than straight into the database.
-  for (const s of dedupedShots) { const c = sanitizeShot(s); if (c) await dbAdd(STORES.shots, c); }
-  for (const w of dedupedWeights) { const c = sanitizeWeight(w); if (c) await dbAdd(STORES.weights, c); }
+  const shotStats = await importRows(STORES.shots, dedupedShots.map(sanitizeShot).filter(Boolean));
+  const weightStats = await importRows(STORES.weights, dedupedWeights.map(sanitizeWeight).filter(Boolean));
   // Imported notes go through the same merge as a sync pull, so re-importing the
   // same file doesn't duplicate text and an existing note is never overwritten.
   let notesImported = 0;
@@ -2540,7 +2540,7 @@ async function importShotsyCSV(text) {
   await renderShots();
   await renderWeights();
   if (notesImported) { try { await refreshDailyCards(); } catch (_) {} }
-  alert(`Imported ${dedupedShots.length} shots, ${dedupedWeights.length} weight entries${notesImported ? ` and ${notesImported} daily notes` : ''}.`);
+  alert(`Imported ${shotStats.added} shots, ${weightStats.added} weight entries${notesImported ? ` and ${notesImported} daily notes` : ''}.`);
 }
 function updateBackupLabel() {
   const el = $('#last-backup');
@@ -7763,6 +7763,12 @@ async function mergeStore(storeName, incoming, contentKey, tombs) {
   }
   return { added, updated, skipped, removed };
 }
+
+// File imports (CSV, old shots+weights backup, Smart Import) add rows through the
+// same content-key dedupe a sync pull uses, so importing the same file twice adds
+// nothing. mergeStore writes rows as received, so stamp updatedAt like dbAdd does.
+const importRows = (store, rows) =>
+  mergeStore(store, rows.map(r => ({ ...r, updatedAt: r.updatedAt || Date.now() })), CONTENT_KEYS[store]);
 
 // Notes are the one daily store that can't take last-write-wins. Mood is a number
 // you can re-tap in a second; a note is sentences someone wrote about their life,
