@@ -149,6 +149,7 @@ section h2{font-size:2rem;text-align:center;margin:0 0 40px;font-weight:700;lett
 .ftr{background:#0f172a;color:#cbd5e1;padding:60px 32px 30px;--muted:#8b9bb0}  /* footer bg is always dark; reuse the dark-theme muted value so .muted text clears WCAG AA, SEN-53 */
 [data-theme="dark"] .ftr{background:#020617;border-top:1px solid #1e293b}
 .ftr a{color:#cbd5e1}
+.ftr-bottom a{text-decoration:underline}
 .ftr-cols strong,.ftr a:hover{color:#fff}
 
 /* Tone down the comparison table headers in dark mode — bright pastel teal was eye-piercing. Use a muted teal block instead. */
