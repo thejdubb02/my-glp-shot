@@ -100,7 +100,7 @@
       "name": "Which has the strongest privacy story?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "My GLP Shot. The default mode is local-only — your data stays on your device and never reaches a server. If you opt into multi-device sync, encryption happens in your browser using PBKDF2-SHA-256 (600,000 iterations) and AES-256-GCM. The server only ever stores opaque ciphertext. The source is open on GitHub. Glapp says it does not monetize user data and that data is encrypted in cloud storage, but does not document end-to-end encryption, and its source is closed."
+        "text": "My GLP Shot. The default mode is local-only - your data stays on your device and never reaches a server. If you opt into multi-device sync, encryption happens in your browser using PBKDF2-SHA-256 (600,000 iterations) and AES-256-GCM. The server only ever stores opaque ciphertext. The source is open on GitHub. Glapp says it does not monetize user data and that data is encrypted in cloud storage, but does not document end-to-end encryption, and its source is closed."
       }
     },
     {
@@ -153,7 +153,7 @@
     <tbody>
       <tr><td><strong>Platforms</strong></td><td>Web, iOS (install from Safari), Android (install from Chrome), desktop browsers. One PWA, all platforms.</td><td>iOS 17.0+ only. Apple Watch, Mac (Apple Silicon), Vision Pro. <em>No Android.</em></td></tr>
       <tr><td><strong>Free tier</strong></td><td>Full tracking. Shots, weight, mood, appetite, active-medication chart, mixing calculator, 32 achievements, reminders.</td><td>Full free. Shot tracking, medication-level curve, weight, side effects, supply tracking, Apple Health sync.</td></tr>
-      <tr><td><strong>Premium tier</strong></td><td>$19.99 / year flat. Adds lab tracking, body measurements, supply inventory, doctor-share PDF, encrypted multi-device sync.</td><td>None — Glapp has no paid tier as of May 2026.</td></tr>
+      <tr><td><strong>Premium tier</strong></td><td>$19.99 / year flat. Adds lab tracking, body measurements, supply inventory, doctor-share PDF, encrypted multi-device sync.</td><td>None - Glapp has no paid tier as of May 2026.</td></tr>
       <tr><td><strong>Account required</strong></td><td>No. Default is local-only, no account.</td><td>Sign-in available; account model is in flux on the marketing site.</td></tr>
       <tr><td><strong>Where data lives</strong></td><td>On your device by default. Optional encrypted cloud sync.</td><td>In Glapp's cloud (encrypted at rest, per their site).</td></tr>
       <tr><td><strong>End-to-end encryption</strong></td><td>Yes. AES-256-GCM with browser-side PBKDF2 key derivation. Server cannot read.</td><td>Not documented as end-to-end encrypted.</td></tr>
@@ -167,7 +167,7 @@
       <tr><td><strong>Body measurements</strong></td><td>Premium. Waist, chest, hips, neck, arms, thighs.</td><td>Not standard.</td></tr>
       <tr><td><strong>Doctor share / PDF export</strong></td><td>Premium. Encrypted 24h share link + PDF.</td><td>Not documented.</td></tr>
       <tr><td><strong>Achievements</strong></td><td>32 milestones with shareable PNG cards.</td><td>Not documented.</td></tr>
-      <tr><td><strong>iPhone widgets</strong></td><td>PWA limitations apply.</td><td>Yes — one of Glapp's standout iOS features.</td></tr>
+      <tr><td><strong>iPhone widgets</strong></td><td>PWA limitations apply.</td><td>Yes - one of Glapp's standout iOS features.</td></tr>
       <tr><td><strong>Health-data sales / advertising</strong></td><td>None. Privacy policy explicitly forbids.</td><td>"We don't monetize your data" per glapp.io. App Store privacy card lists health/contact/usage data linked to identity.</td></tr>
     </tbody>
   </table>
@@ -175,7 +175,7 @@
 
   <h2>Free vs free: what's actually the trade-off</h2>
   <p>Both apps are free at the entry point, so price isn't the decision. The trade-off is the shape of the product.</p>
-  <p>Glapp is an iOS-native experience. Apple Watch, Vision Pro, iPhone widgets, Apple Health, and a polished design language. If you're an iPhone user who wants a wrist-side glance and tight platform integration, that's a real advantage we can't match — and we'll say so.</p>
+  <p>Glapp is an iOS-native experience. Apple Watch, Vision Pro, iPhone widgets, Apple Health, and a polished design language. If you're an iPhone user who wants a wrist-side glance and tight platform integration, that's a real advantage we can't match - and we'll say so.</p>
   <p>My GLP Shot is a single PWA that works on every device with a browser, including the Android phone the rest of the household uses. The medication-side depth is also stronger: a mixing calculator that handles compounded peptides, custom dosing schedules for microdosing or split-dosing, and a $19.99-per-year premium tier that adds lab tracking, body measurements, supply inventory, and a doctor-share PDF.</p>
 
   <h2>The privacy story</h2>
@@ -184,7 +184,7 @@
   <ul>
     <li>Your password is run through PBKDF2-SHA-256 with 600,000 iterations to derive an AES-256-GCM key that stays on your device.</li>
     <li>The server stores opaque ciphertext only and has no key material.</li>
-    <li>Doctor-share links use a fresh per-share AES key in the URL fragment after the <code>#</code> — fragments are not sent to servers, so the share key never reaches us.</li>
+    <li>Doctor-share links use a fresh per-share AES key in the URL fragment after the <code>#</code> - fragments are not sent to servers, so the share key never reaches us.</li>
   </ul>
   <p>The source is on <a href="https://github.com/thejdubb02/my-glp-shot" target="_blank" rel="noopener">GitHub</a> if you want to verify any of that.</p>
 
@@ -202,7 +202,7 @@
     <li>You're on a compounded peptide and need a built-in mixing calculator.</li>
     <li>You microdose, split-dose, or run a non-standard cadence.</li>
     <li>You want lab tracking, body measurements, supply inventory, or a doctor-share PDF.</li>
-    <li>You want local-first, open-source, end-to-end encrypted sync — verifiable on GitHub.</li>
+    <li>You want local-first, open-source, end-to-end encrypted sync - verifiable on GitHub.</li>
     <li>You want one app that follows you across phone, tablet, and desktop browsers.</li>
   </ul>
 

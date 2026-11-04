@@ -5,13 +5,13 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#0d9488">
 
-<title>Security — My GLP Shot dose tracker</title>
+<title>Security - My GLP Shot dose tracker</title>
 <meta name="description" content="How My GLP Shot protects your data: local-first by default, cloud sync encrypted with AES-256-GCM, and how to report a vulnerability.">
 <link rel="canonical" href="https://myglpshot.com/security.html">
 <meta name="robots" content="index, follow, max-snippet:-1">
 
 <meta property="og:type" content="article">
-<meta property="og:title" content="Security — My GLP Shot">
+<meta property="og:title" content="Security - My GLP Shot">
 <meta property="og:description" content="How we protect your data, our cryptography, and how to report a vulnerability.">
 <meta property="og:url" content="https://myglpshot.com/security.html">
 <meta property="og:image" content="https://myglpshot.com/og-image.png">
@@ -81,7 +81,7 @@
     <li>Your password is never sent to our server. It is run through <code>PBKDF2-SHA-256</code> with <strong>600,000 iterations</strong> in the browser to derive both an authentication token (sent to the server) and an AES-256-GCM key (kept on your device).</li>
     <li>All synced data is encrypted with that AES-256-GCM key using a fresh random 12-byte IV before upload.</li>
     <li>The server stores opaque ciphertext only. We have no key material. We cannot read a synced backup.</li>
-    <li>Doctor-share links generate a fresh per-share AES key and place it in the URL fragment after the <code>#</code> — fragments are not sent to servers, so the share link's key never reaches us either.</li>
+    <li>Doctor-share links generate a fresh per-share AES key and place it in the URL fragment after the <code>#</code> - fragments are not sent to servers, so the share link's key never reaches us either.</li>
   </ul>
   <p><strong>Smart Import is different.</strong> If you upload another tracker&#39;s export, that file is sent in readable form to Google Gemini (through our LiteLLM gateway) so it can be parsed into shots and weights. That path is optional, signed-in only, and disclosed in the <a href="/privacy.html">privacy policy</a>.</p>
   <p>The full encryption code is short, idiomatic, and uses only the platform's built-in <code>SubtleCrypto</code> Web API. You can read every line on <a href="https://github.com/thejdubb02/my-glp-shot" target="_blank" rel="noopener">GitHub</a>.</p>
@@ -95,7 +95,7 @@
     <li><strong>Acknowledge within 48 hours.</strong> A real human will reply, not an autoresponder.</li>
     <li><strong>Patch critical issues fast.</strong> Privacy and crypto issues take priority over feature work.</li>
     <li><strong>Public credit.</strong> If you'd like to be credited (with a name, handle, or anonymously), we'll add you to a public security acknowledgements list. Credits live in <a href="https://github.com/thejdubb02/my-glp-shot/blob/main/SECURITY.md" target="_blank" rel="noopener">SECURITY.md</a>.</li>
-    <li><strong>No legal threats for good-faith research.</strong> If you're acting in good faith — testing only your own data, not exfiltrating other users' data, not running denial-of-service against production — we are not going to come after you.</li>
+    <li><strong>No legal threats for good-faith research.</strong> If you're acting in good faith - testing only your own data, not exfiltrating other users' data, not running denial-of-service against production - we are not going to come after you.</li>
   </ul>
 
   <h2>How to report</h2>
@@ -105,7 +105,7 @@
     <li>Steps to reproduce (test account, sample input, etc.).</li>
     <li>Optionally, a suggested fix or mitigation.</li>
   </ul>
-  <p>For high-severity issues, please <strong>do not</strong> open a public GitHub issue first — give us a chance to fix it before broad disclosure.</p>
+  <p>For high-severity issues, please <strong>do not</strong> open a public GitHub issue first - give us a chance to fix it before broad disclosure.</p>
 
   <h3>Encrypted channel</h3>
   <p>If your report contains anything you'd like to encrypt in transit, encrypt to the email address above's public key. PGP key fingerprint will be added here once published; until then, plain TLS email to <code>security@myglpshot.com</code> is the supported channel.</p>
@@ -113,7 +113,7 @@
   <h2>Out of scope</h2>
   <ul>
     <li>Theoretical attacks against the underlying primitives we depend on (browser <code>SubtleCrypto</code>, TLS, the Stripe billing flow).</li>
-    <li>Vulnerabilities that require a compromised user device or a fully compromised browser — at that point, all bets are off, regardless of our app's design.</li>
+    <li>Vulnerabilities that require a compromised user device or a fully compromised browser - at that point, all bets are off, regardless of our app's design.</li>
     <li>Self-XSS or social-engineering of the user's own browser console.</li>
     <li>Issues only reachable from a custom-built or modified version of the code.</li>
   </ul>

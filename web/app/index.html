@@ -8,7 +8,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="My GLP Shot">
-<title>My GLP Shot — GLP-1 shot tracker</title>
+<title>My GLP Shot - GLP-1 shot tracker</title>
 <link rel="canonical" href="https://app.myglpshot.com/">
 <meta name="robots" content="index,follow">
 <link rel="manifest" href="manifest.webmanifest">
@@ -36,20 +36,20 @@
 <!-- Open Graph -->
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="My GLP Shot">
-<meta property="og:title" content="My GLP Shot — Private GLP-1 Shot Tracker">
+<meta property="og:title" content="My GLP Shot - Private GLP-1 Shot Tracker">
 <meta property="og:description" content="Track Tirzepatide, Semaglutide, and other GLP-1 shots privately. Your data stays on your device. Works offline.">
 <meta property="og:url" content="https://app.myglpshot.com/">
 <meta property="og:image" content="https://app.myglpshot.com/og-image.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="My GLP Shot — private shot tracker for GLP-1 medications">
+<meta property="og:image:alt" content="My GLP Shot - private shot tracker for GLP-1 medications">
 <meta property="og:locale" content="en_US">
 <!-- Twitter -->
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="My GLP Shot — Private GLP-1 Shot Tracker">
+<meta name="twitter:title" content="My GLP Shot - Private GLP-1 Shot Tracker">
 <meta name="twitter:description" content="Track Tirzepatide, Semaglutide, and other GLP-1 shots privately. Your data stays on your device.">
 <meta name="twitter:image" content="https://app.myglpshot.com/twitter-image.png">
-<meta name="twitter:image:alt" content="My GLP Shot — private shot tracker for GLP-1 medications">
+<meta name="twitter:image:alt" content="My GLP Shot - private shot tracker for GLP-1 medications">
 <!-- async, never defer. A deferred script must execute before DOMContentLoaded
      fires, and the whole app boots off DOMContentLoaded. A tracker blocker that
      black-holes this request (rather than failing it fast) therefore stopped the
@@ -87,7 +87,7 @@
     <div class="install-hero">
       <img src="icons/icon-192.png" alt="" width="64" height="64" class="install-icon">
       <h2>Install My GLP Shot</h2>
-      <p class="muted small">Get reliable reminders, faster opens, and data that survives a browser clear. Installs like a real app — no app store.</p>
+      <p class="muted small">Get reliable reminders, faster opens, and data that survives a browser clear. Installs like a real app - no app store.</p>
     </div>
 
     <div id="install-ios" class="install-steps hidden">
@@ -144,13 +144,13 @@
     <form id="auth-form" autocomplete="on">
       <label>Email <input id="auth-email" type="email" required autocomplete="email" inputmode="email" autocapitalize="off"></label>
       <label>Password <input id="auth-pw" type="password" required minlength="8" autocomplete="new-password"></label>
-      <p id="auth-help" class="muted small">Use a strong password. We encrypt your data with it before it ever leaves your device — if you forget it, your cloud copy is gone (data on each device is preserved).</p>
+      <p id="auth-help" class="muted small">Use a strong password. We encrypt your data with it before it ever leaves your device - if you forget it, your cloud copy is gone (data on each device is preserved).</p>
       <p id="auth-err" class="acct-err"></p>
       <button type="submit" id="auth-submit" class="btn-primary big" style="width:100%">Create account &amp; start free trial</button>
       <p class="muted small center" style="margin-top:10px"><a href="#" id="auth-forgot" class="link">Forgot password?</a></p>
     </form>
     <p class="muted small center auth-perks">14-day premium trial included · No credit card · Cancel anytime</p>
-    <p class="muted small center auth-skip"><a href="#" id="auth-skip-link" class="link">Skip for now — just try it →</a><br><span style="font-size:.78rem;opacity:.75">No account, no cloud sync. Data stays on this device only.</span></p>
+    <p class="muted small center auth-skip"><a href="#" id="auth-skip-link" class="link">Skip for now - just try it →</a><br><span style="font-size:.78rem;opacity:.75">No account, no cloud sync. Data stays on this device only.</span></p>
   </section>
   <p class="muted small center auth-legal">By continuing you agree to the <a href="terms.html">Terms</a> and <a href="privacy.html">Privacy Policy</a>.</p>
   <p class="muted small center auth-legal">🔓 <a href="https://github.com/thejdubb02/my-glp-shot" target="_blank" rel="noopener">Open source on GitHub</a> · audit the code yourself</p>
@@ -166,7 +166,7 @@
     </div>
     <div class="countdown-info">
       <div class="countdown-label">Next shot</div>
-      <div id="countdown-value" class="countdown-value">—</div>
+      <div id="countdown-value" class="countdown-value"> - </div>
       <div id="countdown-sub" class="countdown-sub"></div>
     </div>
     <button id="log-shot-btn" class="btn-primary big">+ Log</button>
@@ -175,15 +175,15 @@
   <section id="hero-card" class="hero-card hidden" data-tab="home">
     <div class="hero-row">
       <div class="hero-stat">
-        <div class="hero-num" id="hero-weight-delta">—</div>
+        <div class="hero-num" id="hero-weight-delta"> - </div>
         <div class="hero-label">lost so far</div>
       </div>
       <div class="hero-stat">
-        <div class="hero-num" id="hero-streak">—</div>
+        <div class="hero-num" id="hero-streak"> - </div>
         <div class="hero-label">weeks on track</div>
       </div>
       <div class="hero-stat">
-        <div class="hero-num" id="hero-shots">—</div>
+        <div class="hero-num" id="hero-shots"> - </div>
         <div class="hero-label">shots taken</div>
       </div>
     </div>
@@ -197,7 +197,7 @@
     <div class="card-head"><h2 id="weight-log-heading">Weight</h2><span id="weight-log-change" class="muted small"></span></div>
     <p id="weight-log-today" class="muted weight-log-today">No weight logged yet.</p>
     <button type="button" id="weight-log-btn" class="btn-primary weight-log-btn">Log weight</button>
-    <p class="muted small weight-log-hint">Weigh in whenever suits you — the same time of day gives the cleanest trend. Your chart is under Insights.</p>
+    <p class="muted small weight-log-hint">Weigh in whenever suits you - the same time of day gives the cleanest trend. Your chart is under Insights.</p>
   </section>
 
   <section class="card mood-card" data-tab="home" id="mood-card">
@@ -247,7 +247,7 @@
     <div class="card-head"><h2 id="foodnoise-heading">How loud is the food noise today? <button class="info-btn" type="button" data-info="food-noise" aria-label="About this">i</button></h2><span id="foodnoise-saved" class="mood-saved muted small"></span></div>
     <div id="foodnoise-logged" class="mood-logged hidden">
       <div class="mood-logged-row">
-        <div class="mood-logged-graphic foodnoise-logged-graphic"><span id="foodnoise-logged-value">—</span><span class="foodnoise-logged-suffix">/10</span></div>
+        <div class="mood-logged-graphic foodnoise-logged-graphic"><span id="foodnoise-logged-value"> - </span><span class="foodnoise-logged-suffix">/10</span></div>
         <div class="mood-logged-text">
           <strong id="foodnoise-logged-label">Logged</strong>
           <span class="muted small">Logged today · <a href="#" id="foodnoise-change" class="link">change</a></span>
@@ -268,7 +268,7 @@
 
   <section class="card note-card" data-tab="home" id="note-card">
     <div class="card-head"><h2 id="note-heading">Anything worth remembering about today? <button class="info-btn" type="button" data-info="daily-note" aria-label="About this">i</button></h2><span id="note-saved" class="mood-saved muted small"></span></div>
-    <textarea id="note-text" class="note-text" rows="3" aria-label="Note about today" placeholder="e.g. house hunting all week — stressed, but not about food"></textarea>
+    <textarea id="note-text" class="note-text" rows="3" aria-label="Note about today" placeholder="e.g. house hunting all week - stressed, but not about food"></textarea>
     <div class="note-foot">
       <p class="muted small note-hint">Saves as you type. The numbers above say what kind of day it was; this says why.</p>
       <span id="note-count" class="muted small note-count">0/2000</span>
@@ -287,7 +287,7 @@
   <section class="card" data-tab="home">
     <div class="card-head"><h2>Latest shots</h2><a href="#" id="view-all-history" class="link">See all</a></div>
     <ul id="recent-shots" class="shot-list"></ul>
-    <p id="empty-shots" class="empty hidden">No shots logged yet — tap <strong>+ Log</strong> above to start.</p>
+    <p id="empty-shots" class="empty hidden">No shots logged yet - tap <strong>+ Log</strong> above to start.</p>
   </section>
 
   <section id="badges-card" class="card hidden" data-tab="home">
@@ -350,7 +350,7 @@
   <section id="insights-card" class="card" data-tab="insights">
     <div class="card-head"><h2>Patterns <button class="info-btn" type="button" data-info="insights" aria-label="About this">i</button></h2><span class="muted small" id="insights-summary"></span></div>
     <div id="insights-list" class="insights-list"></div>
-    <p id="insights-empty" class="muted small hidden">Patterns appear here as you log more data — usually after 4-8 shots.</p>
+    <p id="insights-empty" class="muted small hidden">Patterns appear here as you log more data - usually after 4-8 shots.</p>
   </section>
 
   <section class="card" data-tab="insights">
@@ -358,7 +358,7 @@
     <label class="benchmark-row muted small">
       <span>Trial benchmark <span class="lock-pill" id="benchmark-lock">Premium</span></span>
       <select id="benchmark-select">
-        <option value="">— off —</option>
+        <option value=""> - off - </option>
         <option value="surmount1">SURMOUNT-1 (Tirzepatide 15mg)</option>
         <option value="step1">STEP-1 (Semaglutide 2.4mg)</option>
         <option value="scale">SCALE (Liraglutide 3mg)</option>
@@ -373,7 +373,7 @@
     </div>
     <canvas id="weight-chart" height="160"></canvas>
     <p id="empty-weight" class="empty">
-      <span class="empty-illus">⚖</span><br>No weight entries yet — tap <strong>+ Add</strong> to log your first one.
+      <span class="empty-illus">⚖</span><br>No weight entries yet - tap <strong>+ Add</strong> to log your first one.
     </p>
     <details class="weight-history hidden" id="weight-history"><summary>Entries and weekly change</summary><div id="weight-history-list"></div></details>
     <div id="dose-timeline-wrap" class="dose-timeline-wrap"></div>
@@ -422,7 +422,7 @@
       <label>End date (optional, leave blank if ongoing) <input id="cycle-end" type="date"></label>
       <label>Flow
         <select id="cycle-flow">
-          <option value="">— not specified —</option>
+          <option value=""> - not specified - </option>
           <option value="spotting">Spotting</option>
           <option value="light">Light</option>
           <option value="normal">Normal</option>
@@ -526,7 +526,7 @@
     <div class="card-head">
       <h2>App theme <button class="info-btn" type="button" data-info="theme" aria-label="About this">i</button> <span class="lock-pill" id="theme-lock">Premium</span></h2>
     </div>
-    <p class="muted small">Pick a color palette — changes the whole app instantly. Light + dark variants included.</p>
+    <p class="muted small">Pick a color palette - changes the whole app instantly. Light + dark variants included.</p>
     <div id="theme-grid" class="theme-grid"></div>
   </section>
 
@@ -648,7 +648,7 @@
 
   <section class="card" id="cycle-settings-card">
     <h2>Menstrual cycle tracking <span class="lock-pill optional">Optional</span></h2>
-    <p class="muted small">GLP-1 medications can affect cycle length, flow, and symptoms. Tracking is fully opt-in — local-first like everything else, end-to-end encrypted if you sync. Toggling off later <strong>preserves</strong> your existing entries; they re-appear if you turn it back on. To erase cycle data permanently, use "Delete all cycle entries" below.</p>
+    <p class="muted small">GLP-1 medications can affect cycle length, flow, and symptoms. Tracking is fully opt-in - local-first like everything else, end-to-end encrypted if you sync. Toggling off later <strong>preserves</strong> your existing entries; they re-appear if you turn it back on. To erase cycle data permanently, use "Delete all cycle entries" below.</p>
     <label class="check-row"><input id="set-cycle-enabled" type="checkbox"> Show cycle tracking (period log + symptoms)</label>
     <div id="cycle-settings-extras" class="hidden">
       <p class="muted small" style="margin-top:10px">When enabled, a "Cycle" card appears on the Insights tab where you can log period start, end, flow, and symptoms.</p>
@@ -664,7 +664,7 @@
         <option value="kg">Kilograms (kg)</option>
       </select>
     </label>
-    <p class="muted small">Changes how weights are shown everywhere — your chart, goals, and milestones. Entries you've already logged are converted, not rewritten.</p>
+    <p class="muted small">Changes how weights are shown everywhere - your chart, goals, and milestones. Entries you've already logged are converted, not rewritten.</p>
     <label>Starting weight (<span class="weight-unit-label">lb</span>) <input id="set-start-weight" type="number" step="0.1" min="0" placeholder="auto-detected from first entry"></label>
     <label>Goal weight (<span class="weight-unit-label">lb</span>) <input id="set-goal-weight" type="number" step="0.1" min="0"></label>
     <label class="check-row" style="margin-top:8px"><input id="set-maintenance" type="checkbox"> Maintenance mode</label>
@@ -730,7 +730,7 @@
     <p class="muted small">
       For the old username-and-passphrase sync, retired in favour of accounts.
       It is <strong>read-only</strong> now: bring your old data across, then use an
-      account for backup. Everything is still decrypted on this device — we never
+      account for backup. Everything is still decrypted on this device - we never
       had the key.
     </p>
 
@@ -740,7 +740,7 @@
       <div class="btn-row">
         <button id="sync-restore" class="btn-primary" type="button">Restore my data</button>
       </div>
-      <p class="muted small">Your old entries are merged in — nothing already on this device is removed.</p>
+      <p class="muted small">Your old entries are merged in - nothing already on this device is removed.</p>
       <p id="sync-setup-status" class="sync-status"></p>
     </div>
 
@@ -766,13 +766,13 @@
       <input id="import-file" type="file" accept="application/json,.json,.csv,text/csv" hidden>
       <input id="smart-import-file" type="file" accept=".csv,.txt,.json,application/json,text/csv,text/plain" hidden>
     </div>
-    <p class="muted small">Your data is stored only on this device. Export regularly. The backup file holds <strong>everything</strong> — shots, weight, mood, appetite, food noise, notes, symptoms, cycles, supplies, measurements, labs and spending — and importing it merges without deleting anything. Installing as a PWA dramatically reduces the chance of losing data on a browser clear.</p>
+    <p class="muted small">Your data is stored only on this device. Export regularly. The backup file holds <strong>everything</strong> - shots, weight, mood, appetite, food noise, notes, symptoms, cycles, supplies, measurements, labs and spending - and importing it merges without deleting anything. Installing as a PWA dramatically reduces the chance of losing data on a browser clear.</p>
     <p class="muted small"><strong>Switching from another tracker?</strong> In your old app, look for an Export Data option (CSV). Then tap "Import" above and select the file. Shots, weight, sites, doses, and notes will transfer.</p>
   </section>
 
   <section class="card">
     <h2>🔓 Open source</h2>
-    <p class="muted small">The complete app — backend, frontend, encryption — is on GitHub. Audit the code yourself or fork it.</p>
+    <p class="muted small">The complete app - backend, frontend, encryption - is on GitHub. Audit the code yourself or fork it.</p>
     <div class="btn-row">
       <a class="btn-ghost" href="https://github.com/thejdubb02/my-glp-shot" target="_blank" rel="noopener">View source on GitHub →</a>
     </div>
@@ -808,7 +808,7 @@
 
   <section class="card disclaimer-card">
     <h2>A note on what this app is</h2>
-    <p class="muted small">My GLP Shot is a personal tracking and logging tool. It records what you tell it and shows you patterns in your own data. <strong>It is not medical advice, and it does not diagnose anything or recommend a dose.</strong> Nothing here is a substitute for your prescriber — talk to them before changing a dose, a schedule, or a medication, and contact them or emergency services about any symptom that worries you.</p>
+    <p class="muted small">My GLP Shot is a personal tracking and logging tool. It records what you tell it and shows you patterns in your own data. <strong>It is not medical advice, and it does not diagnose anything or recommend a dose.</strong> Nothing here is a substitute for your prescriber - talk to them before changing a dose, a schedule, or a medication, and contact them or emergency services about any symptom that worries you.</p>
     <p class="muted small">Deleting your account: Settings → Delete account and all cloud data, or see <a href="https://myglpshot.com/delete-account.html" target="_blank" rel="noopener">how to delete your account</a>.</p>
   </section>
 
@@ -825,20 +825,20 @@
     <label>Date &amp; time <input id="shot-when" type="datetime-local" required></label>
     <label>Injection site
       <select id="shot-site">
-        <option value="">— select —</option>
+        <option value=""> - select - </option>
         <optgroup label="Abdomen (4 quadrants)">
-          <option>Abdomen — Upper Left</option>
-          <option>Abdomen — Upper Right</option>
-          <option>Abdomen — Lower Left</option>
-          <option>Abdomen — Lower Right</option>
+          <option value="Abdomen — Upper Left">Abdomen - Upper Left</option>
+          <option value="Abdomen — Upper Right">Abdomen - Upper Right</option>
+          <option value="Abdomen — Lower Left">Abdomen - Lower Left</option>
+          <option value="Abdomen — Lower Right">Abdomen - Lower Right</option>
         </optgroup>
         <optgroup label="Thigh">
-          <option>Thigh — Left</option>
-          <option>Thigh — Right</option>
+          <option value="Thigh — Left">Thigh - Left</option>
+          <option value="Thigh — Right">Thigh - Right</option>
         </optgroup>
         <optgroup label="Upper arm">
-          <option>Upper arm — Left</option>
-          <option>Upper arm — Right</option>
+          <option value="Upper arm — Left">Upper arm - Left</option>
+          <option value="Upper arm — Right">Upper arm - Right</option>
         </optgroup>
         <optgroup id="shot-site-custom-group" label="Your custom sites" hidden></optgroup>
         <option value="__custom">Custom site…</option>
@@ -935,7 +935,7 @@
 <dialog id="badge-share-dialog" class="modal">
   <form method="dialog">
     <h2 id="badge-share-title">Share achievement</h2>
-    <p class="muted small">A private, branded card you can save or share. Generated on your device — nothing leaves your phone unless you share it.</p>
+    <p class="muted small">A private, branded card you can save or share. Generated on your device - nothing leaves your phone unless you share it.</p>
     <div class="badge-share-preview-wrap">
       <div class="badge-share-frame">
         <canvas id="badge-share-canvas" width="1080" height="1080"></canvas>
@@ -952,7 +952,7 @@
 <dialog id="share-dialog" class="modal">
   <form method="dialog">
     <h2>🔗 Share with doctor</h2>
-    <p class="muted small">Generates a 24-hour read-only URL. Encrypted in the URL fragment — only people with the link can view. Pick what to include.</p>
+    <p class="muted small">Generates a 24-hour read-only URL. Encrypted in the URL fragment - only people with the link can view. Pick what to include.</p>
     <label>Label (optional) <input id="share-label" type="text" placeholder="e.g. Dr. Smith - April visit"></label>
     <label>Date range
       <select id="share-range">
@@ -971,7 +971,7 @@
       <label class="check"><input type="checkbox" data-section="labs" checked> Labs</label>
       <label class="check"><input type="checkbox" data-section="moods"> Mood log</label>
       <label class="check"><input type="checkbox" data-section="appetites"> Appetite log</label>
-      <label class="check"><input type="checkbox" data-section="notes"> Daily notes <span class="muted small">— your own words about each day</span></label>
+      <label class="check"><input type="checkbox" data-section="notes"> Daily notes <span class="muted small"> - your own words about each day</span></label>
       <label class="check"><input type="checkbox" data-section="supplies"> Pens & vials</label>
       <label class="check"><input type="checkbox" data-section="expenses"> Spending</label>
     </fieldset>
@@ -990,7 +990,7 @@
 <dialog id="pdf-dialog" class="modal">
   <form method="dialog">
     <h2>📄 Generate PDF report</h2>
-    <p class="muted small">Choose what to include. Opens a print-ready window — use your browser's "Save as PDF".</p>
+    <p class="muted small">Choose what to include. Opens a print-ready window - use your browser's "Save as PDF".</p>
     <label>Date range
       <select id="pdf-range">
         <option value="30">Last 30 days</option>
@@ -1008,7 +1008,7 @@
       <label class="check"><input type="checkbox" data-pdf-section="labs" checked> Labs</label>
       <label class="check"><input type="checkbox" data-pdf-section="moods"> Mood log</label>
       <label class="check"><input type="checkbox" data-pdf-section="appetites"> Appetite log</label>
-      <label class="check"><input type="checkbox" data-pdf-section="notes"> Daily notes <span class="muted small">— your own words about each day</span></label>
+      <label class="check"><input type="checkbox" data-pdf-section="notes"> Daily notes <span class="muted small"> - your own words about each day</span></label>
       <label class="check"><input type="checkbox" data-pdf-section="sideEffects" checked> Side-effect summary</label>
     </fieldset>
     <div class="modal-actions">
@@ -1029,8 +1029,8 @@
       </select>
     </label>
     <label>Total mg in the whole pen or vial <input id="supply-total-mg" type="number" step="0.001" min="0" inputmode="decimal" required></label>
-    <label>Liquid volume (mL) — optional <input id="supply-volume-ml" type="number" step="0.01" min="0" inputmode="decimal"></label>
-    <p class="muted small">Both numbers are on the box, usually written together as <strong>mg/mL</strong> — "8 mg/3 mL" means <strong>8</strong> in the first field and <strong>3</strong> in the second. That's the <em>total in the pen</em>, not the dose you inject each week. If you only see one number, enter the mg and leave the volume blank.</p>
+    <label>Liquid volume (mL) - optional <input id="supply-volume-ml" type="number" step="0.01" min="0" inputmode="decimal"></label>
+    <p class="muted small">Both numbers are on the box, usually written together as <strong>mg/mL</strong> - "8 mg/3 mL" means <strong>8</strong> in the first field and <strong>3</strong> in the second. That's the <em>total in the pen</em>, not the dose you inject each week. If you only see one number, enter the mg and leave the volume blank.</p>
     <p id="supply-readout" class="supply-readout" hidden></p>
     <label>Pharmacy / source <input id="supply-pharmacy" type="text" placeholder="e.g. Hims, EmpowerRx"></label>
     <label>Batch / lot # <input id="supply-batch" type="text"></label>
@@ -1163,7 +1163,7 @@
 <dialog id="symptoms-dialog" class="modal symptoms-modal">
   <form id="symptoms-form" method="dialog">
     <h2>Side effects</h2>
-    <p class="muted small">Log how you're feeling on any day — injection or not. Leave anything you're not experiencing on "None".</p>
+    <p class="muted small">Log how you're feeling on any day - injection or not. Leave anything you're not experiencing on "None".</p>
     <label>Day <input id="symptoms-date" type="date" required></label>
     <div id="symptoms-picker" class="se-grid"></div>
     <div class="modal-actions">
@@ -1210,7 +1210,7 @@
         <input id="catchup-foodnoise" type="range" min="1" max="10" step="1" value="5" aria-label="Food noise for the selected day, 1 = quiet, 10 = constant chatter">
         <span class="foodnoise-end-label muted small">Loud</span>
       </div>
-      <div class="foodnoise-readout"><span id="catchup-foodnoise-value">—</span><span class="muted small">/10</span> · <span id="catchup-foodnoise-descriptor" class="muted small">drag to set</span></div>
+      <div class="foodnoise-readout"><span id="catchup-foodnoise-value"> - </span><span class="muted small">/10</span> · <span id="catchup-foodnoise-descriptor" class="muted small">drag to set</span></div>
     </div>
 
     <div class="catchup-section">
@@ -1261,7 +1261,7 @@
 <!-- Chart.js is no longer loaded here: it is 68 KB gzipped that only the
      Insights tab needs, and app.js now fetches it on first chart draw. -->
 <!-- data.js is declarations only and must load before app.js, which reads them
-     at evaluation time. Both are classic scripts sharing one global scope —
+     at evaluation time. Both are classic scripts sharing one global scope - 
      see the note at the top of data.js for why this is not an ES module. -->
 <script src="data.js?v=432"></script>
 <script src="app.js?v=432"></script>
