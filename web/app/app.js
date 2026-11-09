@@ -2783,8 +2783,10 @@ function urlBase64ToUint8Array(b64) {
 async function getPushSubscription() {
   if (!PUSH_SUPPORTED) return null;
   try {
-    const reg = await navigator.serviceWorker.ready;
-    return await reg.pushManager.getSubscription();
+    // getRegistration, not .ready: .ready never settles without a worker, which
+    // would hang sign-out.
+    const reg = await navigator.serviceWorker.getRegistration();
+    return reg ? await reg.pushManager.getSubscription() : null;
   } catch (_) { return null; }
 }
 
@@ -2832,6 +2834,22 @@ async function disablePushReminders() {
   } catch (_) {}
   if (sub) { try { await sub.unsubscribe(); } catch (_) {} }
   track('push_disabled');
+}
+
+// Sign-out: stop this device getting the old account's reminders. Only with a
+// real endpoint, since an empty one deletes the account's push on every device.
+// Best effort; settings.notify stays, so local reminders and the UI still agree.
+async function dropDevicePushOnSignOut() {
+  try {
+    const sub = await getPushSubscription();
+    if (!sub) return;
+    if (account.user) {
+      try {
+        await accountFetch('push/unsubscribe', { method: 'POST', body: JSON.stringify({ endpoint: sub.endpoint }) });
+      } catch (_) {}
+    }
+    await sub.unsubscribe();
+  } catch (_) {}
 }
 
 // Compute the upcoming fire times from local data. Returns only {kind, fireAt}
@@ -6129,6 +6147,7 @@ async function flushBeforeSignOut() {
 
 async function accountLogout(forgetDevice) {
   await flushBeforeSignOut();
+  await dropDevicePushOnSignOut();
   try { await accountFetch('logout', { method: 'POST' }); } catch (e) {}
   account = { user: null, encryptionKey: null };
   resetSyncPush();

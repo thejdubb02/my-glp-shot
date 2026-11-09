@@ -719,21 +719,45 @@ def delete_account():
     user = require_user()
     if not user:
         return err('unauthorized', 'Not signed in.', 401)
+    if not _delete_user_everywhere(user):
+        return err('stripe_cancel_failed',
+                   'We could not cancel your subscription with our payment provider, '
+                   'so your account was not deleted. Please try again in a few minutes.', 502)
+    resp = make_response(jsonify(deleted=True))
+    resp.set_cookie('mgs_session', '', expires=0, path='/', secure=True, samesite='Lax')
+    return resp
+
+
+def _stripe_sub_already_gone(e):
+    """A cancel that fails because the sub is already canceled or unknown is fine."""
+    # Only Stripe's "bad request" class: a network or auth error must never
+    # count as gone, whatever its message says.
+    if not isinstance(e, stripe.InvalidRequestError):
+        return False
+    msg = str(getattr(e, 'user_message', None) or e).lower()
+    return getattr(e, 'code', None) == 'resource_missing' or 'canceled subscription' in msg
+
+
+def _delete_user_everywhere(user):
+    """Cancel the user's live and test Stripe subscriptions, then delete every
+    row keyed on them. If a cancel fails, delete nothing and return False: a
+    deleted user with a live sub keeps being charged and its webhooks find no
+    row. Test subs matter too, they keep firing webhooks at a missing user."""
+    subs = []
+    if _stripe_ready() and user['stripe_subscription_id']:
+        subs.append((user['stripe_subscription_id'], STRIPE_API_KEY))
+    if STRIPE_API_KEY_TEST and _safe_col(user, 'stripe_subscription_id_test', None):
+        subs.append((user['stripe_subscription_id_test'], STRIPE_API_KEY_TEST))
+    for sub_id, key in subs:
+        try:
+            stripe.Subscription.delete(sub_id, api_key=key)
+        except stripe.StripeError as e:
+            if _stripe_sub_already_gone(e):
+                continue
+            app.logger.warning('Stripe sub cancel failed, user %s not deleted: %s', user['id'], e)
+            return False
     db = get_db()
     uid = user['id']
-    # Best-effort: cancel Stripe subscriptions so we don't keep billing. Test-mode
-    # subscriptions are cancelled too — a leftover test sub keeps firing webhooks
-    # for a user row that no longer exists.
-    if _stripe_ready() and user['stripe_subscription_id']:
-        try:
-            stripe.Subscription.delete(user['stripe_subscription_id'], api_key=STRIPE_API_KEY)
-        except stripe.StripeError as e:
-            app.logger.warning('Stripe sub cancel failed during account delete: %s', e)
-    if STRIPE_API_KEY_TEST and _safe_col(user, 'stripe_subscription_id_test', None):
-        try:
-            stripe.Subscription.delete(user['stripe_subscription_id_test'], api_key=STRIPE_API_KEY_TEST)
-        except stripe.StripeError as e:
-            app.logger.warning('Stripe TEST sub cancel failed during account delete: %s', e)
     db.execute('DELETE FROM share_links WHERE user_id = ?', (uid,))
     db.execute('DELETE FROM sync_blobs WHERE user_id = ?', (uid,))
     db.execute('DELETE FROM sessions WHERE user_id = ?', (uid,))
@@ -746,9 +770,7 @@ def delete_account():
     db.execute('DELETE FROM auth_attempts WHERE identifier = ?', (user['email'],))
     db.execute('DELETE FROM users WHERE id = ?', (uid,))
     db.commit()
-    resp = make_response(jsonify(deleted=True))
-    resp.set_cookie('mgs_session', '', expires=0, path='/', secure=True, samesite='Lax')
-    return resp
+    return True
 
 
 @app.route('/api/me/email', methods=['POST'])
@@ -1403,18 +1425,12 @@ def stripe_webhook():
     et = event['type']
     eid = event.get('id')
     obj = event['data']['object']
-    # Idempotency. INSERT OR IGNORE claims the event atomically — the previous
-    # SELECT-then-INSERT let two concurrent deliveries of the same event both
-    # pass the check and process twice.
-    if eid:
-        db = get_db()
-        claimed = db.execute(
-            'INSERT OR IGNORE INTO stripe_events (id, type, received_at) VALUES (?, ?, ?)',
-            (eid, et, now_ts()),
-        ).rowcount
-        db.commit()
-        if not claimed:
-            return jsonify(received=True, duplicate=True)
+    # Idempotency: the event is recorded only after its handler succeeds, so a
+    # worker killed mid-handler (deploy restart, OOM) leaves no row and Stripe's
+    # retry runs it again. Two concurrent deliveries may both run the handler;
+    # that is harmless because every handler re-fetches the subscription.
+    if eid and get_db().execute('SELECT 1 FROM stripe_events WHERE id = ?', (eid,)).fetchone():
+        return jsonify(received=True, duplicate=True)
     try:
         if et == 'checkout.session.completed':
             # Link customer to user via metadata, then refresh the subscription.
@@ -1441,18 +1457,18 @@ def stripe_webhook():
         elif et == 'invoice.payment_failed':
             app.logger.warning('Payment failed for customer %s', obj.get('customer'))
         # Any other event type is ignored.
-    except Exception as e:
-        # Release the idempotency claim and fail loudly. Returning 200 here meant
-        # a transient error permanently dropped a subscription change — the user
-        # paid and never got premium, and Stripe never retried.
-        app.logger.exception('webhook handler error for %s: %s', et, e)
         if eid:
-            try:
-                db = get_db()
-                db.execute('DELETE FROM stripe_events WHERE id = ?', (eid,))
-                db.commit()
-            except Exception:
-                app.logger.exception('failed to release idempotency claim for %s', eid)
+            db = get_db()
+            db.execute(
+                'INSERT OR IGNORE INTO stripe_events (id, type, received_at) VALUES (?, ?, ?)',
+                (eid, et, now_ts()),
+            )
+            db.commit()
+    except Exception as e:
+        # Fail loudly so Stripe retries. Returning 200 here meant a transient
+        # error permanently dropped a subscription change: the user paid and
+        # never got premium. No event row was written, so the retry runs.
+        app.logger.exception('webhook handler error for %s: %s', et, e)
         return err('handler_error', 'Webhook handler failed; retry.', 500)
     return jsonify(received=True)
 
@@ -1515,6 +1531,18 @@ def require_admin():
 def admin_gate():
     if not require_admin():
         return err('admin_unauthorized', 'Admin token missing or invalid.', 401)
+    return None
+
+
+def _live_subscription_block(u):
+    """409 if the user has a live Stripe subscription (live or test mode).
+    Admin tier overrides would fight it: the next renewal webhook undoes a
+    demote, a lifetime grant leaves it billing, a trial hides a paying user."""
+    live = u['stripe_subscription_id'] and (u['subscription_status'] or '') in ('premium', 'trial')
+    test = u['stripe_subscription_id_test'] and (u['test_subscription_status'] or '') in ('premium', 'trial')
+    if live or test:
+        return err('live_subscription',
+                   'User has a live Stripe subscription. Cancel it in Stripe first, then retry.', 409)
     return None
 
 
@@ -1646,9 +1674,12 @@ def admin_grant_lifetime(user_id):
     if blocked:
         return blocked
     db = get_db()
-    u = db.execute('SELECT id FROM users WHERE id = ?', (user_id,)).fetchone()
+    u = db.execute('SELECT * FROM users WHERE id = ?', (user_id,)).fetchone()
     if not u:
         return err('not_found', 'User not found.', 404)
+    blocked = _live_subscription_block(u)
+    if blocked:
+        return blocked
     db.execute(
         "UPDATE users SET subscription_status = 'lifetime', premium_until = NULL WHERE id = ?",
         (user_id,),
@@ -1674,6 +1705,9 @@ def admin_extend_trial(user_id):
     u = db.execute('SELECT * FROM users WHERE id = ?', (user_id,)).fetchone()
     if not u:
         return err('not_found', 'User not found.', 404)
+    blocked = _live_subscription_block(u)
+    if blocked:
+        return blocked
     base = max(now_ts(), u['trial_ends_at'] or 0)
     new_end = base + days * 86400
     db.execute(
@@ -2001,6 +2035,10 @@ def stripe_webhook_test():
     # Namespace test event rows so a colliding live event ID can't silently
     # short-circuit a legitimate test event (or vice versa).
     test_eid = f'TEST:{eid}' if eid else None
+    # Unlike the live webhook, the claim is taken before the handler: subscription
+    # events apply the event snapshot (no re-fetch), so a concurrent duplicate
+    # running late would roll back a newer event. A worker killed mid-handler
+    # therefore still loses the test event. Test mode only; live is safe.
     if test_eid:
         db = get_db()
         claimed = db.execute(
@@ -2112,9 +2150,12 @@ def admin_demote_to_free(user_id):
     if blocked:
         return blocked
     db = get_db()
-    u = db.execute('SELECT id FROM users WHERE id = ?', (user_id,)).fetchone()
+    u = db.execute('SELECT * FROM users WHERE id = ?', (user_id,)).fetchone()
     if not u:
         return err('not_found', 'User not found.', 404)
+    blocked = _live_subscription_block(u)
+    if blocked:
+        return blocked
     past = now_ts() - 86400
     db.execute(
         """UPDATE users SET subscription_status = 'free',
@@ -2139,21 +2180,10 @@ def admin_delete_user(user_id):
     u = db.execute('SELECT * FROM users WHERE id = ?', (user_id,)).fetchone()
     if not u:
         return err('not_found', 'User not found.', 404)
-    # Best-effort: cancel live Stripe subscription so we don't keep billing.
-    if _stripe_ready() and u['stripe_subscription_id']:
-        try:
-            stripe.Subscription.delete(u['stripe_subscription_id'])
-        except stripe.StripeError as e:
-            app.logger.warning('Stripe sub cancel failed during admin delete: %s', e)
-    db.execute('DELETE FROM share_links WHERE user_id = ?', (user_id,))
-    db.execute('DELETE FROM sync_blobs WHERE user_id = ?', (user_id,))
-    db.execute('DELETE FROM sessions WHERE user_id = ?', (user_id,))
-    db.execute('DELETE FROM password_resets WHERE user_id = ?', (user_id,))
-    db.execute('DELETE FROM push_subscriptions WHERE user_id = ?', (user_id,))
-    db.execute('DELETE FROM push_reminders WHERE user_id = ?', (user_id,))
-    db.execute('DELETE FROM auth_attempts WHERE identifier = ?', (u['email'],))
-    db.execute('DELETE FROM users WHERE id = ?', (user_id,))
-    db.commit()
+    if not _delete_user_everywhere(u):
+        return err('stripe_cancel_failed',
+                   'Stripe could not cancel this user\'s subscription, so the user was not deleted. '
+                   'Check the server log and try again.', 502)
     _audit('delete_user', user_id, {'email': u['email']})
     return jsonify(deleted=True, email=u['email'])
 

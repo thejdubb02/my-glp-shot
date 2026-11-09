@@ -53,8 +53,21 @@ labelled `state-machine`.
   `premium` row is not rewritten to `free`.
 - Stripe writes only in `_apply_subscription()` (re-fetched subscription, old-sub
   guard, lifetime never touched). Admin writes: grant-lifetime, extend-trial,
-  demote-to-free. Scripts: grant/revoke-premium.
+  demote-to-free; each refuses with 409 (`_live_subscription_block`) while the
+  user has a live subscription (`stripe_subscription_id` or its test shadow set
+  and status `premium`/`trial`), so the admin cancels in Stripe first.
+  Scripts: grant/revoke-premium.
+- Account delete (self `DELETE /api/me` and admin `DELETE /api/admin/users/<id>`)
+  goes through `_delete_user_everywhere()`: cancel live and test subs first; if a
+  cancel fails (not "already canceled / no such sub") nothing is deleted and the
+  route returns 502.
 - A missing period end keeps the stored `premium_until` (never NULL a payer).
+- Webhook idempotency: the live webhook writes its `stripe_events` row only
+  after the handler succeeds, so a crash mid-handler leaves no row and Stripe's
+  retry runs it; concurrent duplicates may both run, safe because it re-fetches.
+  The test webhook claims first (`TEST:` ids, released on error) because it
+  applies event snapshots; a killed test worker can still lose a test event.
+  Test: `scripts/api-webhook-selftest.py` (offline, not in run-tests.sh).
 
 ### Other lifecycles
 - Password reset tokens: `password_resets` live, used, expired, purged.
