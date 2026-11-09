@@ -22,6 +22,7 @@ $19.99/yr). README.md has the overview.
 - `docker/`: Dockerfile and compose. `deploy/`: nginx vhosts and rate limits.
 - `scripts/`: selftests, admin tools (grant-premium, list-users), backups.
 - `docs/`: internal notes, code review record, launch plans. `content/`: site copy.
+- `docs/state-machines.md`: every lifecycle (sync, auth, billing, push) and where it may change. Read before touching one.
 
 ## Tests
 

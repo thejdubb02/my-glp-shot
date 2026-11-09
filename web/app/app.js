@@ -1507,6 +1507,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         forgetCachedAccountUser();
         alert('Account deleted. Local data on this device is still here — use "Erase all data on this device" to wipe it too.');
         account = { user: null, encryptionKey: null };
+        resetSyncPush();
         await onAccountChanged();
       } catch (e) {
         alert('Could not delete account: ' + (e.message || e));
@@ -3172,12 +3173,12 @@ async function noteSyncFailure(e) {
 // debounced writes can be silently dropped and the user sees stale data.
 function setupSyncFlushAndVisibilityPull() {
   const flush = () => {
-    if (!window._syncDirty) return;
+    if (!syncPush.dirty) return;
     if (!account.user || !account.encryptionKey) return;
-    // Cancel the debounced push and fire one synchronously-initiated push now.
-    clearTimeout(window._syncDebounce);
-    window._syncDirty = false;
-    accountSyncPush().catch((e) => { window._syncDirty = true; noteSyncFailure(e); });
+    // Cancel the debounced push and fire one now.
+    clearTimeout(syncPush.timer);
+    syncPush.timer = null;
+    accountSyncPush().catch(noteSyncFailure);
   };
   document.addEventListener('visibilitychange', async () => {
     if (document.visibilityState === 'hidden') {
@@ -3215,12 +3216,19 @@ async function markSyncDirty() {
     // always within ~2 s of local. Anything longer means closing the tab can drop
     // a write. visibilitychange + pagehide listeners (registered at boot) flush
     // any still-pending writes when the tab backgrounds or unloads.
-    window._syncDirty = true;
-    clearTimeout(window._syncDebounce);
-    window._syncDebounce = setTimeout(() => {
-      window._syncDirty = false;
-      accountSyncPush().catch((e) => { window._syncDirty = true; noteSyncFailure(e); });
+    syncPush.dirty = true;
+    clearTimeout(syncPush.timer);
+    syncPush.timer = setTimeout(() => {
+      syncPush.timer = null;
+      accountSyncPush().catch(noteSyncFailure);
     }, 1500);
+    return;
+  }
+  if (account.user) {
+    // Signed in, but this device holds no encryption key (the remembered key is
+    // missing or unreadable). Nothing can be backed up, so say so rather than
+    // dropping every change silently. A successful push clears the message.
+    if (!settings.syncLastError) noteSyncFailure(new Error('sign in again on this device to turn it back on'));
     return;
   }
   if (!syncCreds || !settings.syncEnabled || !settings.syncAutoPush) return;
@@ -6106,6 +6114,7 @@ async function accountLogin(email, password) {
 async function accountLogout(forgetDevice) {
   try { await accountFetch('logout', { method: 'POST' }); } catch (e) {}
   account = { user: null, encryptionKey: null };
+  resetSyncPush();
   try { localStorage.removeItem('mgs_session_token'); } catch (_) {}
   forgetCachedAccountUser();
   if (forgetDevice) clearRememberedSignIn();
@@ -6318,7 +6327,40 @@ async function tryRestoreAccount() {
   return true;
 }
 
-async function accountSyncPush() {
+// ---------- Cloud push: the sync state machine ----------
+// All cloud backup state lives in syncPush, and every push goes through
+// accountSyncPush. States:
+//   idle     dirty=false, nothing running
+//   pending  dirty=true, timer set (markSyncDirty debounces 1.5 s)
+//   pushing  running set; dirty is cleared when the push starts reading data,
+//            so an edit made mid-push marks it dirty again and pushes again
+//   failed   dirty=true, no timer; flush on tab hide and the 60 s retry pick it up
+// Pushes run one at a time. Before this, the debounce, the tab-hide flush and
+// the 60 s retry could each start a PUT, and two in flight can land out of
+// order, leaving the cloud holding the older copy. A call made while a push is
+// waiting to start shares that push, since it will read the newest data anyway.
+const syncPush = { dirty: false, timer: null, running: null, queued: null };
+
+function resetSyncPush() {
+  clearTimeout(syncPush.timer);
+  syncPush.timer = null;
+  syncPush.dirty = false;
+}
+
+function accountSyncPush() {
+  if (syncPush.queued) return syncPush.queued;
+  const prev = syncPush.running || Promise.resolve();
+  const p = prev.catch(() => {}).then(() => {
+    syncPush.queued = null;
+    syncPush.running = p;
+    syncPush.dirty = false;
+    return pushToCloud().catch((e) => { syncPush.dirty = true; throw e; });
+  }).finally(() => { if (syncPush.running === p) syncPush.running = null; });
+  syncPush.queued = p;
+  return p;
+}
+
+async function pushToCloud() {
   if (!account.user || !account.encryptionKey) throw new Error('Not unlocked');
   const payload = await buildPayload();
   const iv = crypto.getRandomValues(new Uint8Array(12));
@@ -8000,11 +8042,10 @@ async function initSyncUI() {
   // change, but a push that failed (offline, server blip) would otherwise sit
   // unretried until the next edit. Legacy sync no longer pushes at all.
   setInterval(async () => {
-    if (!window._syncDirty) return;
+    if (!syncPush.dirty) return;
     if (!account.user || !account.encryptionKey) return;
     try {
       await accountSyncPush();
-      window._syncDirty = false;
     } catch (e) {
       noteSyncFailure(e);
     }

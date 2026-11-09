@@ -1342,12 +1342,14 @@ def _apply_subscription(sub):
     if status in ('active', 'trialing'):
         new_status = 'premium' if status == 'active' else 'trial'
         # premium_until is "paid through" — for trialing, use trial_end; for active, current_period_end.
+        # A missing end (Stripe API shape change) keeps the stored one: writing NULL
+        # would read as not premium and drop a paying customer to free.
         until = trial_end if status == 'trialing' else current_period_end
         was_paid = (user['subscription_status'] or '').lower() == 'premium'
         db.execute(
             """UPDATE users
                SET subscription_status = ?,
-                   premium_until = ?,
+                   premium_until = COALESCE(?, premium_until),
                    trial_ends_at = COALESCE(?, trial_ends_at),
                    stripe_subscription_id = ?,
                    cancel_at_period_end = ?
