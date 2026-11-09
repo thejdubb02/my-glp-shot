@@ -6471,12 +6471,22 @@ async function withSyncPushHeld(fn) {
 
 async function pushToCloud() {
   if (!account.user || !account.encryptionKey) throw new Error('Not unlocked');
-  const payload = await buildPayload();
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const plaintext = await encodePayloadBytes(payload);
-  const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, account.encryptionKey, plaintext);
-  const body = { iv: bytesToBase64(iv), ciphertext: bytesToBase64(ct) };
-  const r = await accountFetch('me/sync', { method: 'PUT', body: JSON.stringify(body) });
+  const put = async (baseUpdatedAt) => {
+    const payload = await buildPayload();
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const plaintext = await encodePayloadBytes(payload);
+    const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, account.encryptionKey, plaintext);
+    const body = { iv: bytesToBase64(iv), ciphertext: bytesToBase64(ct), baseUpdatedAt };
+    return accountFetch('me/sync', { method: 'PUT', body: JSON.stringify(body) });
+  };
+  let r = await put(settings.syncLastUpdatedAt ?? null);
+  if (r.status === 409) {
+    // Another device pushed since we last saw the cloud. Merge its rows in,
+    // then push the union once on top of the version we just pulled.
+    const pulled = await accountSyncPull();
+    if (pulled && pulled.payload) await applyPulledPayload(pulled.payload);
+    r = await put(pulled ? pulled.updatedAt : null);
+  }
   if (r.status === 413) throw new Error('Your data is too large to back up. Export a copy and contact support.');
   if (!r.ok) throw new Error('Sync failed: ' + r.status);
   const j = await r.json();

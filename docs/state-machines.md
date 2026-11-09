@@ -17,9 +17,15 @@ labelled `state-machine`.
   `withSyncPushHeld()`: it waits for running and queued pushes, then holds the
   queue until the re-encrypted blob is stored and the new key swapped in.
   Pushes asked for meanwhile run after it with the new key.
+- Version check: each PUT sends `baseUpdatedAt` (`settings.syncLastUpdatedAt`,
+  the server's `updatedAt` this device last saw, null before the first push;
+  null is refused while a blob exists, so a fresh device merges first).
+  A 409 `stale` means another device pushed since: `pushToCloud()` pulls,
+  `applyPulledPayload()` merges, then retries once with the pulled `updatedAt`.
+  A second 409 fails the push and leaves it dirty for the next retry.
 - Error shown to the user: `settings.syncLastError`, set by
   `noteSyncFailure()`, cleared by a successful push.
-- Test: `scripts/sync-push-selftest.mjs`.
+- Tests: `scripts/sync-push-selftest.mjs`, `scripts/sync-conflict-selftest.mjs`.
 
 ### Synced record deletion: `tombstones` store in app.js
 - States per record: live, tombstoned (row gone, tombstone kept 180 days).
@@ -98,7 +104,11 @@ labelled `state-machine`.
 ### Other lifecycles
 - Password reset tokens: `password_resets` live, used, expired, purged.
 - Sessions: `sessions`, deleted on logout, reset, email change, force-logout.
-- Sync blob: `sync_blobs`, one row per user, last write wins (no version check).
+- Sync blob: `sync_blobs`, one row per user. `updated_at` is the version: it
+  only goes up (stored + 1 within a second). `sync_put` writes only if
+  `baseUpdatedAt` is missing (old clients, last write wins), null with no blob
+  stored yet, or not older than the stored `updated_at`, in one conditional upsert; else 409 `stale`.
+  Test: `scripts/api-sync-selftest.py` (offline, not in run-tests.sh).
 - Share links: live or deleted (expiry in the fetch query).
 - Push: `push_subscriptions.fail_count`; `push_reminders.sent_at` means queued
   (NULL) or claimed/sent/retired (set).

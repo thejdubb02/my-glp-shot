@@ -1016,15 +1016,30 @@ def sync_put():
         return err('invalid_payload', 'Missing iv or ciphertext.')
     if len(ct) > MAX_BLOB_BYTES:
         return err('blob_too_large', f'Max {MAX_BLOB_BYTES} bytes.', 413)
+    # baseUpdatedAt is the updatedAt this device last saw. If the stored blob is
+    # newer, another device pushed since: refuse, so the client pulls and merges
+    # first. null means "never saw one", so it only writes when no blob exists.
+    # A missing field keeps last-write-wins for old clients.
+    legacy = 'baseUpdatedAt' not in data
+    base = data.get('baseUpdatedAt')
+    if base is not None and (isinstance(base, bool) or not isinstance(base, int)):
+        return err('invalid_payload', 'baseUpdatedAt must be an integer.')
     db = get_db()
-    db.execute(
+    # One statement, so check and write are atomic. updated_at only ever goes up
+    # (stored + 1 within the same second), so two pushes never share a version.
+    cur = db.execute(
         """INSERT INTO sync_blobs (user_id, iv, ciphertext, updated_at, size)
            VALUES (?, ?, ?, ?, ?)
-           ON CONFLICT(user_id) DO UPDATE SET iv=excluded.iv, ciphertext=excluded.ciphertext, updated_at=excluded.updated_at, size=excluded.size""",
-        (user['id'], iv, ct, now_ts(), len(ct)),
+           ON CONFLICT(user_id) DO UPDATE SET iv=excluded.iv, ciphertext=excluded.ciphertext,
+             updated_at=MAX(excluded.updated_at, sync_blobs.updated_at + 1), size=excluded.size
+           WHERE ? OR sync_blobs.updated_at <= ?""",
+        (user['id'], iv, ct, now_ts(), len(ct), legacy, base),
     )
+    stored = db.execute('SELECT updated_at FROM sync_blobs WHERE user_id = ?', (user['id'],)).fetchone()['updated_at']
     db.commit()
-    return jsonify(updatedAt=now_ts())
+    if cur.rowcount == 0:
+        return jsonify(error='stale', message='Another device backed up newer data.', updatedAt=stored), 409
+    return jsonify(updatedAt=stored)
 
 
 @app.route('/api/me/sync', methods=['DELETE'])
