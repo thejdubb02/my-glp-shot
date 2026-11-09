@@ -69,7 +69,14 @@ A.eq('edit during a push leaves it dirty', R('syncPush.dirty'), true);
 A.check('edit during a push arms another push', R('syncPush.timer') !== null);
 
 // ---------- 4. sign-out disarms the pending push ----------
+const running = R('accountSyncPush()');
+await tick();
+const queued = R('accountSyncPush()');   // waits behind the running push
+const before = R('__t.calls');
 await R('accountLogout()');
+await releaseAll();
+await running; await queued;
+A.eq('a push queued before sign-out never runs', R('__t.calls'), before);
 A.eq('sign-out clears the timer', R('syncPush.timer'), null);
 A.eq('sign-out clears dirty', R('syncPush.dirty'), false);
 

@@ -6339,9 +6339,13 @@ async function tryRestoreAccount() {
 // the 60 s retry could each start a PUT, and two in flight can land out of
 // order, leaving the cloud holding the older copy. A call made while a push is
 // waiting to start shares that push, since it will read the newest data anyway.
-const syncPush = { dirty: false, timer: null, running: null, queued: null };
+const syncPush = { dirty: false, timer: null, running: null, queued: null, epoch: 0 };
 
+// Sign-out: drop the pending push, and any push still queued behind a running
+// one (the epoch check skips it), so nothing fires for an account that is gone.
 function resetSyncPush() {
+  syncPush.epoch++;
+  syncPush.queued = null;
   clearTimeout(syncPush.timer);
   syncPush.timer = null;
   syncPush.dirty = false;
@@ -6350,7 +6354,9 @@ function resetSyncPush() {
 function accountSyncPush() {
   if (syncPush.queued) return syncPush.queued;
   const prev = syncPush.running || Promise.resolve();
+  const epoch = syncPush.epoch;
   const p = prev.catch(() => {}).then(() => {
+    if (epoch !== syncPush.epoch) return null;
     syncPush.queued = null;
     syncPush.running = p;
     syncPush.dirty = false;
