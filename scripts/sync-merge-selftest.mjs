@@ -125,7 +125,7 @@ A.check('a pull that still has the deleted row does not bring it back',
   rows.length === 1 && rows[0].uid === 'eeeeeeee-2', JSON.stringify(rows.map(x => x.uid)));
 const payload = await call('buildPayload()');
 A.check('full sync payload carries the tombstone', (payload.tombstones || []).some(t => t.key === 'eeeeeeee-1'));
-A.eq('payload version is 11', payload.version, 11);
+A.eq('payload version is 12', payload.version, 12);
 const sharePayload = await call("buildPayload({ range: '90' })");
 A.eq('a doctor share carries no tombstones', (sharePayload.tombstones || []).length, 0);
 

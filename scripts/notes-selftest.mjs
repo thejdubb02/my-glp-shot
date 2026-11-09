@@ -247,7 +247,7 @@ await wipe();
 await saveNote('2026-05-01', 'payload note');
 {
   const p = await buildPayload({});
-  eq('payload version is 11', p.version, 11);
+  eq('payload version is 12', p.version, 12);
   check('payload carries notes', Array.isArray(p.notes) && p.notes.some(n => n.text === 'payload note'));
   check('payload carries symptoms', Array.isArray(p.symptoms));
 }

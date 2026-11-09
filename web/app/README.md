@@ -31,8 +31,10 @@ become the auth token the server bcrypts. The server holds ciphertext and hashes
 — it cannot read a single entry.
 
 **Sync is a merge, never a replace.** Records carry a stable `uid` (stamped in
-`dbAdd`), and `mergeStore()` matches on uid *or* a content key so rows written
-before uids existed still dedupe. A pull only ever adds. This matters: the old
+`dbAdd`), and `mergeStore()` matches on uid, or on a content key when one side
+is a legacy row (no uid, or a `ck-` uid derived from the content key), so rows
+written before uids existed still dedupe while two distinct entries that share a
+content key are both kept. A pull only ever adds. This matters: the old
 behaviour cleared every local store first, which destroyed anything logged since
 the last push.
 

@@ -3670,7 +3670,7 @@ async function getMoodsSorted() {
   return readDailySorted(STORES.moods);
 }
 async function saveMood(date, value) {
-  await dbPut(STORES.moods, { date, value });
+  await dbPut(STORES.moods, { date, value, updatedAt: new Date().toISOString() });
 }
 
 // ---------- Appetite store (daily) ----------
@@ -3682,7 +3682,7 @@ async function getAppetitesSorted() {
 // Routed through dbPut rather than a hand-rolled transaction so the write goes
 // past withStore, which is what clears the cached read.
 async function saveAppetite(date, value) {
-  await dbPut('appetites', { date, value });
+  await dbPut('appetites', { date, value, updatedAt: new Date().toISOString() });
 }
 
 async function renderAppetite() {
@@ -3787,7 +3787,7 @@ async function getFoodNoiseSorted() {
   return readDailySorted('foodNoise');
 }
 async function saveFoodNoise(date, value) {
-  await dbPut('foodNoise', { date, value });
+  await dbPut('foodNoise', { date, value, updatedAt: new Date().toISOString() });
 }
 async function renderFoodNoise() {
   const today = todayISODate();
@@ -3903,7 +3903,7 @@ async function saveNote(date, text) {
   if (!clean) return deleteNote(date);
   return dbPut('notes', { date, text: clean, updatedAt: new Date().toISOString() });
 }
-async function deleteNote(date) { return withStore('notes', 'readwrite', s => s.delete(date)); }
+async function deleteNote(date) { return dbDelDay('notes', date); }
 
 
 function noteSnippet(text, max = 80) {
@@ -4062,9 +4062,9 @@ function shiftISODate(key, deltaDays) {
   return dt.toISOString().slice(0, 10);
 }
 
-async function deleteMood(date)      { return withStore(STORES.moods, 'readwrite', s => s.delete(date)); }
-async function deleteAppetite(date)  { return withStore('appetites', 'readwrite', s => s.delete(date)); }
-async function deleteFoodNoise(date) { return withStore('foodNoise', 'readwrite', s => s.delete(date)); }
+async function deleteMood(date)      { return dbDelDay(STORES.moods, date); }
+async function deleteAppetite(date)  { return dbDelDay('appetites', date); }
+async function deleteFoodNoise(date) { return dbDelDay('foodNoise', date); }
 
 // null = "leave this one alone"; a number = write it. Saving only touches the
 // stores the user actually set, so filling in mood never wipes an existing
@@ -5416,10 +5416,18 @@ async function saveSymptomDay(date, se) {
   // Drop "None" selections so an all-clear day doesn't masquerade as data.
   for (const k of Object.keys(clean)) if (!clean[k]) delete clean[k];
   if (!Object.keys(clean).length) return deleteSymptomDay(date);
-  return dbPut('symptoms', { date, se: clean, updatedAt: new Date().toISOString() });
+  // An un-ticked symptom needs its own tombstone, or the per-symptom union on
+  // the next pull adds it straight back.
+  const prev = await getSymptomDay(date);
+  await tombstoneDay('symptoms', date, Object.keys((prev && prev.se) || {}).filter(k => !clean[k]));
+  // seAt: when each symptom was last set, so a tombstone for one symptom is
+  // compared against that symptom and not against edits to the rest of the day.
+  const now = Date.now(), seAt = {};
+  for (const k of Object.keys(clean)) seAt[k] = prev && prev.se && prev.se[k] === clean[k] ? (symTs(prev, k) || now) : now;
+  return dbPut('symptoms', { date, se: clean, seAt, updatedAt: new Date(now).toISOString() });
 }
 async function deleteSymptomDay(date) {
-  return withStore('symptoms', 'readwrite', s => s.delete(date));
+  return dbDelDay('symptoms', date);
 }
 function sanitizeSymptomDay(raw) {
   if (!raw || typeof raw !== 'object') return null;
@@ -5428,7 +5436,9 @@ function sanitizeSymptomDay(raw) {
   const se = sanitizeSideEffectMap(raw.se) || {};
   for (const k of Object.keys(se)) if (!se[k]) delete se[k];
   if (!Object.keys(se).length) return null;
-  return { date, se, updatedAt: safeText(raw.updatedAt, 40) || new Date().toISOString() };
+  const seAt = {};
+  for (const k of Object.keys(se)) { const at = Number(raw.seAt && raw.seAt[k]); if (at > 0) seAt[k] = at; }
+  return { date, se, seAt, updatedAt: safeText(raw.updatedAt, 40) || new Date().toISOString() };
 }
 
 // One flat list of every side-effect observation, from either source.
@@ -6358,10 +6368,19 @@ async function tryRestoreAccount() {
   await claimDevice(user);
   account.user = user;
   const remembered = getRememberedSignIn();
+  const sameEmail = (a, b) => String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
   if (remembered && remembered.email && remembered.k) {
-    try {
-      account.encryptionKey = await importStoredAesKey(remembered.k);
-    } catch (e) {}
+    if (sameEmail(remembered.email, user.email)) {
+      try {
+        account.encryptionKey = await importStoredAesKey(remembered.k);
+      } catch (e) {}
+    } else {
+      // Another account's key (sign-in interrupted before it was replaced):
+      // never use it, stay signed in but locked until the password is entered.
+      clearRememberedSignIn();
+      settings.syncLastError = 'Sign in again to unlock your cloud backup.';
+      try { await saveSettings(); } catch (_) {}
+    }
   }
   // Auto-sync on every login: pull, merge, push the union back.
   //
@@ -7716,7 +7735,10 @@ async function buildPayload(opts) {
     //     push, which is exactly the data loss the version guard exists to stop.
     // v11 adds `tombstones` — deletions, so they sync. Bumped for the same reason:
     //     a v10 client would drop them and bring deleted rows back.
-    version: 11,
+    // v12 adds day tombstones (notes, moods, appetites, foodNoise, symptoms) and
+    //     per-symptom seAt times. A v11 client would drop them and bring
+    //     deleted days back.
+    version: 12,
     exportedAt: new Date().toISOString(),
     range: opts && opts.range ? opts.range : 'all',
     settings,
@@ -7754,13 +7776,24 @@ function newUid() {
   if (crypto.randomUUID) return crypto.randomUUID();
   return HEX(crypto.getRandomValues(new Uint8Array(16)));
 }
+// Stable uid for a row that arrived without one: two 32-bit FNV-1a hashes of the
+// store and content key, so every device derives the same uid for the same row.
+function contentUid(store, ck) {
+  let a = 0x811c9dc5, b = 0x050c5d1f;
+  for (const ch of `${store}|${ck}`) {
+    const c = ch.codePointAt(0);
+    a = Math.imul(a ^ c, 0x01000193);
+    b = Math.imul(b ^ c, 0x01000193) ^ (b >>> 15);
+  }
+  return `ck-${(a >>> 0).toString(16).padStart(8, '0')}${(b >>> 0).toString(16).padStart(8, '0')}`;
+}
 
 // Content keys identify a record by the fields a human would call "the same
 // entry". They exist because rows written before uids have no other identity —
 // and because a uid assigned locally to an old row would otherwise differ from
 // the uid the same row got on another device, duplicating it on every pull.
 const CONTENT_KEYS = {
-  shots: (r) => `s|${String(r.when).slice(0, 16)}|${r.dose}`,
+  shots: (r) => `s|${String(r.when).slice(0, 16)}|${r.dose}|${r.med || 'Tirzepatide'}`,  // sanitizeShot's default med
   weights: (r) => `w|${r.date}`,
   // These four named fields the records never had (med/openedAt/mg, type,
   // start, from/to), so every supply shared one key, as did every cycle and every
@@ -7804,7 +7837,7 @@ async function liveTombstones() {
 // one as a Map for mergeStore.
 async function mergeTombstones(incoming) {
   for (const t of Array.isArray(incoming) ? incoming : []) {
-    if (!t || typeof t.key !== 'string' || t.key.length > 300 || !UID_STORES.has(t.store)) continue;
+    if (!t || typeof t.key !== 'string' || t.key.length > 300 || !(UID_STORES.has(t.store) || DAILY_SYNCED.has(t.store))) continue;
     const at = Number(t.deletedAt);
     if (!Number.isFinite(at) || at <= 0) continue;
     const mine = await dbGet('tombstones', t.key);
@@ -7812,16 +7845,60 @@ async function mergeTombstones(incoming) {
   }
   return new Map((await liveTombstones()).map(t => [t.key, t]));
 }
+// UID stores stamp updatedAt in ms, the daily stores as an ISO string.
+const rowTs = (row) => Number(row.updatedAt) || Date.parse(row.updatedAt) || 0;
+const symTs = (row, k) => Number(row.seAt && row.seAt[k]) || rowTs(row);
 const buriedBy = (tombs, key, row) => {
   const t = tombs && tombs.get(key);
-  return !!t && t.deletedAt >= (Number(row.updatedAt) || 0);
+  return !!t && t.deletedAt >= rowTs(row);
 };
+// A legacy row (no uid, or a ck- uid derived from its content) may have been
+// tombstoned by content key, and shot tombstones written before the med joined
+// the shot key still use the old time|dose form.
+function rowBuried(tombs, store, r, ck) {
+  if (r.uid && buriedBy(tombs, r.uid, r)) return true;
+  if (r.uid && !String(r.uid).startsWith('ck-')) return false;
+  return buriedBy(tombs, `ck|${store}|${ck}`, r) ||
+    (store === 'shots' && buriedBy(tombs, `ck|shots|s|${String(r.when).slice(0, 16)}|${r.dose}`, r));
+}
+
+// The date-keyed daily stores are tombstoned by store and date. Symptom days
+// merge per symptom, so they are tombstoned per symptom: day|symptoms|date|key.
+const DAILY_SYNCED = new Set(['notes', 'moods', 'appetites', 'foodNoise', 'symptoms']);
+const dayKey = (store, date, k) => `day|${store}|${date}${k ? '|' + k : ''}`;
+async function tombstoneDay(store, date, subkeys) {
+  const deletedAt = Date.now();
+  for (const k of subkeys || [null]) await dbPutExact('tombstones', { key: dayKey(store, date, k), store, deletedAt });
+}
+async function dbDelDay(store, date) {
+  const row = await dbGet(store, date);
+  if (row) await tombstoneDay(store, date, store === 'symptoms' ? Object.keys(row.se || {}) : null);
+  return dbDel(store, date);
+}
+// Remove local daily rows (or single symptoms) deleted on another device after
+// this copy was last written.
+async function pruneDailyRows(tombs) {
+  for (const t of tombs.values()) {
+    const [kind, store, date, k] = t.key.split('|');
+    if (kind !== 'day' || !DAILY_SYNCED.has(store) || !date) continue;
+    const row = await dbGet(store, date);
+    if (!row || t.deletedAt < (store === 'symptoms' ? symTs(row, k) : rowTs(row))) continue;
+    if (store !== 'symptoms') { await dbDel(store, date); continue; }
+    if (!k || !row.se || !(k in row.se)) continue;
+    const se = { ...row.se }, seAt = { ...row.seAt };
+    delete se[k]; delete seAt[k];
+    if (Object.keys(se).length) await dbPutExact(store, { ...row, se, seAt });
+    else await dbDel(store, date);
+  }
+}
 
 // Union-merge one auto-increment store: keep every local row, add cloud rows we
 // don't already have. Never deletes — a pull can only ever add.
 //
-// A record matches if EITHER its uid or its content key is already present, so
-// uid-bearing and legacy rows both dedupe correctly and a pull is idempotent.
+// A record matches if its uid is already present, or if its content key is and
+// one of the two rows has no uid. Legacy rows still dedupe and a pull stays
+// idempotent, while two distinct uid-bearing entries that share a content key
+// are both kept.
 //
 // A row both sides know (same uid) is replaced only by a copy with a newer
 // updatedAt, which is how an edit reaches the other device. Before this a known
@@ -7832,12 +7909,16 @@ async function mergeStore(storeName, incoming, contentKey, tombs) {
   const existing = (await dbAll(storeName)) || [];
   const byUid = new Map();
   const seenContent = new Set();
+  // Content keys of legacy rows: no uid, or a uid derived from the content key.
+  const legacyContent = new Set();
+  const isLegacy = (r) => !r.uid || String(r.uid).startsWith('ck-');
   let added = 0, updated = 0, skipped = 0, removed = 0;
   for (const r of existing) {
     if (!r) continue;
     // Deleted on another device after this copy was last edited.
-    if (buriedBy(tombs, tombstoneKey(storeName, r), r)) { await dbDel(storeName, r.id); removed++; continue; }
+    if (rowBuried(tombs, storeName, r, contentKey(r))) { await dbDel(storeName, r.id); removed++; continue; }
     if (r.uid) byUid.set(r.uid, r);
+    if (isLegacy(r)) legacyContent.add(contentKey(r));
     seenContent.add(contentKey(r));
   }
   for (const raw of rows) {
@@ -7845,7 +7926,7 @@ async function mergeStore(storeName, incoming, contentKey, tombs) {
     const rec = { ...raw };
     delete rec.id;                 // local autoincrement ids are device-scoped
     const ck = contentKey(rec);
-    if (buriedBy(tombs, rec.uid || `ck|${storeName}|${ck}`, rec)) { skipped++; continue; }
+    if (rowBuried(tombs, storeName, rec, ck)) { skipped++; continue; }
     const mine = rec.uid ? byUid.get(rec.uid) : null;
     if (mine) {
       if ((Number(rec.updatedAt) || 0) > (Number(mine.updatedAt) || 0)) {
@@ -7859,8 +7940,14 @@ async function mergeStore(storeName, incoming, contentKey, tombs) {
       }
       continue;
     }
-    if (seenContent.has(ck)) { skipped++; continue; }
-    if (!rec.uid) rec.uid = newUid();
+    // A content-key match only means "same entry" when one side is a legacy row.
+    // Two rows with their own different uids are two entries (two meds logged
+    // the same minute at the same dose), so both are kept.
+    if (isLegacy(rec) ? seenContent.has(ck) : legacyContent.has(ck)) { skipped++; continue; }
+    if (isLegacy(rec)) legacyContent.add(ck);
+    // Derived from the content key, so two devices pulling the same legacy row
+    // give it the same uid, and the ck- prefix keeps it deduping by content.
+    if (!rec.uid) rec.uid = contentUid(storeName, ck);
     byUid.set(rec.uid, rec);
     seenContent.add(ck);
     await dbAddExact(storeName, rec);
@@ -7912,7 +7999,7 @@ async function mergeNotes(incoming) {
 async function applyPulledPayload(payload) {
   // Refuse newer payloads we can't safely interpret — avoids silent data loss
   // if a stale client pulls a blob written by a future schema.
-  const SUPPORTED_PAYLOAD_VERSION = 11;
+  const SUPPORTED_PAYLOAD_VERSION = 12;
   const pv = Number(payload && payload.version) || 1;
   if (pv > SUPPORTED_PAYLOAD_VERSION) {
     throw new Error(`This cloud backup was written by a newer version of the app (payload v${pv}). Please update before restoring.`);
@@ -7934,10 +8021,13 @@ async function applyPulledPayload(payload) {
   stats.medChanges = await mergeStore('medChanges', payload.medChanges, CONTENT_KEYS.medChanges, tombs);
 
   // Date-keyed daily stores: last write wins per day, which is the intent — one
-  // mood/appetite/food-noise reading per date.
-  for (const m of (payload.moods || [])) if (m && m.date) await dbPut(STORES.moods, m);
-  for (const a of (payload.appetites || [])) if (a && a.date) await saveAppetite(a.date, a.value);
-  for (const f of (payload.foodNoise || [])) if (f && f.date) await saveFoodNoise(f.date, f.value);
+  // mood/appetite/food-noise reading per date. A day deleted after the pulled
+  // copy was written stays deleted; the pulled updatedAt is kept as received.
+  await pruneDailyRows(tombs);
+  const liveDays = (store, rows) => (Array.isArray(rows) ? rows : []).filter(r => r && r.date && !buriedBy(tombs, dayKey(store, r.date), r));
+  for (const m of liveDays('moods', payload.moods)) await dbPut(STORES.moods, m);
+  for (const a of liveDays('appetites', payload.appetites)) await dbPut('appetites', { date: a.date, value: a.value, updatedAt: a.updatedAt });
+  for (const f of liveDays('foodNoise', payload.foodNoise)) await dbPut('foodNoise', { date: f.date, value: f.value, updatedAt: f.updatedAt });
   // Symptom days merge per-symptom rather than last-write-wins: two devices each
   // adding a symptom on the same day should end up with both, not with whichever
   // pushed last. Severity conflicts on the same symptom resolve to the worse one,
@@ -7946,16 +8036,21 @@ async function applyPulledPayload(payload) {
   for (const raw of (payload.symptoms || [])) {
     const rec = sanitizeSymptomDay(raw);
     if (!rec) continue;
+    for (const k of Object.keys(rec.se)) if (buriedBy(tombs, dayKey('symptoms', rec.date, k), { updatedAt: symTs(rec, k) })) delete rec.se[k];
+    if (!Object.keys(rec.se).length) continue;
     const local = await getSymptomDay(rec.date);
     if (!local || !local.se) { await dbPut('symptoms', rec); continue; }
-    const merged = { ...local.se };
+    const merged = { ...local.se }, seAt = {};
     for (const [k, lvl] of Object.entries(rec.se)) {
       if (!merged[k] || (SE_RANK[lvl] || 0) > (SE_RANK[merged[k]] || 0)) merged[k] = lvl;
     }
-    await dbPut('symptoms', { date: rec.date, se: merged, updatedAt: new Date().toISOString() });
+    // Keep the source times rather than stamping now, or a delete made on another
+    // device before this merge but pulled after it would lose to the merged copy.
+    for (const k of Object.keys(merged)) seAt[k] = Math.max(k in local.se ? symTs(local, k) : 0, k in rec.se ? symTs(rec, k) : 0);
+    await dbPut('symptoms', { date: rec.date, se: merged, seAt, updatedAt: new Date(Math.max(rowTs(local), rowTs(rec))).toISOString() });
   }
   // Notes are the exception to last-write-wins — see mergeNotes.
-  stats.notes = await mergeNotes(payload.notes);
+  stats.notes = await mergeNotes(liveDays('notes', payload.notes));
 
   window._lastMergeStats = stats;
   if (payload.settings) {

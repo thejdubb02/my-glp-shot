@@ -17,6 +17,19 @@ labelled `state-machine`.
   `noteSyncFailure()`, cleared by a successful push.
 - Test: `scripts/sync-push-selftest.mjs`.
 
+### Synced record deletion: `tombstones` store in app.js
+- States per record: live, tombstoned (row gone, tombstone kept 180 days).
+- UID stores delete through `dbDelSynced()` (key: uid or content key). Daily
+  stores (notes, moods, appetites, foodNoise, symptoms) delete through
+  `dbDelDay()` (key `day|store|date`); an un-ticked symptom is tombstoned on
+  its own in `saveSymptomDay()` (key `day|symptoms|date|symptom`).
+  Symptoms carry `seAt` (ms per symptom); their tombstones compare against it,
+  and a merge keeps the source times instead of stamping now. Payload v12.
+- A pull folds tombstones in (`mergeTombstones`), removes older local copies
+  (`mergeStore`, `pruneDailyRows`) and skips older pulled rows. A row written
+  after the delete (newer `updatedAt`) wins. Never delete a synced row
+  directly. Tests: `scripts/sync-merge-selftest.mjs`, `scripts/daily-delete-selftest.mjs`.
+
 ### Account / session: `account = { user, encryptionKey }`
 - signed out (both null); signed in (both set); signed in without key
   (user set, key null: no backup possible, reported via `syncLastError`).
@@ -27,6 +40,9 @@ labelled `state-machine`.
   account delete). Every sign-in calls `claimDevice(user)` before any push; a
   different account erases local data first (`eraseLocalData`). No owner
   recorded keeps the data. Sign-in pulls and merges before it pushes.
+  Restore uses `account.cred` only when its email matches the signed-in
+  user (trimmed, case-insensitive); otherwise it clears it and stays
+  signed in without key.
   Sign-out runs `flushBeforeSignOut()` first. Test: `scripts/account-switch-selftest.mjs`.
 
 ### Subscription (derived, read-only on the client)

@@ -56,4 +56,24 @@ R(`__t.pushedShots = []; account = { user: { id: 3 }, encryptionKey: {} }; syncP
 await R('accountLogout()');
 A.eq('pending edits pushed before sign-out', R('__t.pushedShots.length'), 1);
 
+// ---------- 6. restore never uses another account's remembered key (#17) ----------
+// A signed out (account.cred kept), B's sign-in died before it replaced it.
+R(`__t.pushedShots = [];
+  accountMe = async () => ({ id: 4, email: 'b@example.com' });
+  account = { user: null, encryptionKey: null }; settings.syncLastError = '';`);
+await R(`(async () => { const k = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt']); await rememberSignedIn('a@example.com', k); })()`);
+await R('tryRestoreAccount()');
+A.eq('mismatched email: no key loaded', R('account.encryptionKey'), null);
+A.eq('mismatched email: nothing pushed', R('__t.pushedShots.length'), 0);
+A.eq('mismatched email: remembered key cleared', R(`localStorage.getItem('account.cred')`), null);
+A.check('mismatched email: user told to sign in again', !!R('settings.syncLastError'));
+A.eq('mismatched email: still signed in', R('account.user.id'), 4);
+
+// Same email, different case and spaces: the key is used.
+R(`accountMe = async () => ({ id: 4, email: 'B@Example.com ' }); account = { user: null, encryptionKey: null };`);
+await R(`(async () => { const k = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt']); await rememberSignedIn('b@example.com', k); })()`);
+await R('tryRestoreAccount()');
+A.check('matching email: key loaded', !!R('account.encryptionKey'));
+A.eq('matching email: backup pushed', R('__t.pushedShots.length'), 1);
+
 A.report();
