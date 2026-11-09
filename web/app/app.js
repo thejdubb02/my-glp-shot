@@ -2282,7 +2282,7 @@ function sanitizeWeight(w) {
 function sanitizeNote(n) {
   if (!n || typeof n !== 'object') return null;
   const date = toCanonicalDate(n.date);
-  const text = safeText(n.text, NOTE_MAX).trim();
+  const text = safeText(n.text, NOTE_STORE_MAX).trim();
   if (!date || !text) return null;
   const out = { date, text };
   const ts = Date.parse(n.updatedAt);
@@ -3888,6 +3888,11 @@ function setupFoodNoiseUI() {
 // months later, and it is the only free text in the daily check-in — so it is
 // merged rather than overwritten (see mergeNotes) and never shared by default.
 const NOTE_MAX = 2000;
+// The editor stops typing at NOTE_MAX, but a note merged from two devices holds
+// both texts and can run past it. Storage, sync and saves use this larger cap so
+// a merged note is never cut. shortcut: ~10 full divergent merges on one day would
+// still hit it; switch to an overflow row if that ever shows up.
+const NOTE_STORE_MAX = 20000;
 const NOTE_AUTOSAVE_MS = 700;
 
 async function getNotesSorted() {
@@ -3899,7 +3904,7 @@ async function getNote(date) {
 // Clearing the box deletes the day rather than storing an empty string, so an
 // emptied note doesn't linger as a blank row in the journal or the export.
 async function saveNote(date, text) {
-  const clean = String(text == null ? '' : text).slice(0, NOTE_MAX).trim();
+  const clean = String(text == null ? '' : text).slice(0, NOTE_STORE_MAX).trim();
   if (!clean) return deleteNote(date);
   return dbPut('notes', { date, text: clean, updatedAt: new Date().toISOString() });
 }
@@ -3937,7 +3942,7 @@ async function renderNote() {
 async function flushNote(reason) {
   const box = $('#note-text');
   if (!box) return;
-  const val = box.value.slice(0, NOTE_MAX).trim();
+  const val = box.value.slice(0, NOTE_STORE_MAX).trim();
   if (val === _noteLastSaved) return;
   await saveNote(todayISODate(), val);
   _noteLastSaved = val;
@@ -4185,7 +4190,7 @@ function setupCatchupUI() {
   if (catchupNote) {
     catchupNote.setAttribute('maxlength', String(NOTE_MAX));
     catchupNote.addEventListener('input', (e) => {
-      catchupDraft.note = e.target.value.slice(0, NOTE_MAX);
+      catchupDraft.note = e.target.value.slice(0, NOTE_STORE_MAX);
       const state = $('#catchup-note-state');
       if (state) state.textContent = catchupDraft.note.trim() ? 'written' : 'not written';
     });
@@ -6450,6 +6455,20 @@ function accountSyncPush() {
   return p;
 }
 
+// Email change rotates the key. Let every push already running or queued land
+// first (they used the old key), then hold the queue while fn runs: a push asked
+// for meanwhile waits behind it and encrypts with whichever key is current then.
+async function withSyncPushHeld(fn) {
+  while (syncPush.queued || syncPush.running) await (syncPush.queued || syncPush.running).catch(() => {});
+  let release;
+  const hold = new Promise((r) => { release = r; });
+  syncPush.running = hold;
+  try { return await fn(); } finally {
+    if (syncPush.running === hold) syncPush.running = null;
+    release();
+  }
+}
+
 async function pushToCloud() {
   if (!account.user || !account.encryptionKey) throw new Error('Not unlocked');
   const payload = await buildPayload();
@@ -6509,7 +6528,10 @@ async function accountChangeEmail(newEmail, password) {
   if (!target || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(target)) throw new Error('Please enter a valid email address.');
   if (target === (account.user.email || '').toLowerCase()) throw new Error('That is already your email address.');
   if (!password) throw new Error('Enter your password to confirm.');
+  return withSyncPushHeld(() => changeEmailAndKey(target, password));
+}
 
+async function changeEmailAndKey(target, password) {
   const cur = await deriveAccountCreds(account.user.email, password);
   const next = await deriveAccountCreds(target, password);
 
@@ -7854,11 +7876,13 @@ const buriedBy = (tombs, key, row) => {
 };
 // A legacy row (no uid, or a ck- uid derived from its content) may have been
 // tombstoned by content key, and shot tombstones written before the med joined
-// the shot key still use the old time|dose form.
+// the shot key still use the old time|dose form. A device that pulled the row
+// gave it the ck- uid derived from its content, so a delete there is keyed by
+// that uid, which the uid-less copy on the original device or in a backup lacks.
 function rowBuried(tombs, store, r, ck) {
   if (r.uid && buriedBy(tombs, r.uid, r)) return true;
   if (r.uid && !String(r.uid).startsWith('ck-')) return false;
-  return buriedBy(tombs, `ck|${store}|${ck}`, r) ||
+  return buriedBy(tombs, contentUid(store, ck), r) || buriedBy(tombs, `ck|${store}|${ck}`, r) ||
     (store === 'shots' && buriedBy(tombs, `ck|shots|s|${String(r.when).slice(0, 16)}|${r.dose}`, r));
 }
 
@@ -7987,9 +8011,10 @@ async function mergeNotes(incoming) {
     if (localText.includes(rec.text)) { stats.skipped++; continue; }
 
     // Genuinely divergent text. Newer goes first, older is preserved beneath a
-    // marker so the user can see both and tidy up — nothing typed is ever lost.
+    // marker so the user can see both and tidy up. Never cut to NOTE_MAX (#20):
+    // nothing typed is ever lost.
     const [first, second] = cloudTs >= localTs ? [rec.text, localText] : [localText, rec.text];
-    const combined = `${first}\n\n— also saved on another device —\n${second}`.slice(0, NOTE_MAX);
+    const combined = `${first}\n\n— also saved on another device —\n${second}`.slice(0, NOTE_STORE_MAX);
     await dbPut('notes', { date: rec.date, text: combined, updatedAt: new Date().toISOString() });
     stats.combined++;
   }
@@ -8020,14 +8045,17 @@ async function applyPulledPayload(payload) {
   stats.cycles = await mergeStore('cycles', payload.cycles, CONTENT_KEYS.cycles, tombs);
   stats.medChanges = await mergeStore('medChanges', payload.medChanges, CONTENT_KEYS.medChanges, tombs);
 
-  // Date-keyed daily stores: last write wins per day, which is the intent — one
-  // mood/appetite/food-noise reading per date. A day deleted after the pulled
-  // copy was written stays deleted; the pulled updatedAt is kept as received.
+  // Date-keyed daily stores: last write wins per day by updatedAt, one
+  // mood/appetite/food-noise reading per date. A pulled row replaces the local one
+  // only when strictly newer; a missing stamp counts as oldest. A day deleted
+  // after the pulled copy was written stays deleted.
   await pruneDailyRows(tombs);
   const liveDays = (store, rows) => (Array.isArray(rows) ? rows : []).filter(r => r && r.date && !buriedBy(tombs, dayKey(store, r.date), r));
-  for (const m of liveDays('moods', payload.moods)) await dbPut(STORES.moods, m);
-  for (const a of liveDays('appetites', payload.appetites)) await dbPut('appetites', { date: a.date, value: a.value, updatedAt: a.updatedAt });
-  for (const f of liveDays('foodNoise', payload.foodNoise)) await dbPut('foodNoise', { date: f.date, value: f.value, updatedAt: f.updatedAt });
+  const putIfNewer = async (store, r) => {
+    const local = await dbGet(store, r.date);
+    if (!local || rowTs(r) > rowTs(local)) await dbPut(store, { date: r.date, value: r.value, updatedAt: r.updatedAt });
+  };
+  for (const s of ['moods', 'appetites', 'foodNoise']) for (const r of liveDays(s, payload[s])) await putIfNewer(s, r);
   // Symptom days merge per-symptom rather than last-write-wins: two devices each
   // adding a symptom on the same day should end up with both, not with whichever
   // pushed last. Severity conflicts on the same symptom resolve to the worse one,

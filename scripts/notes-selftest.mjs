@@ -44,6 +44,7 @@ const noteSnippet    = R('noteSnippet');
 const formatNoteDate = R('formatNoteDate');
 const escapeHTML     = R('escapeHTML');
 const NOTE_MAX       = R('NOTE_MAX');
+const NOTE_STORE_MAX = R('NOTE_STORE_MAX');
 const todayISODate   = R('todayISODate');
 const shiftISODate   = R('shiftISODate');
 const buildPayload   = R('buildPayload');
@@ -63,9 +64,9 @@ check('sanitizeNote rejects empty text', sanitizeNote({ date: '2026-03-15', text
   eq('sanitizeNote trims the text', n && n.text, 'house hunting');
 }
 {
-  const long = 'x'.repeat(NOTE_MAX + 500);
+  const long = 'x'.repeat(NOTE_STORE_MAX + 500);
   const n = sanitizeNote({ date: '2026-03-15', text: long });
-  eq('sanitizeNote caps length', n && n.text.length, NOTE_MAX);
+  eq('sanitizeNote caps length', n && n.text.length, NOTE_STORE_MAX);
 }
 {
   const n = sanitizeNote({ date: '2026-03-15', text: 'ok', updatedAt: 'not-a-date' });
@@ -99,7 +100,9 @@ eq('getNotesSorted is chronological', (await getNotesSorted()).map(n => n.date).
   const over = 'y'.repeat(NOTE_MAX + 100);
   await saveNote('2026-03-04', over);
   const n = await getNote('2026-03-04');
-  eq('saveNote caps at NOTE_MAX', n.text.length, NOTE_MAX);
+  eq('saveNote keeps up to NOTE_STORE_MAX', n.text.length, NOTE_MAX + 100);
+  await saveNote('2026-03-04', 'y'.repeat(NOTE_STORE_MAX + 1));
+  eq('saveNote caps at NOTE_STORE_MAX', (await getNote('2026-03-04')).text.length, NOTE_STORE_MAX);
 }
 
 // ---------- merge ----------
@@ -174,11 +177,25 @@ await wipe();
   eq('merge tolerates a missing notes array', st.added, 0);
 }
 {
-  // The combined note must still respect the length cap.
+  // GitHub #20: a near-full newer note must not cut the older one off.
   await wipe();
-  await saveNote('2026-04-08', 'L'.repeat(NOTE_MAX - 10));
-  await mergeNotes([{ date: '2026-04-08', text: 'C'.repeat(NOTE_MAX - 10), updatedAt: new Date().toISOString() }]);
-  check('combined note stays within the cap', (await getNote('2026-04-08')).text.length <= NOTE_MAX);
+  await saveNote('2026-04-08', 'LOCAL-ONLY');
+  const older = new Date(Date.now() - 3600_000).toISOString();
+  await saveNote('2026-04-09', 'L'.repeat(NOTE_MAX));
+  await mergeNotes([
+    { date: '2026-04-08', text: 'C'.repeat(NOTE_MAX), updatedAt: new Date(Date.now() + 60000).toISOString() },
+    { date: '2026-04-09', text: 'C'.repeat(NOTE_MAX), updatedAt: older },
+  ]);
+  const a = (await getNote('2026-04-08')).text;
+  check('older short note survives a full newer one', a.includes('LOCAL-ONLY') && a.includes('C'.repeat(NOTE_MAX)), a.length);
+  const b = (await getNote('2026-04-09')).text;
+  check('two full notes are both kept whole', b.includes('L'.repeat(NOTE_MAX)) && b.includes('C'.repeat(NOTE_MAX)), b.length);
+  // The merged note must survive the trip to another device and an edit there.
+  await wipe();
+  await mergeNotes([{ date: '2026-04-08', text: a }]);
+  check('merged note survives a pull elsewhere', (await getNote('2026-04-08')).text === a);
+  await saveNote('2026-04-08', a + ' edited');
+  check('editing a merged note keeps all of it', (await getNote('2026-04-08')).text === a + ' edited');
 }
 
 // ---------- read cache coherence ----------

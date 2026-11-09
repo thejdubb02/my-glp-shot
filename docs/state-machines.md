@@ -13,13 +13,20 @@ labelled `state-machine`.
 - Every push goes through `accountSyncPush()`, which runs one push at a time.
   `markSyncDirty()` arms it, `resetSyncPush()` disarms it on sign-out and
   account delete. Never call `pushToCloud()` directly.
+- Email change rotates the key, so `accountChangeEmail()` runs inside
+  `withSyncPushHeld()`: it waits for running and queued pushes, then holds the
+  queue until the re-encrypted blob is stored and the new key swapped in.
+  Pushes asked for meanwhile run after it with the new key.
 - Error shown to the user: `settings.syncLastError`, set by
   `noteSyncFailure()`, cleared by a successful push.
 - Test: `scripts/sync-push-selftest.mjs`.
 
 ### Synced record deletion: `tombstones` store in app.js
 - States per record: live, tombstoned (row gone, tombstone kept 180 days).
-- UID stores delete through `dbDelSynced()` (key: uid or content key). Daily
+- UID stores delete through `dbDelSynced()` (key: uid or content key). A legacy
+  row (no uid, or a `ck-` uid) is also buried by the `ck-` uid derived from its
+  content, so a delete on a device that pulled it reaches the uid-less copy
+  (`rowBuried`). Daily
   stores (notes, moods, appetites, foodNoise, symptoms) delete through
   `dbDelDay()` (key `day|store|date`); an un-ticked symptom is tombstoned on
   its own in `saveSymptomDay()` (key `day|symptoms|date|symptom`).
@@ -28,7 +35,10 @@ labelled `state-machine`.
 - A pull folds tombstones in (`mergeTombstones`), removes older local copies
   (`mergeStore`, `pruneDailyRows`) and skips older pulled rows. A row written
   after the delete (newer `updatedAt`) wins. Never delete a synced row
-  directly. Tests: `scripts/sync-merge-selftest.mjs`, `scripts/daily-delete-selftest.mjs`.
+  directly. A pulled mood, appetite or food-noise row replaces the local one
+  only when its `updatedAt` is newer (no stamp counts as oldest).
+  Tests: `scripts/sync-merge-selftest.mjs`, `scripts/daily-delete-selftest.mjs`,
+  `scripts/daily-lww-selftest.mjs`.
 
 ### Account / session: `account = { user, encryptionKey }`
 - signed out (both null); signed in (both set); signed in without key
