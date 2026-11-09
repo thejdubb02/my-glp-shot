@@ -364,8 +364,8 @@
       `<tr><td><code>${escapeHtml(s.tokenPrefix)}…</code></td><td>${fmtRelative(s.lastSeen || s.createdAt)}</td><td class="muted small">${escapeHtml((s.userAgent || '').slice(0, 60))}</td></tr>`
     ).join('') || '<tr><td colspan="3" class="muted">No sessions.</td></tr>';
     const sharesRows = data.shareLinks.map(s =>
-      `<tr><td><code>${escapeHtml(s.token.slice(0, 8))}…</code></td><td>${fmtRelative(s.created_at)}</td><td>${fmtRelative(s.expires_at)}</td><td>${s.views}</td><td>${escapeHtml(s.label || '—')}</td></tr>`
-    ).join('') || '<tr><td colspan="5" class="muted">No share links.</td></tr>';
+      `<tr><td><code>${escapeHtml(s.token.slice(0, 8))}…</code></td><td>${fmtRelative(s.created_at)}</td><td>${fmtRelative(s.expires_at)}</td><td>${s.views}</td></tr>`
+    ).join('') || '<tr><td colspan="4" class="muted">No share links.</td></tr>';
     const sync = data.sync ? `${fmtBytes(data.sync.size)} · updated ${fmtRelative(data.sync.updatedAt)}` : '<span class="muted">never synced</span>';
 
     $('#ud-body').innerHTML = `
@@ -399,7 +399,7 @@
       <table class="users-table"><thead><tr><th>Token</th><th>Last seen</th><th>User agent</th></tr></thead><tbody>${sessionsRows}</tbody></table>
 
       <div class="section-title">Share links</div>
-      <table class="users-table"><thead><tr><th>Token</th><th>Created</th><th>Expires</th><th>Views</th><th>Label</th></tr></thead><tbody>${sharesRows}</tbody></table>
+      <table class="users-table"><thead><tr><th>Token</th><th>Created</th><th>Expires</th><th>Views</th></tr></thead><tbody>${sharesRows}</tbody></table>
     `;
     $('#ud-body').querySelectorAll('button[data-action]').forEach(btn => {
       btn.addEventListener('click', (e) => {

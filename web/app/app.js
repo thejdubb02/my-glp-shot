@@ -7676,12 +7676,22 @@ async function runPdfExport(opts) {
 async function createShareLink(label, opts) {
   if (!account.user || !account.encryptionKey) throw new Error('Not unlocked');
   const payload = await buildPayload(opts);
+  // The label is health context, so it never travels in the clear (issue #25):
+  // the doctor reads it from inside the encrypted payload, and the server keeps
+  // only a copy sealed with the account key for the owner.
+  if (label) payload.shareLabel = label;
   // Generate per-share random key, embed in URL fragment
   const shareKey = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt']);
   const rawKey = await crypto.subtle.exportKey('raw', shareKey);
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, shareKey, await encodePayloadBytes(payload));
-  const body = { iv: bytesToBase64(iv), ciphertext: bytesToBase64(ct), label: label || null };
+  let labelEnc = null;
+  if (label) {
+    const liv = crypto.getRandomValues(new Uint8Array(12));
+    const lct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv: liv }, account.encryptionKey, new TextEncoder().encode(label));
+    labelEnc = bytesToBase64(liv) + '.' + bytesToBase64(lct);
+  }
+  const body = { iv: bytesToBase64(iv), ciphertext: bytesToBase64(ct), labelEnc };
   const r = await accountFetch('share', { method: 'POST', body: JSON.stringify(body) });
   if (r.status === 402) throw new Error('Doctor share is a Premium feature.');
   if (!r.ok) throw new Error('Share creation failed.');

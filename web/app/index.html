@@ -953,7 +953,7 @@
   <form method="dialog">
     <h2>🔗 Share with doctor</h2>
     <p class="muted small">Generates a 24-hour read-only URL. Encrypted in the URL fragment - only people with the link can view. Pick what to include.</p>
-    <label>Label (optional) <input id="share-label" type="text" placeholder="e.g. Dr. Smith - April visit"></label>
+    <label>Label (optional) <input id="share-label" type="text" maxlength="120" placeholder="e.g. Dr. Smith - April visit"></label>
     <label>Date range
       <select id="share-range">
         <option value="30">Last 30 days</option>
@@ -1263,7 +1263,7 @@
 <!-- data.js is declarations only and must load before app.js, which reads them
      at evaluation time. Both are classic scripts sharing one global scope - 
      see the note at the top of data.js for why this is not an ES module. -->
-<script src="data.js?v=432"></script>
-<script src="app.js?v=432"></script>
+<script src="data.js?v=433"></script>
+<script src="app.js?v=433"></script>
 </body>
 </html>

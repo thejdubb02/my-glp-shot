@@ -104,12 +104,24 @@ labelled `state-machine`.
 ### Other lifecycles
 - Password reset tokens: `password_resets` live, used, expired, purged.
 - Sessions: `sessions`, deleted on logout, reset, email change, force-logout.
+  Created only by `_create_session`, which inserts only if `password_hash` still
+  equals the hash the caller verified (one conditional INSERT), so a login racing
+  a reset cannot leave a session behind; no row means 401 `invalid_credentials`.
+  Test: `scripts/api-auth-selftest.py` (offline, not in run-tests.sh).
 - Sync blob: `sync_blobs`, one row per user. `updated_at` is the version: it
   only goes up (stored + 1 within a second). `sync_put` writes only if
   `baseUpdatedAt` is missing (old clients, last write wins), null with no blob
   stored yet, or not older than the stored `updated_at`, in one conditional upsert; else 409 `stale`.
   Test: `scripts/api-sync-selftest.py` (offline, not in run-tests.sh).
-- Share links: live or deleted (expiry in the fetch query).
+- Share links: live or deleted (expiry in the fetch query). The label is never
+  plaintext on the server (issue #25): the doctor reads it as `shareLabel`
+  inside the encrypted payload, the owner's copy is `label_enc` ("iv.ct",
+  AES-GCM under the account key). `share_create` ignores a plaintext `label`
+  from old clients, `share_fetch` returns no label, and `init_db` nulls the
+  legacy `label` column at every boot. An email change re-keys the account, so
+  `label_enc` on links made before it no longer opens (links last 24 h).
+  Test: `scripts/api-share-selftest.py` (offline, not in run-tests.sh),
+  `scripts/share-label-selftest.mjs`.
 - Push: `push_subscriptions.fail_count`; `push_reminders.sent_at` means queued
   (NULL) or claimed/sent/retired (set).
 - Admin: `users.is_admin`, set only by `scripts/promote-admin.py`.

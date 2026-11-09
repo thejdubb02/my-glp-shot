@@ -133,7 +133,8 @@ CREATE TABLE IF NOT EXISTS share_links (
     created_at  INTEGER NOT NULL,
     expires_at  INTEGER NOT NULL,
     views       INTEGER NOT NULL DEFAULT 0,
-    label       TEXT
+    label       TEXT,               -- legacy plaintext label, always NULL now (issue #25)
+    label_enc   TEXT                -- owner's label, AES-GCM under the account key, "iv.ct"
 );
 CREATE TABLE IF NOT EXISTS password_resets (
     token       TEXT PRIMARY KEY,
@@ -652,7 +653,9 @@ def signup():
         # A notification problem is never a reason to fail a signup.
         app.logger.warning('signup notify failed: %s', e)
 
-    sess_token = _create_session(user_id)
+    sess_token = _create_session(user_id, pw_hash)
+    if not sess_token:
+        return err('invalid_credentials', 'Email or password incorrect.', 401)
     resp = make_response(jsonify(user=public_user(user), token=sess_token))
     _set_session_cookie(resp, sess_token)
     return resp
@@ -685,7 +688,9 @@ def login():
     get_db().execute('DELETE FROM auth_attempts WHERE scope = ? AND identifier = ?', ('login', email))
     get_db().commit()
 
-    sess_token = _create_session(user['id'])
+    sess_token = _create_session(user['id'], pw_hash)
+    if not sess_token:
+        return err('invalid_credentials', 'Email or password incorrect.', 401)
     resp = make_response(jsonify(user=public_user(user), token=sess_token))
     _set_session_cookie(resp, sess_token)
     return resp
@@ -968,17 +973,22 @@ def reset_password():
     return jsonify(ok=True, lostCloudData=True)
 
 
-def _create_session(user_id):
+def _create_session(user_id, pw_hash):
+    """Insert a session only if the account still has the hash the caller
+    verified, in one statement: a password reset that lands between the check
+    and here must not leave a session behind. Returns None when it did."""
     token = secrets.token_hex(32)
     expires = now_ts() + SESSION_DAYS * 86400
     ua = request.headers.get('User-Agent', '')[:500]
     db = get_db()
-    db.execute(
-        'INSERT INTO sessions (token, user_id, created_at, expires_at, user_agent, last_seen) VALUES (?, ?, ?, ?, ?, ?)',
-        (token, user_id, now_ts(), expires, ua, now_ts()),
+    cur = db.execute(
+        '''INSERT INTO sessions (token, user_id, created_at, expires_at, user_agent, last_seen)
+           SELECT ?, ?, ?, ?, ?, ?
+           WHERE EXISTS (SELECT 1 FROM users WHERE id = ? AND password_hash = ?)''',
+        (token, user_id, now_ts(), expires, ua, now_ts(), user_id, pw_hash),
     )
     db.commit()
-    return token
+    return token if cur.rowcount == 1 else None
 
 
 def _set_session_cookie(resp, token):
@@ -1064,18 +1074,22 @@ def share_create():
     data = request.get_json(silent=True) or {}
     iv = data.get('iv') or ''
     ct = data.get('ciphertext') or ''
-    label = (data.get('label') or '')[:120] or None
+    # The label is health context ("Endocrinologist, diabetes follow-up"), so the
+    # server only takes it encrypted. A plaintext 'label' from an old client is ignored.
+    label_enc = data.get('labelEnc') or None
     if not iv or not ct:
         return err('invalid_payload', 'Missing iv or ciphertext.')
     if len(ct) > MAX_BLOB_BYTES:
         return err('blob_too_large', f'Max {MAX_BLOB_BYTES} bytes.', 413)
+    if label_enc is not None and (not isinstance(label_enc, str) or len(label_enc) > 1024):
+        return err('invalid_payload', 'Bad labelEnc.')
     token = secrets.token_hex(16)
     expires = now_ts() + SHARE_TTL_HOURS * 3600
     db = get_db()
     db.execute(
-        """INSERT INTO share_links (token, user_id, iv, ciphertext, created_at, expires_at, label)
+        """INSERT INTO share_links (token, user_id, iv, ciphertext, created_at, expires_at, label_enc)
            VALUES (?, ?, ?, ?, ?, ?, ?)""",
-        (token, user['id'], iv, ct, now_ts(), expires, label),
+        (token, user['id'], iv, ct, now_ts(), expires, label_enc),
     )
     db.commit()
     return jsonify(token=token, expiresAt=expires, hours=SHARE_TTL_HOURS)
@@ -1086,12 +1100,14 @@ def share_fetch(token):
     if not re.match(r'^[a-f0-9]{32}$', token):
         return err('invalid_token', 'Bad token.', 404)
     db = get_db()
-    row = db.execute('SELECT * FROM share_links WHERE token = ? AND expires_at > ?', (token, now_ts())).fetchone()
+    row = db.execute('SELECT iv, ciphertext, expires_at FROM share_links WHERE token = ? AND expires_at > ?', (token, now_ts())).fetchone()
     if not row:
         return err('not_found', 'Share link expired or not found.', 404)
     db.execute('UPDATE share_links SET views = views + 1 WHERE token = ?', (token,))
     db.commit()
-    return jsonify(iv=row['iv'], ciphertext=row['ciphertext'], expiresAt=row['expires_at'], label=row['label'])
+    # No label: anyone holding the token gets this without the k= key. The viewer
+    # reads the label from inside the encrypted payload.
+    return jsonify(iv=row['iv'], ciphertext=row['ciphertext'], expiresAt=row['expires_at'])
 
 
 @app.route('/api/share/<token>', methods=['DELETE'])
@@ -1113,7 +1129,7 @@ def share_list():
     if not user:
         return err('unauthorized', 'Not signed in.', 401)
     rows = get_db().execute(
-        'SELECT token, created_at, expires_at, views, label FROM share_links WHERE user_id = ? ORDER BY created_at DESC',
+        'SELECT token, created_at, expires_at, views, label_enc FROM share_links WHERE user_id = ? ORDER BY created_at DESC',
         (user['id'],),
     ).fetchall()
     return jsonify(links=[dict(r) for r in rows])
@@ -1646,7 +1662,7 @@ def admin_user_detail(user_id):
         (user_id,),
     ).fetchall()
     shares = db.execute(
-        'SELECT token, created_at, expires_at, views, label FROM share_links WHERE user_id = ? ORDER BY created_at DESC LIMIT 20',
+        'SELECT token, created_at, expires_at, views FROM share_links WHERE user_id = ? ORDER BY created_at DESC LIMIT 20',
         (user_id,),
     ).fetchall()
     sync = db.execute(
@@ -2553,11 +2569,16 @@ def init_db():
             # in the billing portal). Without it a cancelled trial still read
             # "Subscribed, first payment on ...".
             'ALTER TABLE users ADD COLUMN cancel_at_period_end INTEGER NOT NULL DEFAULT 0',
+            'ALTER TABLE share_links ADD COLUMN label_enc TEXT',
         ):
             try:
                 c.execute(stmt)
             except sqlite3.OperationalError:
                 pass
+        # Labels written before issue #25 are plaintext health context. Drop them
+        # rather than re-encrypt: the server has no key, and links live 24 h, so
+        # the cost is a missing label on a link that expires within a day.
+        c.execute('UPDATE share_links SET label = NULL WHERE label IS NOT NULL')
         c.commit()
         # Sweep expired rows at boot so retention doesn't depend on anyone
         # remembering to hit the admin endpoint.
