@@ -147,6 +147,89 @@ def test_test_mode_concurrent_duplicate_is_excluded():
     assert user('test_subscription_status') == 'premium'
     assert event_rows() == ['TEST:evt_3']
 
+def test_stale_fetch_cannot_move_paid_through_backwards():
+    # #28: two handlers for the same sub finish out of order. The older fetch
+    # (period end about now) lands last and must not cut off a paying user.
+    reset()
+    retrieve_mode['value'] = 'ok'
+    assert post('/api/stripe/webhook', SUB_EVENT).status_code == 200
+    assert user('premium_until') == 4_000_000_000
+    stale = dict(SUB_EVENT, id='evt_stale')
+    real = api.stripe.Subscription.retrieve
+    api.stripe.Subscription.retrieve = lambda sid, **_: {
+        'id': sid, 'customer': 'cus_1', 'status': 'active',
+        'current_period_end': api.now_ts(), 'metadata': {}}
+    try:
+        assert post('/api/stripe/webhook', stale).status_code == 200
+    finally:
+        api.stripe.Subscription.retrieve = real
+    assert user('premium_until') == 4_000_000_000, user('premium_until')
+
+
+def test_second_live_sub_pings_operator():
+    # #27: a different live sub replacing the one on file means a possible double charge.
+    reset()
+    pings = []
+    real = api.notify_mattermost
+    api.notify_mattermost = pings.append
+    try:
+        with db() as c:
+            c.execute("UPDATE users SET stripe_subscription_id = 'sub_old' WHERE id = 1")
+        assert post('/api/stripe/webhook', SUB_EVENT).status_code == 200
+    finally:
+        api.notify_mattermost = real
+    assert any('sub_old' in p and 'sub_1' in p for p in pings), pings
+
+
+def test_test_mode_late_cancel_of_old_sub_is_ignored():
+    # #31: new test sub is active, then a delayed cancel for the old one arrives.
+    reset()
+    new = {'id': 'evt_new', 'type': 'customer.subscription.updated',
+           'data': {'object': {'id': 'sub_new', 'customer': 'cus_1', 'status': 'active',
+                               'current_period_end': 4_000_000_000, 'metadata': {}}}}
+    old = {'id': 'evt_old', 'type': 'customer.subscription.deleted',
+           'data': {'object': {'id': 'sub_old', 'customer': 'cus_1', 'status': 'canceled', 'metadata': {}}}}
+    assert post('/api/stripe/webhook/test', new).status_code == 200
+    assert post('/api/stripe/webhook/test', old).status_code == 200
+    assert user('test_subscription_status') == 'premium', user('test_subscription_status')
+    assert user('stripe_subscription_id_test') == 'sub_new', user('stripe_subscription_id_test')
+    gone = {'id': 'evt_gone', 'type': 'customer.subscription.deleted',
+            'data': {'object': {'id': 'sub_new', 'customer': 'cus_1', 'status': 'canceled', 'metadata': {}}}}
+    assert post('/api/stripe/webhook/test', gone).status_code == 200
+    assert user('test_subscription_status') == 'free'
+    assert user('stripe_subscription_id_test') is None, 'cancel must clear the id, not store the dead one'
+
+
+TOK = 'a' * 64
+
+
+def test_checkout_expires_older_open_sessions():
+    # #27: a second checkout must kill the first, so both cannot be paid.
+    reset()
+    api.STRIPE_PRICE_MONTHLY, api.STRIPE_PRICE_YEARLY = 'price_m', 'price_y'
+    with db() as c:
+        c.execute("INSERT INTO sessions (token, user_id, created_at, expires_at) VALUES (?, 1, ?, ?)",
+                  (TOK, api.now_ts(), api.now_ts() + 3600))
+    expired = []
+
+    class L:
+        def __init__(self, data): self.data = data
+    saved = (api.stripe.Subscription.list, api.stripe.checkout.Session.list,
+             api.stripe.checkout.Session.expire, api.stripe.checkout.Session.create)
+    api.stripe.Subscription.list = lambda **_: L([])
+    api.stripe.checkout.Session.list = lambda **kw: L([{'id': 'cs_old'}] if kw.get('status') == 'open' else [])
+    api.stripe.checkout.Session.expire = lambda sid, **_: expired.append(sid)
+    api.stripe.checkout.Session.create = lambda **_: type('S', (), {'url': 'https://x', 'id': 'cs_new'})()
+    try:
+        r = client.post('/api/billing/checkout', json={'plan': 'monthly'},
+                        headers={'Authorization': 'Bearer ' + TOK})
+    finally:
+        (api.stripe.Subscription.list, api.stripe.checkout.Session.list,
+         api.stripe.checkout.Session.expire, api.stripe.checkout.Session.create) = saved
+    assert r.status_code == 200, r.get_json()
+    assert expired == ['cs_old'], expired
+
+
 failed = 0
 for name, fn in list(globals().items()):
     if name.startswith('test_') and callable(fn):

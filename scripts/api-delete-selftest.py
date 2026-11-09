@@ -125,5 +125,51 @@ for label, do_delete in (('self', self_delete), ('admin', admin_delete)):
     r = do_delete(uid, tok)
     check(f'{label}: already canceled -> 200 and user deleted', r.status_code == 200 and not exists(uid))
 
+# #29: a missing price setting must not skip the cancel. Cancelling needs only the key.
+calls.clear()
+api.STRIPE_PRICE_MONTHLY = ''
+uid, tok = make_user('sub_noprice')
+r = self_delete(uid, tok)
+check('no price env: live sub still cancelled', ('sub_noprice', 'sk_live_dummy') in calls)
+check('no price env: user deleted', r.status_code == 200 and not exists(uid))
+api.STRIPE_PRICE_MONTHLY = 'price_m_dummy'
+
+# #29: no API key at all with a sub on file -> refuse, never drop a paying user.
+api.STRIPE_API_KEY = ''
+uid, tok = make_user('sub_nokey')
+r = self_delete(uid, tok)
+check('no API key: delete refused, user kept', r.status_code == 502 and exists(uid))
+api.STRIPE_API_KEY = 'sk_live_dummy'
+
+
+# #27: a second live sub only Stripe knows about is cancelled too.
+class Listed:
+    data = [{'id': 'sub_tracked', 'status': 'active'}, {'id': 'sub_extra', 'status': 'active'},
+            {'id': 'sub_dead', 'status': 'canceled'}]
+
+
+stripe.Subscription.list = lambda **kw: Listed()
+calls.clear()
+uid, tok = make_user('sub_tracked')
+with db() as c:
+    c.execute("UPDATE users SET stripe_customer_id = 'cus_x' WHERE id = ?", (uid,))
+r = self_delete(uid, tok)
+check('duplicate sub: untracked live sub cancelled', ('sub_extra', 'sk_live_dummy') in calls)
+check('duplicate sub: tracked sub cancelled once', [c for c in calls if c[0] == 'sub_tracked'] == [('sub_tracked', 'sk_live_dummy')])
+check('duplicate sub: dead sub left alone', not any(c[0] == 'sub_dead' for c in calls))
+check('duplicate sub: user deleted', r.status_code == 200 and not exists(uid))
+
+
+def list_fails(**kw):
+    raise stripe.APIConnectionError('down')
+
+
+stripe.Subscription.list = list_fails
+uid, tok = make_user('sub_y')
+with db() as c:
+    c.execute("UPDATE users SET stripe_customer_id = 'cus_y' WHERE id = ?", (uid,))
+r = self_delete(uid, tok)
+check('sub list error: delete refused, user kept', r.status_code == 502 and exists(uid))
+
 print(f'\n{len(failures)} failure(s)')
 sys.exit(1 if failures else 0)

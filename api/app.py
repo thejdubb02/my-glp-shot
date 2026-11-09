@@ -749,8 +749,26 @@ def _delete_user_everywhere(user):
     deleted user with a live sub keeps being charged and its webhooks find no
     row. Test subs matter too, they keep firing webhooks at a missing user."""
     subs = []
-    if _stripe_ready() and user['stripe_subscription_id']:
-        subs.append((user['stripe_subscription_id'], STRIPE_API_KEY))
+    live_sub = user['stripe_subscription_id']
+    # Cancelling needs only the API key. _stripe_ready() also wants both price ids,
+    # so a missing price setting used to skip the cancel and delete a paying user (#29).
+    if live_sub and not STRIPE_API_KEY:
+        app.logger.warning('User %s has sub %s but no STRIPE_API_KEY, not deleted', user['id'], live_sub)
+        return False
+    if live_sub:
+        subs.append((live_sub, STRIPE_API_KEY))
+    # Two checkouts completed close together leave a second live sub that only
+    # Stripe knows about (#27). Cancel everything still live on the customer.
+    if STRIPE_API_KEY and user['stripe_customer_id']:
+        try:
+            listed = stripe.Subscription.list(customer=user['stripe_customer_id'], status='all',
+                                              limit=100, api_key=STRIPE_API_KEY)
+        except stripe.StripeError as e:
+            app.logger.warning('Stripe sub list failed, user %s not deleted: %s', user['id'], e)
+            return False
+        for s in listed.data:
+            if s['status'] not in ('canceled', 'incomplete_expired') and s['id'] != live_sub:
+                subs.append((s['id'], STRIPE_API_KEY))
     if STRIPE_API_KEY_TEST and _safe_col(user, 'stripe_subscription_id_test', None):
         subs.append((user['stripe_subscription_id_test'], STRIPE_API_KEY_TEST))
     for sub_id, key in subs:
@@ -1236,6 +1254,17 @@ def billing_checkout():
                 return jsonify(url=portal.url, alreadySubscribed=True)
     except stripe.StripeError as e:
         app.logger.warning('subscription list check failed (continuing): %s', e)
+    # The guard above cannot see a checkout that is open but not yet paid. Two tabs
+    # (or a double click) used to create two sessions, and paying both made two
+    # subscriptions (#27). Expire the older open ones so only the newest can be paid.
+    try:
+        for s in stripe.checkout.Session.list(customer=customer_id, status='open', limit=10).data:
+            try:
+                stripe.checkout.Session.expire(s['id'])
+            except stripe.StripeError as e:
+                app.logger.warning('could not expire open checkout %s: %s', s['id'], e)
+    except stripe.StripeError as e:
+        app.logger.warning('open checkout list failed (continuing): %s', e)
     subscription_data = {'metadata': {'user_id': str(user['id']), 'app': 'myglpshot'}}
     terms = _trial_terms(user)
     subscription_data.update(terms)
@@ -1386,6 +1415,12 @@ def _apply_subscription(sub):
     if current_sub and sub_id and sub_id != current_sub and status not in ('active', 'trialing'):
         db.commit()  # keep a customer-id backfill made above
         return
+    if current_sub and sub_id and sub_id != current_sub:
+        # Usually a duplicate checkout: both subs may be billing (#27). Operator ping only.
+        notify_mattermost(
+            f"{MGS_EMOJI} **{MGS_APP_NAME}** · ⚠️ second live subscription for {user['email']}: "
+            f"{sub_id} replaces {current_sub}. Check Stripe for a double charge."
+        )
     current_period_end = _period_end(sub)
     trial_end = sub.get('trial_end')
     # Newer Stripe API versions record a portal cancel as cancel_at rather than
@@ -1402,12 +1437,15 @@ def _apply_subscription(sub):
         db.execute(
             """UPDATE users
                SET subscription_status = ?,
-                   premium_until = COALESCE(?, premium_until),
+                   premium_until = CASE
+                       WHEN stripe_subscription_id = ? AND premium_until IS NOT NULL
+                           THEN MAX(COALESCE(?, premium_until), premium_until)
+                       ELSE COALESCE(?, premium_until) END,
                    trial_ends_at = COALESCE(?, trial_ends_at),
                    stripe_subscription_id = ?,
                    cancel_at_period_end = ?
                WHERE id = ?""",
-            (new_status, until, trial_end, sub_id, cancelling, user['id']),
+            (new_status, sub_id, until, until, trial_end, sub_id, cancelling, user['id']),
         )
         # Only on the transition into paid — renewals fire this same webhook every
         # billing period and shouldn't ping.
@@ -1458,8 +1496,9 @@ def stripe_webhook():
     obj = event['data']['object']
     # Idempotency: the event is recorded only after its handler succeeds, so a
     # worker killed mid-handler (deploy restart, OOM) leaves no row and Stripe's
-    # retry runs it again. Two concurrent deliveries may both run the handler;
-    # that is harmless because every handler re-fetches the subscription.
+    # retry runs it again. Two concurrent deliveries may both run the handler and
+    # finish in either order, so the older fetch can land last. _apply_subscription
+    # therefore never moves premium_until backwards for the same subscription (#28).
     if eid and get_db().execute('SELECT 1 FROM stripe_events WHERE id = ?', (eid,)).fetchone():
         return jsonify(received=True, duplicate=True)
     try:
@@ -2028,6 +2067,11 @@ def _apply_subscription_test(sub):
         db.execute('UPDATE users SET stripe_customer_id_test = ? WHERE id = ?', (cust_id, user['id']))
     status = sub.get('status')
     sub_id = sub.get('id')
+    # Same rule as the live handler: a late event about a replaced sub is history (#31).
+    current_sub = _safe_col(user, 'stripe_subscription_id_test', None)
+    if current_sub and sub_id and sub_id != current_sub and status not in ('active', 'trialing'):
+        db.commit()
+        return
     cpe = _period_end(sub)
     trial_end = sub.get('trial_end')
     if status in ('active', 'trialing'):
@@ -2041,10 +2085,32 @@ def _apply_subscription_test(sub):
     elif status in ('canceled', 'unpaid', 'incomplete_expired'):
         db.execute(
             """UPDATE users SET test_subscription_status = 'free',
-                                stripe_subscription_id_test = ? WHERE id = ?""",
-            (sub_id, user['id']),
+                                stripe_subscription_id_test = NULL WHERE id = ?""",
+            (user['id'],),
         )
     db.commit()
+
+
+def _handle_test_event(et, obj):
+    # The test API key is passed per call. Assigning it to the process-global
+    # `stripe.api_key` raced with concurrent live requests on the other
+    # gunicorn threads — a live checkout could execute against the test key.
+    if et == 'checkout.session.completed':
+        meta = obj.get('metadata') or {}
+        uid = meta.get('user_id')
+        cust_id = obj.get('customer')
+        sub_id = obj.get('subscription')
+        if uid and cust_id:
+            get_db().execute(
+                'UPDATE users SET stripe_customer_id_test = COALESCE(stripe_customer_id_test, ?) WHERE id = ?',
+                (cust_id, uid),
+            )
+            get_db().commit()
+        if sub_id:
+            sub = stripe.Subscription.retrieve(sub_id, api_key=STRIPE_API_KEY_TEST)
+            _apply_subscription_test(sub)
+    elif et in ('customer.subscription.created', 'customer.subscription.updated', 'customer.subscription.deleted'):
+        _apply_subscription_test(obj)
 
 
 @app.route('/api/stripe/webhook/test', methods=['POST'])
@@ -2080,25 +2146,7 @@ def stripe_webhook_test():
         if not claimed:
             return jsonify(received=True, duplicate=True)
     try:
-        # The test API key is passed per call. Assigning it to the process-global
-        # `stripe.api_key` raced with concurrent live requests on the other
-        # gunicorn threads — a live checkout could execute against the test key.
-        if et == 'checkout.session.completed':
-            meta = obj.get('metadata') or {}
-            uid = meta.get('user_id')
-            cust_id = obj.get('customer')
-            sub_id = obj.get('subscription')
-            if uid and cust_id:
-                get_db().execute(
-                    'UPDATE users SET stripe_customer_id_test = COALESCE(stripe_customer_id_test, ?) WHERE id = ?',
-                    (cust_id, uid),
-                )
-                get_db().commit()
-            if sub_id:
-                sub = stripe.Subscription.retrieve(sub_id, api_key=STRIPE_API_KEY_TEST)
-                _apply_subscription_test(sub)
-        elif et in ('customer.subscription.created', 'customer.subscription.updated', 'customer.subscription.deleted'):
-            _apply_subscription_test(obj)
+        _handle_test_event(et, obj)
     except Exception as e:
         app.logger.exception('TEST webhook handler error for %s: %s', et, e)
         if test_eid:

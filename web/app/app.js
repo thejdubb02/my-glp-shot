@@ -3398,7 +3398,8 @@ function setupAccountUI() {
       // Say the true thing, which means waiting for the webhook to land first.
       try { toast('🎉 Subscribed, thank you!'); } catch (e) {}
       setTimeout(async () => {
-        try { await accountMe(); await onAccountChanged(); } catch (e) {}
+        // accountMe() only returns the fresh user; it does not set account.user (#26).
+        try { const me = await accountMe(); if (me) account.user = me; await onAccountChanged(); } catch (e) {}
         alert(billingSuccessMessage());
       }, 1500);
     } else if (billing === 'canceled') {
@@ -6200,7 +6201,14 @@ async function accountMe() {
 }
 
 function isPremium() {
-  return !!(account.user && account.user.isPremium);
+  // isPremium can be a stale cached copy (offline, or app left open), so also
+  // check the end date the server sent, same rule as is_premium_now() (#30).
+  const u = account.user;
+  if (!u || !u.isPremium) return false;
+  const now = Date.now() / 1000;
+  if (u.subscriptionStatus === 'trial') return !!u.trialEndsAt && u.trialEndsAt > now;
+  if (u.subscriptionStatus === 'premium') return !!u.premiumUntil && u.premiumUntil > now;
+  return true;
 }
 
 // Someone on the free trial IS premium — isPremium() is true for them — but they

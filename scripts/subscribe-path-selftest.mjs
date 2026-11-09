@@ -47,7 +47,7 @@ const STATES = [
   { name: 'mid trial',         user: { subscriptionStatus: 'trial',    isPremium: true,  trialEndsAt: inDays(11) }, premium: true,  paid: false, trial: true  },
   { name: 'trial last day',    user: { subscriptionStatus: 'trial',    isPremium: true,  trialEndsAt: inDays(1) },  premium: true,  paid: false, trial: true  },
   { name: 'trial expired',     user: { subscriptionStatus: 'trial',    isPremium: false, trialEndsAt: inDays(-2) }, premium: false, paid: false, trial: false },
-  { name: 'paid premium',      user: { subscriptionStatus: 'premium',  isPremium: true },                       premium: true,  paid: true,  trial: false },
+  { name: 'paid premium',      user: { subscriptionStatus: 'premium',  isPremium: true, premiumUntil: inDays(30) }, premium: true,  paid: true,  trial: false },
   { name: 'lifetime',          user: { subscriptionStatus: 'lifetime', isPremium: true },                       premium: true,  paid: true,  trial: false },
   // Lin's state after she paid on 2026-08-25: still 'trial', because the trial she
   // already had is what she is being billed at the end of. She has paid.
@@ -101,7 +101,7 @@ A.check('post-checkout message confirms the subscription',
   /subscribed/i.test(msgTrial), msgTrial);
 A.check('post-checkout message has no em/en dash',
   !/[\u2013\u2014]/.test(msgTrial), msgTrial);
-setUser({ subscriptionStatus: 'premium', isPremium: true, hasSubscription: true });
+setUser({ subscriptionStatus: 'premium', isPremium: true, hasSubscription: true, premiumUntil: inDays(30) });
 const msgPaid = billingSuccessMessage();
 A.check('a straight purchase is told premium is active',
   /premium is active/i.test(msgPaid), msgPaid);
@@ -203,5 +203,21 @@ setUser(renewing);
 A.check('a renewing plan says renews, not until', /^Premium, renews /.test(subscriptionStatusText(renewing)), subscriptionStatusText(renewing));
 A.check('a renewing plan is not cancelling', isCancelling() === false);
 A.check('cancel copy has no em dash', !/[\u2014\u2013\u2026]/.test(cText));
+
+// ---------- stale cached user (#30) ----------
+// accountMe() falls back to the localStorage copy offline, so isPremium can be a
+// stale true. The end date the server sent must still win.
+setUser({ subscriptionStatus: 'trial', isPremium: true, trialEndsAt: inDays(-1) });
+A.check('stale cache: ended trial is not premium', isPremium() === false);
+setUser({ subscriptionStatus: 'premium', isPremium: true, premiumUntil: inDays(-1) });
+A.check('stale cache: lapsed paid period is not premium', isPremium() === false);
+setUser({ subscriptionStatus: 'lifetime', isPremium: true });
+A.check('lifetime has no end date and stays premium', isPremium() === true);
+
+// ---------- checkout return uses the refreshed account (#26) ----------
+// accountMe() returns the fresh user but never sets account.user. Every caller
+// must assign it, or a user who just paid stays locked until reload.
+const bare = APP_JS.split('\n').filter(l => /await accountMe\(\)/.test(l) && !/=\s*await accountMe\(\)/.test(l));
+A.check('every await accountMe() result is assigned', bare.length === 0, bare.join(' | '));
 
 A.report();
