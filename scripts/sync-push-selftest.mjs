@@ -68,17 +68,21 @@ await mid;
 A.eq('edit during a push leaves it dirty', R('syncPush.dirty'), true);
 A.check('edit during a push arms another push', R('syncPush.timer') !== null);
 
-// ---------- 4. sign-out disarms the pending push ----------
+// ---------- 4. sign-out backs up what is waiting, then disarms ----------
+// Sign-out first lets the running and queued pushes finish, so the leaving
+// account's edits reach its own cloud. Nothing may push after it.
 const running = R('accountSyncPush()');
 await tick();
-const queued = R('accountSyncPush()');   // waits behind the running push
+R('accountSyncPush()');                  // waits behind the running push
 const before = R('__t.calls');
-await R('accountLogout()');
+const out = R('accountLogout()');
 await releaseAll();
-await running; await queued;
-A.eq('a push queued before sign-out never runs', R('__t.calls'), before);
+await out; await running;
+A.eq('sign-out waits for the queued push', R('__t.calls'), before + 1);
+await R('markSyncDirty()');              // late edit: account is gone
+await releaseAll();
+A.eq('nothing pushes after sign-out', R('__t.calls'), before + 1);
 A.eq('sign-out clears the timer', R('syncPush.timer'), null);
-A.eq('sign-out clears dirty', R('syncPush.dirty'), false);
 
 // ---------- 5. signed in without a key says so ----------
 R(`account = { user: { id: 1 }, encryptionKey: null }; settings.syncLastError = '';`);

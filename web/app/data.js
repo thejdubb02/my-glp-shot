@@ -28,7 +28,7 @@ const DB_NAME = 'shotclock';
 //   asked for something the app had nowhere to put.
 const DB_VERSION = 12;  // 12: tombstones store, so deletions sync
 
-const APP_VERSION = '0.67.1';
+const APP_VERSION = '0.67.2';
 
 const STORES = { shots: 'shots', weights: 'weights', settings: 'settings', moods: 'moods', supplies: 'supplies' };
 

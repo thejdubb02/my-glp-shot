@@ -667,9 +667,15 @@ function weightLooksLikeTypo(prevLb, newLb) {
 // that left dates in formats Date.parse interpreted as UTC, drifting them across
 // the local-midnight cutoff used by the range filter.
 let _weightDateMigrationDone = false;
-async function migrateWeightDatesToCanonical() {
-  if (_weightDateMigrationDone) return 0;
+// eraseLocalData waits on the run in flight, so it cannot write old rows back
+// after the erase.
+let _weightMigrationRun = Promise.resolve(0);
+function migrateWeightDatesToCanonical() {
+  if (_weightDateMigrationDone) return _weightMigrationRun;
   _weightDateMigrationDone = true;
+  return (_weightMigrationRun = runWeightDateMigration());
+}
+async function runWeightDateMigration() {
   const all = (await dbAll(STORES.weights)) || [];
   let fixed = 0;
   for (const w of all) {
@@ -3281,6 +3287,7 @@ function setupAccountUI() {
   });
   $('#signout-btn').addEventListener('click', async () => {
     if (!confirm('Sign out? Local data is preserved.')) return;
+    if (!(await flushBeforeSignOut()) && !confirm('Your latest changes are not backed up yet (no connection?). If a different account signs in on this device, they will be erased. Sign out anyway?')) return;
     await accountLogout(true);
     onAccountChanged();
   });
@@ -6089,6 +6096,7 @@ async function accountSignup(email, password) {
     throw new Error(j.message || 'Signup failed');
   }
   const j = await r.json();
+  await claimDevice(j.user);
   account = { user: j.user, encryptionKey: creds.aesKey };
   rememberSignedIn(creds.email, creds.aesKey);
   if (j.token) try { localStorage.setItem('mgs_session_token', j.token); } catch (_) {}
@@ -6104,6 +6112,7 @@ async function accountLogin(email, password) {
     throw new Error(j.message || 'Login failed');
   }
   const j = await r.json();
+  await claimDevice(j.user);
   account = { user: j.user, encryptionKey: creds.aesKey };
   rememberSignedIn(creds.email, creds.aesKey);
   if (j.token) try { localStorage.setItem('mgs_session_token', j.token); } catch (_) {}
@@ -6111,7 +6120,15 @@ async function accountLogin(email, password) {
   return j.user;
 }
 
+// Back up edits still waiting (or a push in flight) while this account's key
+// and session are still here. False means some edits are only on this device.
+async function flushBeforeSignOut() {
+  if (!(syncPush.dirty || syncPush.running) || !account.user || !account.encryptionKey) return true;
+  try { await accountSyncPush(); return true; } catch (e) { return false; }
+}
+
 async function accountLogout(forgetDevice) {
+  await flushBeforeSignOut();
   try { await accountFetch('logout', { method: 'POST' }); } catch (e) {}
   account = { user: null, encryptionKey: null };
   resetSyncPush();
@@ -6284,6 +6301,34 @@ function clearRememberedSignIn() {
   try { localStorage.removeItem('account.cred'); } catch (e) {}
 }
 
+// Device owner: the account whose data this device holds. Two people can share
+// a phone. Before this, B signing in after A signed out pushed A's whole log
+// into B's cloud and merged it there for good. Now a sign-in by a different
+// account first erases the local data, so nothing of A's can reach B.
+// No recorded owner (offline use, or a device from before this) keeps its data:
+// that is someone creating their first account, not a switch.
+// Called by every sign-in path before anything is pushed.
+const DEVICE_OWNER_KEY = 'mgs_device_owner';
+async function claimDevice(user) {
+  if (!user || user.id == null) return false;
+  let owner = null;
+  try { owner = localStorage.getItem(DEVICE_OWNER_KEY); } catch (_) {}
+  const switched = owner != null && owner !== String(user.id);
+  if (switched) await eraseLocalData();
+  try { localStorage.setItem(DEVICE_OWNER_KEY, String(user.id)); } catch (_) {}
+  return switched;
+}
+async function eraseLocalData() {
+  resetSyncPush();
+  await _weightMigrationRun.catch(() => {});
+  const db = await openDB();
+  for (const name of Array.from(db.objectStoreNames)) {
+    await withStore(name, 'readwrite', (s) => s.clear());
+  }
+  settings = { ...DEFAULT_SETTINGS };
+  try { applySettingsToInputs(); await renderShots(); await renderWeights(); await refreshDailyCards(); } catch (_) {}
+}
+
 async function importStoredAesKey(b64) {
   return crypto.subtle.importKey('raw', base64ToBytes(b64), 'AES-GCM', true, ['encrypt', 'decrypt']);
 }
@@ -6291,6 +6336,7 @@ async function importStoredAesKey(b64) {
 async function tryRestoreAccount() {
   const user = await accountMe();
   if (!user) return false;
+  await claimDevice(user);
   account.user = user;
   const remembered = getRememberedSignIn();
   if (remembered && remembered.email && remembered.k) {
@@ -6558,23 +6604,15 @@ async function handleAccountSubmit(ev) {
     }
     $('#account-dialog').close();
     await onAccountChanged();
-    // After signup or login, prompt to push local data if any exists
-    const shots = (await dbAll(STORES.shots)) || [];
-    if (shots.length && account.encryptionKey) {
-      try { await accountSyncPush(); } catch (e) {}
-    }
-    // After login, attempt pull
-    if (mode === 'login' && account.encryptionKey) {
+    // Pull and merge first, then push the union. The server keeps one copy and
+    // the last write wins, so pushing first replaced the cloud copy with this
+    // device's data and dropped every record only the cloud had.
+    if (account.encryptionKey) {
       try {
-        const result = await accountSyncPull();
-        if (result && shots.length === 0) {
-          await applyPulledPayload(result.payload);
-        } else if (result && shots.length > 0) {
-          if (confirm(`Cloud copy has ${(result.payload.shots || []).length} shots. Replace local data with cloud copy?`)) {
-            await applyPulledPayload(result.payload);
-          }
-        }
-      } catch (e) {}
+        const result = mode === 'login' ? await accountSyncPull() : null;
+        if (result && result.payload) await applyPulledPayload(result.payload);
+        await accountSyncPush();
+      } catch (e) { noteSyncFailure(e); }
     }
   } catch (e) {
     errEl.textContent = e.message || 'Failed';

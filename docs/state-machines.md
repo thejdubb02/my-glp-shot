@@ -23,6 +23,11 @@ labelled `state-machine`.
 - Persisted: `mgs_session_token`, `account.cred` (key), `mgs_last_user`
   (offline cache, trusted only when the network fails).
 - Writers: signup, login, `tryRestoreAccount`, `accountLogout`, delete account.
+- Device owner: `mgs_device_owner` (localStorage, kept across sign-out and
+  account delete). Every sign-in calls `claimDevice(user)` before any push; a
+  different account erases local data first (`eraseLocalData`). No owner
+  recorded keeps the data. Sign-in pulls and merges before it pushes.
+  Sign-out runs `flushBeforeSignOut()` first. Test: `scripts/account-switch-selftest.mjs`.
 
 ### Subscription (derived, read-only on the client)
 - From server fields on `account.user`: `subscriptionStatus`, `isPremium`,
