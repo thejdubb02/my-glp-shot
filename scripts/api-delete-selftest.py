@@ -23,7 +23,7 @@ os.environ.update({
     'MGS_ADMIN_TOKEN': 'admin-dummy-token',
     'RESEND_API_KEY': '',
     'OPENROUTER_API_KEY': '',
-    'MATTERMOST_WEBHOOK_URL': '',
+    'HERALD_URL': '',
 })
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'api'))
 

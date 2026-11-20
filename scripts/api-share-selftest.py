@@ -18,7 +18,7 @@ os.environ.update(
     MGS_DB=os.path.join(tmp, 'api.db'),
     STRIPE_API_KEY='sk_dummy',
     STRIPE_WEBHOOK_SECRET='whsec_dummy',
-    MATTERMOST_WEBHOOK_URL='',
+    HERALD_URL='',
 )
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'api'))
 import app as api  # noqa: E402

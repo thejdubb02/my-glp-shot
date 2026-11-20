@@ -13,7 +13,7 @@ import sys
 import tempfile
 
 tmp = tempfile.mkdtemp(prefix='mgs-auth-')
-os.environ.update(MGS_DB=os.path.join(tmp, 'api.db'), MATTERMOST_WEBHOOK_URL='')
+os.environ.update(MGS_DB=os.path.join(tmp, 'api.db'), HERALD_URL='')
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'api'))
 import app as api  # noqa: E402
 

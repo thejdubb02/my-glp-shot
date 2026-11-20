@@ -19,7 +19,7 @@ os.environ.update(
     STRIPE_WEBHOOK_SECRET='whsec_dummy',
     STRIPE_API_KEY_TEST='sk_test_dummy',
     STRIPE_WEBHOOK_SECRET_TEST='whsec_test_dummy',
-    MATTERMOST_WEBHOOK_URL='',
+    HERALD_URL='',
 )
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'api'))
 import app as api  # noqa: E402
@@ -170,15 +170,15 @@ def test_second_live_sub_pings_operator():
     # #27: a different live sub replacing the one on file means a possible double charge.
     reset()
     pings = []
-    real = api.notify_mattermost
-    api.notify_mattermost = pings.append
+    real = api.notify_herald
+    api.notify_herald = lambda *a: pings.append(a)
     try:
         with db() as c:
             c.execute("UPDATE users SET stripe_subscription_id = 'sub_old' WHERE id = 1")
         assert post('/api/stripe/webhook', SUB_EVENT).status_code == 200
     finally:
-        api.notify_mattermost = real
-    assert any('sub_old' in p and 'sub_1' in p for p in pings), pings
+        api.notify_herald = real
+    assert any(p[0] == 'money' and 'sub_old' in p[2] and 'sub_1' in p[2] for p in pings), pings
 
 
 def test_test_mode_late_cancel_of_old_sub_is_ignored():

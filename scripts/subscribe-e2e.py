@@ -20,7 +20,7 @@ amount_total, which is Stripe's own arithmetic rather than ours -- 0 when the
 remaining trial is honoured, 1999 when it is not.
 
 The throwaway account uses a .test domain, so it is excluded from the signup
-metrics and the Mattermost notification, and it is deleted on the way out.
+metrics and the Herald signup ping, and it is deleted on the way out.
 
 Run inside the API container, which already has the env and the DB:
     docker exec -i my-glp-shot-api python3 - --live < scripts/subscribe-e2e.py
@@ -36,7 +36,7 @@ import app as A  # noqa: E402
 
 LIVE = '--live' in sys.argv
 TS = int(time.time())
-EMAIL = 'subcheck+%d@myglpshot.test' % TS   # .test => excluded from metrics and Mattermost
+EMAIL = 'subcheck+%d@myglpshot.test' % TS   # .test => excluded from metrics and Herald pings
 TOKEN = secrets.token_hex(32)
 DAY = 86400
 

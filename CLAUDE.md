@@ -54,7 +54,7 @@ No lint config exists. When you fix a client bug, add or extend a
   Import and `scripts/weekly-audit.py` call OpenRouter; do not run them.
 - Never run `grant-premium.py`, `revoke-premium.py`, `promote-admin.py` or
   `backup-*` against anything. There is no production data on the build box.
-- Nothing user-facing sends itself: no email, no push, no Mattermost post.
+- Nothing user-facing sends itself: no email, no push, no Herald ping.
 - Privacy is the product: the server must only ever hold ciphertext and auth
   hashes. Do not add code that sends plaintext health data to the server, to
   analytics, or to an LLM. Keep the CSP and security headers intact.

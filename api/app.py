@@ -67,11 +67,10 @@ UMAMI_USERNAME = os.environ.get('UMAMI_USERNAME', '')
 UMAMI_PASSWORD = os.environ.get('UMAMI_PASSWORD', '')
 UMAMI_WEBSITE_ID_LANDING = os.environ.get('UMAMI_WEBSITE_ID_LANDING', '')
 UMAMI_WEBSITE_ID_PWA = os.environ.get('UMAMI_WEBSITE_ID_PWA', '')
-# Mattermost incoming webhook for operator notifications (new signups, first
-# paid conversion). Optional — unset means the notifier is a silent no-op.
-# The target channel is shared with other apps' signup feeds, so every message
-# leads with this emoji + name to say which app it came from.
-MATTERMOST_WEBHOOK_URL = os.environ.get('MATTERMOST_WEBHOOK_URL', '')
+# Herald (fleet notification router on vps1, tailnet only) for operator pings:
+# new signups (tag `signup`, quiet) and paid conversions (tag `money`, phone).
+# Herald feeds are shared with other apps, so every message names the app.
+HERALD_URL = os.environ.get('HERALD_URL', 'http://100.110.232.76:8018/notify/wsg')
 MGS_EMOJI = '💉'
 MGS_APP_NAME = 'My GLP Shot'
 if STRIPE_API_KEY:
@@ -453,29 +452,31 @@ def send_email(to, subject, html, text=None):
         return False
 
 
-def notify_mattermost(text):
-    """Best-effort operator ping to Mattermost. No-op if unset.
+def notify_herald(tag, title, body):
+    """Best-effort operator ping through Herald. No-op if HERALD_URL is empty.
 
-    Fired on a daemon thread: a slow or down Mattermost must never add latency to
-    a signup, and must never fail one. Nothing here is retried — a missed
+    Fired on a daemon thread: a slow or down Herald must never add latency to
+    a signup, and must never fail one. Nothing here is retried: a missed
     notification is a missed notification, not a reason to hold up a user.
     """
-    if not MATTERMOST_WEBHOOK_URL:
+    if not HERALD_URL:
         return False
 
     def _post():
         try:
             import requests as _r
-            _r.post(MATTERMOST_WEBHOOK_URL, json={'text': text}, timeout=6)
+            r = _r.post(HERALD_URL, data={'tag': tag, 'title': title, 'body': body}, timeout=6)
+            if r.status_code >= 300:
+                app.logger.warning('herald notify failed: HTTP %s', r.status_code)
         except Exception as e:
-            app.logger.warning('mattermost notify failed: %s', e)
+            app.logger.warning('herald notify failed: %s', e)
 
     try:
         import threading
         threading.Thread(target=_post, daemon=True).start()
         return True
     except Exception as e:
-        app.logger.warning('mattermost notify could not start: %s', e)
+        app.logger.warning('herald notify could not start: %s', e)
         return False
 
 
@@ -645,9 +646,10 @@ def signup():
             'SELECT COUNT(*) AS c FROM users WHERE COALESCE(is_admin, 0) = 0' + NOT_TEST_SQL
         ).fetchone()['c']
         if not is_admin and not is_test_email(email):
-            notify_mattermost(
-                f"{MGS_EMOJI} **{MGS_APP_NAME}** · new signup — {email}\n"
-                f"{today} today · {total} total"
+            notify_herald(
+                'signup',
+                f"{MGS_EMOJI} {MGS_APP_NAME}: new signup",
+                f"{email}\n{today} today, {total} total",
             )
     except Exception as e:
         # A notification problem is never a reason to fail a signup.
@@ -1417,9 +1419,10 @@ def _apply_subscription(sub):
         return
     if current_sub and sub_id and sub_id != current_sub:
         # Usually a duplicate checkout: both subs may be billing (#27). Operator ping only.
-        notify_mattermost(
-            f"{MGS_EMOJI} **{MGS_APP_NAME}** · ⚠️ second live subscription for {user['email']}: "
-            f"{sub_id} replaces {current_sub}. Check Stripe for a double charge."
+        notify_herald(
+            'money',
+            f"{MGS_EMOJI} {MGS_APP_NAME}: second live subscription",
+            f"{user['email']}: {sub_id} replaces {current_sub}. Check Stripe for a double charge.",
         )
     current_period_end = _period_end(sub)
     trial_end = sub.get('trial_end')
@@ -1450,8 +1453,10 @@ def _apply_subscription(sub):
         # Only on the transition into paid — renewals fire this same webhook every
         # billing period and shouldn't ping.
         if new_status == 'premium' and not was_paid:
-            notify_mattermost(
-                f"{MGS_EMOJI} **{MGS_APP_NAME}** · 💳 paid subscription — {user['email']}"
+            notify_herald(
+                'money',
+                f"{MGS_EMOJI} {MGS_APP_NAME}: paid subscription",
+                user['email'],
             )
     elif status in ('canceled', 'unpaid', 'incomplete_expired'):
         # Don't yank premium mid-period: keep premium_until, just flip status when

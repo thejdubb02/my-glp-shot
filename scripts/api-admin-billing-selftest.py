@@ -18,7 +18,7 @@ os.environ.update({
     'MGS_DB': os.path.join(TMP, 'api.db'),
     'MGS_ADMIN_TOKEN': 'selftest-admin-token',
     'STRIPE_API_KEY': '', 'STRIPE_API_KEY_TEST': '',
-    'RESEND_API_KEY': '', 'OPENROUTER_API_KEY': '', 'MATTERMOST_WEBHOOK_URL': '',
+    'RESEND_API_KEY': '', 'OPENROUTER_API_KEY': '', 'HERALD_URL': '',
 })
 
 
