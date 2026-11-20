@@ -133,7 +133,7 @@ function renderBodyDiagram(shots) {
   wrap.querySelectorAll('.body-custom-chip').forEach(b => {
     b.addEventListener('click', () => {
       const name = b.getAttribute('data-site');
-      $('#site-suggest-label').textContent = `Tap "+ Log" to start a shot at ${name}`;
+      $('#site-suggest-label').textContent = `Tap "+ Log" to start a shot at ${name.replace(" \u2014 ", ", ")}`;
       window._preferredNextSite = name;
     });
   });
@@ -141,7 +141,7 @@ function renderBodyDiagram(shots) {
   wrap.querySelectorAll('.body-site').forEach(g => {
     const pick = () => {
       const name = g.getAttribute('data-site');
-      $('#site-suggest-label').textContent = `Tap "+ Log" to start a shot at ${name}`;
+      $('#site-suggest-label').textContent = `Tap "+ Log" to start a shot at ${name.replace(" \u2014 ", ", ")}`;
       window._preferredNextSite = name;
       wrap.querySelectorAll('.body-site').forEach(o => o.classList.toggle('picked', o === g));
     };
