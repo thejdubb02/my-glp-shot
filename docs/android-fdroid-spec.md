@@ -62,7 +62,7 @@ fastlane/metadata/android/en-US/   title, short and full description, screenshot
 `web/app/` stays build-free for the website. The copy step is the only build,
 and it runs for the native app alone.
 
-Package name: `com.myglpshot.app`. An app signed by F-Droid and the same package
+Proposed package name: `com.myglpshot.app` (open decision, section 7). An app signed by F-Droid and the same package
 signed by us (Play, our own repo) cannot update each other, so users of one
 cannot move to the other without reinstalling. See decisions in section 7.
 
