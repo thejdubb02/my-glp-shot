@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Insights engine self-test: runs the shipped insight_* functions and
-// computeInsights from web/app/app.js against seeded data.
+// computeInsights from web/app/js/ against seeded data.
 //
 //   node scripts/insights-selftest.mjs
 import { loadApp, Assert } from './lib/app-harness.mjs';

@@ -34,6 +34,17 @@ MODELS = [
 
 # Each slice is (name, description, [(label, path, line_from, line_to)]).
 # line_from/line_to are 1-indexed and inclusive; None means whole file.
+# The client lives in web/app/js/, one file per feature. Slice b is the part
+# that handles keys and cloud data; slice c is everything else. A new file must
+# be added to one of these lists or it is not audited.
+CLIENT_SYNC = ['account', 'account-ui', 'sync-triggers', 'sync-push', 'sync-merge', 'sync-legacy']
+CLIENT_CORE = [
+    'common', 'storage', 'views', 'weight-units', 'shots', 'boot', 'settings-ui', 'weight',
+    'charts', 'import-export', 'reminders', 'install', 'setup-ui', 'daily', 'guidance',
+    'insights', 'home', 'symptoms', 'achievements', 'ui-effects', 'calculator', 'supply',
+    'measurements', 'labs', 'themes', 'costs', 'plateau', 'pdf-report',
+]
+
 SLICES = {
     'a': {
         'title': 'Backend + deployment',
@@ -59,7 +70,7 @@ SLICES = {
             'IndexedDB record identity across devices, replay and downgrade attacks, '
             'error paths that silently swallow failures.'
         ),
-        'files': [('web/app/app.js', 4900, 6471)],
+        'files': [(f'web/app/js/{n}.js', None, None) for n in CLIENT_SYNC],
     },
     'c': {
         'title': 'Client application core',
@@ -69,7 +80,7 @@ SLICES = {
             'premium gating that can be bypassed client-side, dead code, memory leaks, '
             'unhandled promise rejections.'
         ),
-        'files': [('web/app/app.js', 1, 4899)],
+        'files': [(f'web/app/js/{n}.js', None, None) for n in CLIENT_CORE],
     },
     'd': {
         'title': 'PWA shell + service worker + admin',

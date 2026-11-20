@@ -8,7 +8,7 @@ import base64, json, os, sys, time, urllib.request, urllib.error, re
 OUT_DIR  = "/opt/my-glp-shot/web/app/icons/achievements"
 MODEL    = "google/gemini-2.5-flash-image"  # via OpenRouter since 2026-10-07 (Google prepay ends 2026-10-12)
 
-# Same ids as ACHIEVEMENTS in app.js. Each prompt is a self-contained scene
+# Same ids as ACHIEVEMENTS in data.js. Each prompt is a self-contained scene
 # so the icons feel distinct, not just colour-shifted versions of one shape.
 # STANDARDIZED prompt template. Every badge follows the same visual language so the
 # collection feels like a coherent set, not 30 unrelated illustrations:

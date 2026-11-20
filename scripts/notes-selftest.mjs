@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Daily-notes self-test.
 //
-// Loads the real web/app/app.js into a VM context with a stub DOM and a real
+// Loads the real web/app/js/ files into a VM context with a stub DOM and a real
 // IndexedDB (fake-indexeddb), then exercises the notes store, the sanitiser and
 // the merge. It runs the shipped code rather than a copy, so it fails when the
 // app changes and the behaviour below stops holding.
@@ -30,8 +30,8 @@ function eq(name, got, want) {
   check(name, got === want, `got ${JSON.stringify(got)}, want ${JSON.stringify(want)}`);
 }
 
-// The sandbox (stub DOM + fake-indexeddb + app.js) lives in lib/app-harness.mjs
-// so every suite loads the app the same way. APP_JS_PATH and FAKE_INDEXEDDB_PATH
+// The sandbox (stub DOM + fake-indexeddb + the js/ files) lives in lib/app-harness.mjs
+// so every suite loads the app the same way. FAKE_INDEXEDDB_PATH
 // are honoured there.
 const { R } = await loadApp();
 const sanitizeNote   = R('sanitizeNote');

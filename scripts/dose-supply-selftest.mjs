@@ -1,4 +1,4 @@
-// Runs the shipped app.js in a VM and exercises the two things Lin's second
+// Runs the shipped app code in a VM and exercises the two things Lin's second
 // email exposed: a dose field that refused 0.25, and a supply card whose mg/mL
 // numbers had no feedback and whose progress bar never moved.
 //
@@ -9,9 +9,9 @@ import { loadApp } from './lib/app-harness.mjs';
 
 const INDEX = process.env.INDEX_HTML_PATH || new URL('../web/app/index.html', import.meta.url).pathname;
 
-// Sandbox (stub DOM + fake-indexeddb + app.js) comes from lib/app-harness.mjs,
-// shared with the other suites. APP_JS_PATH / FAKE_INDEXEDDB_PATH work there.
-// 'sticky' DOM: this suite asserts on what app.js RENDERS (readouts, progress
+// Sandbox (stub DOM + fake-indexeddb + the js/ files) comes from lib/app-harness.mjs,
+// shared with the other suites. FAKE_INDEXEDDB_PATH works there.
+// 'sticky' DOM: this suite asserts on what the app RENDERS (readouts, progress
 // bars), so a selector must return the same node each time and remember writes.
 const { R, nodeFor } = await loadApp({ domMode: 'sticky' });
 const run = R;

@@ -43,7 +43,7 @@ const APP_URL = 'https://app.myglpshot.com/?nosw=1';
 const OUT = `/tmp/mgs-theme-test-${Date.now()}`;
 fs.mkdirSync(OUT, { recursive: true });
 
-// Same theme list as in app.js. Kept in sync manually — script will fetch from page to avoid drift.
+// Same theme list as in js/themes.js. Kept in sync manually — script will fetch from page to avoid drift.
 function srgbToLin(c) {
   c /= 255;
   return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);

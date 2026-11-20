@@ -12,6 +12,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { appScripts, readAppSource } from './lib/app-harness.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const APP = path.join(HERE, '..', 'web', 'app');
@@ -21,7 +22,7 @@ const ok = (name, cond, extra = '') => { if (cond) { pass++; return true; } fail
 const eq = (name, a, b) => ok(name, a === b, `got ${JSON.stringify(a)}, want ${JSON.stringify(b)}`);
 
 const manifest = JSON.parse(fs.readFileSync(path.join(APP, 'manifest.webmanifest'), 'utf8'));
-const appjs = fs.readFileSync(path.join(APP, 'app.js'), 'utf8');
+const appjs = readAppSource();
 const datajs = fs.readFileSync(path.join(APP, 'data.js'), 'utf8');
 const html = fs.readFileSync(path.join(APP, 'index.html'), 'utf8');
 const sw = fs.readFileSync(path.join(APP, 'sw.js'), 'utf8');
@@ -128,8 +129,8 @@ for (const f of fs.readdirSync(APP).filter(n => n.endsWith('.html'))) {
     const q = new URLSearchParams((sc.url || '').split('?')[1] || '');
     const action = q.get('action'), tab = q.get('tab');
     ok(`shortcut "${sc.name}" carries an action or tab`, !!(action || tab), sc.url);
-    if (action) ok(`shortcut "${sc.name}" action "${action}" is handled in app.js`, handled.actions.has(action));
-    if (tab) ok(`shortcut "${sc.name}" tab "${tab}" is handled in app.js`, handled.tabs.has(tab));
+    if (action) ok(`shortcut "${sc.name}" action "${action}" is handled in the app`, handled.actions.has(action));
+    if (tab) ok(`shortcut "${sc.name}" tab "${tab}" is handled in the app`, handled.tabs.has(tab));
     for (const i of (sc.icons || [])) ok(`shortcut "${sc.name}" icon exists`, pngSize(i.src) !== null, i.src);
   }
   // Every function the handler calls has to exist, or it fails into a catch.
@@ -150,7 +151,7 @@ for (const f of fs.readdirSync(APP).filter(n => n.endsWith('.html'))) {
 // ---------- offline boot ----------
 {
   const crit = (sw.match(/const CRITICAL = \[([\s\S]*?)\]/) || [])[1] || '';
-  for (const f of ['index.html', 'styles.css', 'data.js', 'app.js']) {
+  for (const f of ['index.html', 'styles.css', ...appScripts()]) {
     ok(`service worker pre-caches ${f}`, crit.includes(f));
   }
   const swCache = (sw.match(/const CACHE = '([^']+)'/) || [])[1] || '';
@@ -229,6 +230,16 @@ for (const f of fs.readdirSync(APP).filter(n => n.endsWith('.html'))) {
       const b = fs.readFileSync(fg).subarray(0, 24);
       eq('feature graphic is exactly 1024x500', `${b.readUInt32BE(16)}x${b.readUInt32BE(20)}`, '1024x500');
     }
+  }
+}
+
+// The stale-bundle check scrapes "<file>.js?v=N" out of index.html. If the file
+// it names is not a script tag there, the check silently never fires.
+{
+  const scraped = [...appjs.matchAll(/\/([\w-]+)\\\.js\\\?v=\(\\d\+\)\//g)].map(m => m[1]);
+  ok('stale-bundle check scrapes a version from index.html', scraped.length > 0);
+  for (const name of new Set(scraped)) {
+    ok(`stale-bundle check: index.html has a "${name}.js?v=N" script tag`, new RegExp(`<script src="${name}\\.js\\?v=\\d+"`).test(html));
   }
 }
 

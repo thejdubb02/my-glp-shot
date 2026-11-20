@@ -21,13 +21,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { loadApp, Assert } from './lib/app-harness.mjs';
+import { loadApp, Assert, readAppSource } from './lib/app-harness.mjs';
 
 const A = new Assert('subscribe-path');
 const { R, nodeFor } = await loadApp({ domMode: 'sticky' });
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const APP_JS = fs.readFileSync(path.join(HERE, '..', 'web', 'app', 'app.js'), 'utf8');
+const APP_JS = readAppSource();
 const INDEX_HTML = fs.readFileSync(path.join(HERE, '..', 'web', 'app', 'index.html'), 'utf8');
 
 const isPremium   = R('isPremium');

@@ -1258,12 +1258,48 @@
 <!-- toast() has always fallen back to alert() because this element never existed. -->
 <div id="app-toast" class="app-toast" role="status" aria-live="polite"></div>
 
-<!-- Chart.js is no longer loaded here: it is 68 KB gzipped that only the
-     Insights tab needs, and app.js now fetches it on first chart draw. -->
-<!-- data.js is declarations only and must load before app.js, which reads them
-     at evaluation time. Both are classic scripts sharing one global scope - 
-     see the note at the top of data.js for why this is not an ES module. -->
-<script src="data.js?v=435"></script>
-<script src="app.js?v=435"></script>
+<!-- Chart.js is not loaded here: it is 68 KB gzipped that only the
+     Insights tab needs, and js/charts.js fetches it on first chart draw. -->
+<!-- The app is one file per feature under js/, all classic scripts sharing one
+     global scope (see the note at the top of data.js for why these are not ES
+     modules). ORDER MATTERS: data.js first, then this exact order, because a
+     file may run code at load that reads something an earlier file declared.
+     This list is the single source of truth: the test harness reads it, and
+     run-tests.sh checks reset.html and the service worker against it. -->
+<script src="data.js?v=436"></script>
+<script src="js/common.js?v=436"></script>
+<script src="js/storage.js?v=436"></script>
+<script src="js/views.js?v=436"></script>
+<script src="js/weight-units.js?v=436"></script>
+<script src="js/shots.js?v=436"></script>
+<script src="js/boot.js?v=436"></script>
+<script src="js/settings-ui.js?v=436"></script>
+<script src="js/weight.js?v=436"></script>
+<script src="js/charts.js?v=436"></script>
+<script src="js/import-export.js?v=436"></script>
+<script src="js/reminders.js?v=436"></script>
+<script src="js/install.js?v=436"></script>
+<script src="js/sync-triggers.js?v=436"></script>
+<script src="js/setup-ui.js?v=436"></script>
+<script src="js/daily.js?v=436"></script>
+<script src="js/guidance.js?v=436"></script>
+<script src="js/insights.js?v=436"></script>
+<script src="js/home.js?v=436"></script>
+<script src="js/symptoms.js?v=436"></script>
+<script src="js/achievements.js?v=436"></script>
+<script src="js/ui-effects.js?v=436"></script>
+<script src="js/account.js?v=436"></script>
+<script src="js/sync-push.js?v=436"></script>
+<script src="js/account-ui.js?v=436"></script>
+<script src="js/calculator.js?v=436"></script>
+<script src="js/supply.js?v=436"></script>
+<script src="js/measurements.js?v=436"></script>
+<script src="js/labs.js?v=436"></script>
+<script src="js/themes.js?v=436"></script>
+<script src="js/costs.js?v=436"></script>
+<script src="js/plateau.js?v=436"></script>
+<script src="js/pdf-report.js?v=436"></script>
+<script src="js/sync-merge.js?v=436"></script>
+<script src="js/sync-legacy.js?v=436"></script>
 </body>
 </html>

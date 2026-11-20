@@ -1,4 +1,4 @@
-// Shared test harness: loads the real web/app/app.js into a VM context with a
+// Shared test harness: loads the real web/app scripts into a VM context with a
 // stub DOM and a real IndexedDB, and hands back an accessor into its scope.
 //
 // This exists because notes-selftest and dose-supply-selftest had each grown
@@ -11,7 +11,7 @@
 //   const { R } = await loadApp();
 //   const buildPayload = R('buildPayload');
 //
-// Everything app.js does at load sits behind DOMContentLoaded, and readyState
+// Everything the app does at load sits behind DOMContentLoaded, and readyState
 // is pinned to 'loading', so the file loads without booting the UI.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -21,11 +21,23 @@ import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const APP_DIR = path.join(HERE, '..', '..', 'web', 'app');
-export const DEFAULT_APP_JS = path.join(APP_DIR, 'app.js');
-// data.js is a separate classic script that must be evaluated first, exactly as
-// index.html orders them. Loading only app.js would leave every data table
-// undefined and fail in ways that look like app bugs.
-export const DEFAULT_DATA_JS = path.join(APP_DIR, 'data.js');
+// The app is data.js plus one classic script per feature under js/. index.html
+// is the single source of truth for which files and in what order, so the
+// suites load exactly what the browser loads: a file missing from index.html,
+// or listed too early, fails here the same way it would fail on a phone.
+export function appScripts() {
+  const html = fs.readFileSync(path.join(APP_DIR, 'index.html'), 'utf8');
+  const names = [...html.matchAll(/<script src="((?:data|js\/[\w-]+)\.js)[?"]/g)].map(m => m[1]);
+  if (names[0] !== 'data.js' || names.length < 2) {
+    throw new Error(`index.html script list looks wrong: ${names.slice(0, 3).join(', ')}`);
+  }
+  return names;
+}
+// All of js/ as one string, in load order, for suites that assert on source text.
+export function readAppSource() {
+  return appScripts().filter(n => n !== 'data.js')
+    .map(n => fs.readFileSync(path.join(APP_DIR, n), 'utf8')).join('\n');
+}
 
 function loadFakeIndexedDB(entry) {
   const req = createRequire(import.meta.url);
@@ -64,7 +76,7 @@ const noopEl = () => ({
 //              that walks a render path (applySettingsToInputs writes straight
 //              to .value and throws on null) but does not read its writes back.
 //   'sticky' — every lookup returns the SAME element for a given selector, so
-//              innerHTML/value/hidden written by app.js can be asserted on.
+//              innerHTML/value/hidden written by the app can be asserted on.
 //              This is what lets a suite test rendering rather than just logic.
 // Suites pick explicitly, because the choice changes which branches execute.
 export function makeSandbox({ indexedDB, IDBKeyRange }, domMode = 'absent') {
@@ -129,7 +141,7 @@ export function makeSandbox({ indexedDB, IDBKeyRange }, domMode = 'absent') {
     performance: { now: () => 0 },
     URL_createObjectURL: () => 'blob:stub',
   };
-  // app.js probes Notification.prototype for scheduled-trigger support at load,
+  // The app probes Notification.prototype for scheduled-trigger support at load,
   // so this has to be a real constructor rather than an object literal.
   function NotificationStub(){}
   NotificationStub.prototype = {};
@@ -137,7 +149,7 @@ export function makeSandbox({ indexedDB, IDBKeyRange }, domMode = 'absent') {
   NotificationStub.requestPermission = async () => 'default';
   sandbox.Notification = NotificationStub;
   // Chart.js ships separately and is never fetched here; only the statics
-  // app.js touches at load need to exist.
+  // the app touches at load need to exist.
   function ChartStub(){ return { destroy(){}, update(){}, data: {}, options: {} }; }
   ChartStub.register = () => {};
   ChartStub.defaults = { font: {}, plugins: { legend: {} }, scale: {}, scales: {} };
@@ -147,18 +159,16 @@ export function makeSandbox({ indexedDB, IDBKeyRange }, domMode = 'absent') {
   sandbox.globalThis = sandbox;
   sandbox.self = sandbox;
   // Sticky suites assert on rendered output, so they need the same handle on a
-  // node that app.js got. Non-enumerable so it can't be mistaken for a global
+  // node that the app got. Non-enumerable so it can't be mistaken for a global
   // the app itself provides.
   Object.defineProperty(sandbox, '__nodeFor', { value: nodeFor, enumerable: false });
   return sandbox;
 }
 
-// Loads app.js and returns { sandbox, R }. R(expr) evaluates an expression in
+// Loads the app and returns { sandbox, R }. R(expr) evaluates an expression in
 // the app's own scope, which is how the suites reach functions that are module-
-// private (app.js declares everything at top level in a classic script).
-export async function loadApp({ appJs, dataJs, fakeIndexedDBPath, domMode = 'absent' } = {}) {
-  const file = appJs || process.env.APP_JS_PATH || DEFAULT_APP_JS;
-  const dataFile = dataJs || process.env.DATA_JS_PATH || DEFAULT_DATA_JS;
+// private (the app declares everything at top level in a classic script).
+export async function loadApp({ fakeIndexedDBPath, domMode = 'absent' } = {}) {
   let idb;
   try {
     idb = loadFakeIndexedDB(fakeIndexedDBPath);
@@ -169,15 +179,17 @@ export async function loadApp({ appJs, dataJs, fakeIndexedDBPath, domMode = 'abs
   }
   const sandbox = makeSandbox(idb, domMode);
   vm.createContext(sandbox);
+  let name = '';
   try {
-    if (fs.existsSync(dataFile)) {
-      vm.runInContext(fs.readFileSync(dataFile, 'utf8'), sandbox, { filename: 'data.js' });
+    // One runInContext per file, like one <script> tag each: top-level
+    // const/let are shared, but a function is only hoisted within its own file.
+    for (name of appScripts()) {
+      vm.runInContext(fs.readFileSync(path.join(APP_DIR, name), 'utf8'), sandbox, { filename: name });
     }
-    vm.runInContext(fs.readFileSync(file, 'utf8'), sandbox, { filename: 'app.js' });
   } catch (e) {
-    // The stack points at the exact app.js line, which is nearly always a
-    // browser global this sandbox has not stubbed yet.
-    console.error('app.js failed to load in the test sandbox:', e.message);
+    // Usually a browser global this sandbox has not stubbed yet, or a file
+    // that runs code at load needing something from a file listed after it.
+    console.error(`${name} failed to load in the test sandbox:`, e.message);
     console.error(e.stack);
     process.exit(2);
   }

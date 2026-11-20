@@ -11,6 +11,7 @@
 //
 //   node scripts/change-email-selftest.mjs --base http://127.0.0.1:5099
 import { webcrypto as crypto } from 'node:crypto';
+import { readAppSource } from './lib/app-harness.mjs';
 
 const argBase = process.argv.indexOf('--base');
 const BASE = argBase > -1 ? process.argv[argBase + 1] : 'http://127.0.0.1:5099';
@@ -24,7 +25,7 @@ const eq = (name, a, b) => ok(name, JSON.stringify(a) === JSON.stringify(b), `go
 const b64 = (buf) => Buffer.from(buf).toString('base64');
 const unb64 = (s) => new Uint8Array(Buffer.from(s, 'base64'));
 
-// Mirrors deriveAccountCreds in web/app/app.js. If these ever drift, this
+// Mirrors deriveAccountCreds in web/app/js/account.js. If these ever drift, this
 // suite stops testing the real thing — so it also asserts the app's constants.
 async function derive(email, password) {
   const enc = new TextEncoder();
@@ -80,9 +81,9 @@ const PW = 'correct horse battery staple';
 // ---------- the app and this suite must agree on the derivation ----------
 {
   const fs = await import('node:fs');
-  const appjs = fs.readFileSync(new URL('../web/app/app.js', import.meta.url), 'utf8');
-  ok("suite's protocol string matches app.js", appjs.includes(`ACCOUNT_PROTOCOL = '${PROTO}'`));
-  ok("suite's iteration count matches app.js", appjs.includes(`SYNC_PBKDF2_ITERS = ${ITERS}`));
+  const appjs = readAppSource();
+  ok("suite's protocol string matches the app", appjs.includes(`ACCOUNT_PROTOCOL = '${PROTO}'`));
+  ok("suite's iteration count matches the app", appjs.includes(`SYNC_PBKDF2_ITERS = ${ITERS}`));
 }
 
 // ---------- set up an account with a cloud blob ----------

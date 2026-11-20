@@ -1,6 +1,6 @@
 // My GLP Shot service worker — network-first for app shell so updates are picked up on every visit; cache fallback for offline.
-const CACHE = 'mglp-v0.67.10';
-// Without these three the app cannot boot offline at all, so a failure to cache
+const CACHE = 'mglp-v0.67.11';
+// Without these the app cannot boot offline at all, so a failure to cache
 // them must fail the install rather than leaving a service worker that claims
 // offline support it can't deliver.
 const CRITICAL = [
@@ -8,7 +8,40 @@ const CRITICAL = [
   'index.html',
   'styles.css',
   'data.js',
-  'app.js',
+  'js/common.js',
+  'js/storage.js',
+  'js/views.js',
+  'js/weight-units.js',
+  'js/shots.js',
+  'js/boot.js',
+  'js/settings-ui.js',
+  'js/weight.js',
+  'js/charts.js',
+  'js/import-export.js',
+  'js/reminders.js',
+  'js/install.js',
+  'js/sync-triggers.js',
+  'js/setup-ui.js',
+  'js/daily.js',
+  'js/guidance.js',
+  'js/insights.js',
+  'js/home.js',
+  'js/symptoms.js',
+  'js/achievements.js',
+  'js/ui-effects.js',
+  'js/account.js',
+  'js/sync-push.js',
+  'js/account-ui.js',
+  'js/calculator.js',
+  'js/supply.js',
+  'js/measurements.js',
+  'js/labs.js',
+  'js/themes.js',
+  'js/costs.js',
+  'js/plateau.js',
+  'js/pdf-report.js',
+  'js/sync-merge.js',
+  'js/sync-legacy.js',
 ];
 const OPTIONAL = [
   'theme-boot.js',
@@ -64,7 +97,7 @@ self.addEventListener('fetch', (e) => {
         const cached = await caches.match(req);
         if (cached) return cached;
         // Only a navigation may fall back to the app shell. Serving index.html
-        // in response to a failed app.js or styles.css request handed the page
+        // in response to a failed script or styles.css request handed the page
         // HTML with a JS content-type, which fails to parse and looks like a
         // corrupt app rather than an offline one.
         if (req.mode === 'navigate') {

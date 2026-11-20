@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Sync-push self-test: the cloud backup state machine (syncPush in app.js).
+// Sync-push self-test: the cloud backup state machine (syncPush in js/sync-push.js).
 //
 // Until 2026-11-09 the push state was a loose window._syncDirty flag plus a
 // timer id, set and cleared from four places. Three things went wrong:

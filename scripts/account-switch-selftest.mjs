@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Account-switch self-test: claimDevice in app.js (GitHub issue #10).
+// Account-switch self-test: claimDevice in js/account.js (GitHub issue #10).
 //
 // Two people sharing a phone: A signs out, B signs in. Until 2026-11-09 the
 // sign-in pushed A's whole local log into B's cloud and merged it there for

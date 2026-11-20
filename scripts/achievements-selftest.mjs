@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Achievements self-test: runs the shipped ACHIEVEMENTS table and computeStats
-// from web/app/app.js + data.js.
+// from web/app/js/ + data.js.
 //
 //   node scripts/achievements-selftest.mjs
 //

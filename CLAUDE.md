@@ -15,7 +15,7 @@ $19.99/yr). README.md has the overview.
 
 ## Layout
 
-- `web/app/`: the PWA (`app.js`, `data.js`, `sw.js`, `index.html`). Vanilla JS,
+- `web/app/`: the PWA (`js/` one file per feature, `data.js`, `sw.js`, `index.html`). Vanilla JS,
   no framework, no build step. `web/landing/`, `web/admin/`: marketing and admin.
 - `api/app.py`: Flask backend (auth, sync, sharing, billing, reports).
   `push_dispatch.py`, `push_send.py`: web push. `requirements.txt`: pinned deps.
@@ -26,7 +26,7 @@ $19.99/yr). README.md has the overview.
 
 ## Tests
 
-Client suites (offline, no browser, run the real `web/app/app.js`):
+Client suites (offline, no browser, run the real `web/app/js/` files):
 
 ```
 bash scripts/run-tests.sh

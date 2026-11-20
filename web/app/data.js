@@ -1,11 +1,11 @@
 // My GLP Shot — static data tables and configuration.
 //
-// Split out of app.js purely for navigability: this file is 100% declarations
+// Split out of the app code purely for navigability: this file is 100% declarations
 // with no behaviour, so it is the part of the codebase you read to answer "what
 // are the valid X" rather than "what happens when Y".
 //
-// Loaded as a CLASSIC script before app.js, NOT an ES module, and deliberately
-// so. app.js reassigns shared module-level state (`settings` alone has ~200
+// Loaded as a CLASSIC script before the js/ files, NOT an ES module, and deliberately
+// so. The app code reassigns shared module-level state (`settings` alone has ~200
 // references and is reassigned during settings-load and cloud-restore); with
 // ES module bindings those reassignments become a TypeError at runtime, on the
 // exact paths that touch a user's data. Same global scope keeps the split a
@@ -13,7 +13,7 @@
 // enough to make a real encapsulation pass safe.
 //
 // Anything added here must stay free of behaviour — no DOM, no IndexedDB, no
-// functions. If it needs those, it belongs in app.js.
+// functions. If it needs those, it belongs in a js/ file.
 'use strict';
 
 const DB_NAME = 'shotclock';
@@ -28,7 +28,7 @@ const DB_NAME = 'shotclock';
 //   asked for something the app had nowhere to put.
 const DB_VERSION = 12;  // 12: tombstones store, so deletions sync
 
-const APP_VERSION = '0.67.10';
+const APP_VERSION = '0.67.11';
 
 const STORES = { shots: 'shots', weights: 'weights', settings: 'settings', moods: 'moods', supplies: 'supplies' };
 

@@ -7,7 +7,8 @@ No build step: what is in this directory is what ships.
 
 ```
 index.html            app shell — every view lives here, toggled by showView()
-app.js                everything: IndexedDB, crypto, sync, charts, insights, push
+data.js               static tables and config, no behaviour
+js/                   the app, one file per feature, loaded in the order index.html lists
 styles.css            theme + 20 colour variants
 sw.js                 service worker — offline shell, push handler
 manifest.webmanifest  install metadata, Play Store / TWA reads this
@@ -50,7 +51,7 @@ when to buzz you and nothing else.
 
 ## Working on it
 
-- Bump `APP_VERSION` in `app.js` **and** `CACHE` in `sw.js` together, or clients
+- Bump `APP_VERSION` in `data.js` **and** `CACHE` in `sw.js` together, or clients
   keep the old bundle.
 - Regenerate icons with `scripts/build-icons.py` after editing `icons/logo.svg`;
   never hand-edit the PNGs.

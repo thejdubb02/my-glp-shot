@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Push sign-out self-test: accountLogout in app.js (GitHub issue #14).
+// Push sign-out self-test: accountLogout in js/account.js (GitHub issue #14).
 //
 // Signing out used to leave this device's push subscription on the old
 // account, so its reminders kept arriving. Sign-out now deletes the server row

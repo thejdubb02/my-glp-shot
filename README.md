@@ -24,7 +24,7 @@ my-glp-shot/
 
 ## Tests
 
-Client suites run in Node against the real `web/app/app.js`, with a fake
+Client suites run in Node against the real `web/app/js/` files, with a fake
 IndexedDB and no browser:
 
 ```

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Content-key self-test: mergeStore in app.js (GitHub issue #16).
+// Content-key self-test: mergeStore in js/sync-merge.js (GitHub issue #16).
 //
 // A pull used to skip any incoming row whose content key was already present,
 // even when it carried its own uid, and the shot key left out the med. Two
