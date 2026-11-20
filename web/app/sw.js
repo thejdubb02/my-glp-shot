@@ -1,5 +1,5 @@
 // My GLP Shot service worker — network-first for app shell so updates are picked up on every visit; cache fallback for offline.
-const CACHE = 'mglp-v0.67.11';
+const CACHE = 'mglp-v0.67.12';
 // Without these the app cannot boot offline at all, so a failure to cache
 // them must fail the install rather than leaving a service worker that claims
 // offline support it can't deliver.
@@ -94,7 +94,8 @@ self.addEventListener('fetch', (e) => {
         }
         return res;
       }).catch(async () => {
-        const cached = await caches.match(req);
+        // ignoreSearch: the precache holds "js/x.js", the page asks for "js/x.js?v=N".
+        const cached = await caches.match(req, { ignoreSearch: true });
         if (cached) return cached;
         // Only a navigation may fall back to the app shell. Serving index.html
         // in response to a failed script or styles.css request handed the page

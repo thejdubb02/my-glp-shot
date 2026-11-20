@@ -54,28 +54,16 @@ async function accountFetch(path, opts = {}) {
   return fetch(`${ACCOUNT_API}/${path}`, opts);
 }
 
-async function accountSignup(email, password) {
-  const creds = await deriveAccountCreds(email, password);
-  const r = await accountFetch('signup', { method: 'POST', body: JSON.stringify({ email: creds.email, authToken: creds.authToken }) });
-  if (!r.ok) {
-    const j = await r.json().catch(() => ({ message: 'Signup failed' }));
-    throw new Error(j.message || 'Signup failed');
-  }
-  const j = await r.json();
-  await claimDevice(j.user);
-  account = { user: j.user, encryptionKey: creds.aesKey };
-  rememberSignedIn(creds.email, creds.aesKey);
-  if (j.token) try { localStorage.setItem('mgs_session_token', j.token); } catch (_) {}
-  if (j.user) try { localStorage.setItem(LAST_USER_KEY, JSON.stringify(j.user)); } catch (_) {}
-  return j.user;
-}
+function accountSignup(email, password) { return accountEnter('signup', 'Signup failed', email, password); }
+function accountLogin(email, password) { return accountEnter('login', 'Login failed', email, password); }
 
-async function accountLogin(email, password) {
+// Signup and login are the same exchange against different endpoints.
+async function accountEnter(endpoint, failMessage, email, password) {
   const creds = await deriveAccountCreds(email, password);
-  const r = await accountFetch('login', { method: 'POST', body: JSON.stringify({ email: creds.email, authToken: creds.authToken }) });
+  const r = await accountFetch(endpoint, { method: 'POST', body: JSON.stringify({ email: creds.email, authToken: creds.authToken }) });
   if (!r.ok) {
-    const j = await r.json().catch(() => ({ message: 'Login failed' }));
-    throw new Error(j.message || 'Login failed');
+    const j = await r.json().catch(() => ({ message: failMessage }));
+    throw new Error(j.message || failMessage);
   }
   const j = await r.json();
   await claimDevice(j.user);

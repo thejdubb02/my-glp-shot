@@ -368,19 +368,25 @@ async function checkForStaleBundle() {
     const effective = myV != null ? myV : (tagMatch ? parseInt(tagMatch[1], 10) : null);
     if (effective != null && liveV > effective) {
       console.log(`[mgs] stale bundle (v${effective} -> v${liveV}); force-refresh`);
-      try {
-        if ('caches' in window) {
-          const keys = await caches.keys();
-          await Promise.all(keys.map(k => caches.delete(k)));
-        }
-        if ('serviceWorker' in navigator) {
-          const regs = await navigator.serviceWorker.getRegistrations();
-          await Promise.all(regs.map(r => r.unregister()));
-        }
-      } catch (_) {}
-      window.location.reload();
+      await dropCachesAndReload();
     }
   } catch (_) {}
+}
+
+// Throw away every cached file and the service worker, then reload from the
+// network. Used by the stale-bundle check and the "Force update" button.
+async function dropCachesAndReload() {
+  try {
+    if ('caches' in window) {
+      const keys = await caches.keys();
+      await Promise.all(keys.map(k => caches.delete(k)));
+    }
+    if ('serviceWorker' in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map(r => r.unregister()));
+    }
+  } catch (_) {}
+  window.location.reload();
 }
 
 function registerSW() {
