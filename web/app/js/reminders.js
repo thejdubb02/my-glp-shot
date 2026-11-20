@@ -80,7 +80,12 @@ function scheduleNativeReminders() {
     for (const r of await computeUpcomingReminders(true)) {
       list.push({ title: 'My GLP Shot', body: shotReminderBody(), schedule: { at: new Date(r.fireAt * 1000) } });
     }
-    if (!list.length || (await LN.checkPermissions()).display !== 'granted') return;
+    if (!list.length) return;
+    // Reminder settings arrive with sync, so a phone that was never asked can
+    // already have reminders switched on. Ask once; a refusal is not asked again.
+    let perm = (await LN.checkPermissions()).display;
+    if (perm === 'prompt') perm = (await LN.requestPermissions()).display;
+    if (perm !== 'granted') return;
     list.forEach((n, i) => { n.id = i + 1; n.schedule.allowWhileIdle = true; });
     await LN.schedule({ notifications: list });
   }).catch(() => {});

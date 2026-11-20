@@ -94,7 +94,8 @@ labelled `state-machine`.
   cancels everything pending on the phone and queues the list again (one
   repeating entry per enabled daily reminder, one dated entry per upcoming
   shot), and queues nothing unless the phone's notification permission is
-  granted. It runs wherever the web app would re-arm its timer, so shot
+  granted. A phone that was never asked is asked once, when there is
+  something to queue (settings arrive with sync). It runs wherever the web app would re-arm its timer, so shot
   reminders only reach as far ahead as the last time the app was open.
   Test: `scripts/platform-selftest.mjs`.
 - Weight edit: `_editingWeightId` (null means new).

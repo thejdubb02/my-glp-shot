@@ -21,7 +21,7 @@ for (const mode of ['web', 'capacitor-web', 'native-android', 'native-ios']) {
         getPending: async () => { phone.calls++; return { notifications: [{ id: 99 }] }; },
         cancel: async arg => { phone.cancelled.push(...arg.notifications.map(n => n.id)); },
         checkPermissions: async () => ({ display: phone.permission }),
-        requestPermissions: async () => { phone.calls++; return { display: phone.permission }; },
+        requestPermissions: async () => { phone.calls++; phone.asked = (phone.asked || 0) + 1; if (phone.permission === 'prompt') phone.permission = phone.answer; return { display: phone.permission }; },
         schedule: async arg => { phone.scheduled.push(...arg.notifications); },
       } } };
       sandbox.location.origin = origin;
@@ -181,6 +181,16 @@ for (const mode of ['web', 'capacitor-web', 'native-android', 'native-ios']) {
     R('settings.notify = true; applySettingsToInputs()');
     A.eq('native: reminder switch shows the saved choice', nodeFor('#set-notify').checked, true);
     R('settings.notify = false');
+    // Signed in on a new phone: reminders came with sync, the phone was never asked.
+    R("settings.dailyReminders = { [DAILY_REMINDERS[0].key]: { enabled: true, time: '09:00' } }");
+    phone.permission = 'prompt'; phone.answer = 'granted'; phone.asked = 0; phone.scheduled.length = 0;
+    await R('maybeScheduleNotification()');
+    A.eq('native: a phone never asked is asked once', phone.asked, 1);
+    A.eq('native: and the reminder is queued after yes', phone.scheduled.length, 1);
+    phone.permission = 'prompt-with-rationale'; phone.asked = 0; phone.scheduled.length = 0;
+    await R('maybeScheduleNotification()');
+    A.eq('native: a refusal is not asked again', phone.asked, 0);
+    A.eq('native: nothing queued after a refusal', phone.scheduled.length, 0);
     R('settings.dailyReminders = {}');
     phone.permission = 'granted';
     await R('maybeScheduleNotification()');
