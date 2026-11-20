@@ -30,6 +30,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'
 import sqlite3  # noqa: E402
 import stripe  # noqa: E402
 import app as api  # noqa: E402
+from apipatch import patch  # noqa: E402
 
 calls = []
 behaviour = {}  # sub_id -> exception to raise
@@ -127,19 +128,19 @@ for label, do_delete in (('self', self_delete), ('admin', admin_delete)):
 
 # #29: a missing price setting must not skip the cancel. Cancelling needs only the key.
 calls.clear()
-api.STRIPE_PRICE_MONTHLY = ''
+patch('STRIPE_PRICE_MONTHLY', '')
 uid, tok = make_user('sub_noprice')
 r = self_delete(uid, tok)
 check('no price env: live sub still cancelled', ('sub_noprice', 'sk_live_dummy') in calls)
 check('no price env: user deleted', r.status_code == 200 and not exists(uid))
-api.STRIPE_PRICE_MONTHLY = 'price_m_dummy'
+patch('STRIPE_PRICE_MONTHLY', 'price_m_dummy')
 
 # #29: no API key at all with a sub on file -> refuse, never drop a paying user.
-api.STRIPE_API_KEY = ''
+patch('STRIPE_API_KEY', '')
 uid, tok = make_user('sub_nokey')
 r = self_delete(uid, tok)
 check('no API key: delete refused, user kept', r.status_code == 502 and exists(uid))
-api.STRIPE_API_KEY = 'sk_live_dummy'
+patch('STRIPE_API_KEY', 'sk_live_dummy')
 
 
 # #27: a second live sub only Stripe knows about is cancelled too.

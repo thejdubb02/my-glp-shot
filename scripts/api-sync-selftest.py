@@ -18,11 +18,12 @@ tmp = tempfile.mkdtemp(prefix='mgs-sync-')
 os.environ.update(MGS_DB=os.path.join(tmp, 'api.db'), HERALD_URL='')
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'api'))
 import app as api  # noqa: E402
+from apipatch import patch  # noqa: E402
 
-api.get_session_user = lambda: ({'id': 1}, None)
+patch('get_session_user', lambda: ({'id': 1}, None))
 client = api.app.test_client()
 clock = {'now': 1000}
-api.now_ts = lambda: clock['now']
+patch('now_ts', lambda: clock['now'])
 
 
 def put(ct, **extra):

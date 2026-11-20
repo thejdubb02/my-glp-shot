@@ -27,7 +27,10 @@ ENV_FILE = Path('/root/.openclaw/workspace/daily/wsg-cp/.env')
 KEYS_ENV = Path('/opt/or-keys/secrets/keys.env')  # holds MYGLPSHOT_OR_KEY (own OpenRouter child key)
 
 INCLUDE = [
-    'api/app.py', 'api/requirements.txt', 'api/Dockerfile',
+    'api/app.py', 'api/config.py', 'api/db.py', 'api/helpers.py', 'api/health.py',
+    'api/auth.py', 'api/sync.py', 'api/share.py', 'api/billing.py', 'api/admin.py',
+    'api/billing_test_mode.py', 'api/push.py', 'api/smart_import.py',
+    'api/requirements.txt', 'api/Dockerfile',
     'docker/docker-compose.yml',
     'web/app/index.html', *sorted(str(p.relative_to(REPO)) for p in (REPO / 'web/app/js').glob('*.js')), 'web/app/styles.css',
     'web/app/sw.js', 'web/app/manifest.webmanifest',

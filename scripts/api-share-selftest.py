@@ -22,11 +22,12 @@ os.environ.update(
 )
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'api'))
 import app as api  # noqa: E402
+from apipatch import patch  # noqa: E402
 
 LABEL = 'Dr. Smith - April visit'
 client = api.app.test_client()
-api.require_user = lambda: {'id': 1}
-api.is_premium_now = lambda _u: True
+patch('require_user', lambda: {'id': 1})
+patch('is_premium_now', lambda _u: True)
 
 
 def db():

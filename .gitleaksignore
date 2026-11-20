@@ -1,0 +1,2 @@
+# False positive: SQL "auth=excluded.auth" in the push subscription upsert, not a key.
+api/push.py:generic-api-key:66

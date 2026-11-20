@@ -17,7 +17,12 @@ $19.99/yr). README.md has the overview.
 
 - `web/app/`: the PWA (`js/` one file per feature, `data.js`, `sw.js`, `index.html`). Vanilla JS,
   no framework, no build step. `web/landing/`, `web/admin/`: marketing and admin.
-- `api/app.py`: Flask backend (auth, sync, sharing, billing, reports).
+- `api/`: Flask backend, one module per feature. `app.py` is the entry point
+  (gunicorn `app:app`): it imports the feature modules, runs DB bootstrap and
+  re-exports every name for scripts that `import app`. `config.py` (env, the
+  Flask `app`), `db.py`, `helpers.py`, then `auth`, `sync` (incl. legacy),
+  `share`, `billing`, `billing_test_mode`, `admin` (incl. Umami), `health`,
+  `push`, `smart_import`.
   `push_dispatch.py`, `push_send.py`: web push. `requirements.txt`: pinned deps.
 - `docker/`: Dockerfile and compose. `deploy/`: nginx vhosts and rate limits.
 - `scripts/`: selftests, admin tools (grant-premium, list-users), backups.
@@ -66,7 +71,10 @@ No lint config exists. When you fix a client bug, add or extend a
 - Vanilla JS in `web/app/`; a new script file must also go in the service worker
   `CRITICAL` list in `sw.js` and load after `data.js`. Bump the cache/version when
   shipped files change.
-- API is one Flask file with SQLite and plain SQL. Keep dependency pins exact.
+- API is plain Flask modules (no Blueprints) on one `app` from `config.py`, with
+  SQLite and plain SQL. Keep dependency pins exact. A new module must be imported
+  in `app.py`. API selftests stub names with `patch()` from `scripts/apipatch.py`;
+  a plain `api.X = stub` no longer reaches the module that uses `X`.
 - Python tools go in `scripts/` (this repo's convention), shell helpers too.
 - Public text and site copy: no em dashes, en dashes or the ellipsis character.
   (Privacy and landing pages were cleaned of them on purpose.)

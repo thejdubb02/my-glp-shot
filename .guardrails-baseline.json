@@ -1,6 +1,11 @@
 {
  "jscpd": [
   [
+   "api/admin.py",
+   "api/billing_test_mode.py",
+   2
+  ],
+  [
    "scripts/list-users.py",
    "scripts/revoke-premium.py",
    1
@@ -23,16 +28,6 @@
   [
    "scripts/subscribe-e2e.py",
    "scripts/subscribe-e2e.py",
-   1
-  ],
-  [
-   "web/app/js/account.js",
-   "web/app/js/account.js",
-   1
-  ],
-  [
-   "web/app/js/boot.js",
-   "web/app/js/setup-ui.js",
    1
   ],
   [
@@ -190,18 +185,33 @@
   ],
   [
    "api/app.py",
-   "SIM103",
-   2
-  ],
-  [
-   "api/app.py",
    "SIM105",
    1
   ],
   [
-   "api/app.py",
+   "api/auth.py",
    "complexity",
-   7
+   3
+  ],
+  [
+   "api/billing.py",
+   "complexity",
+   2
+  ],
+  [
+   "api/helpers.py",
+   "SIM103",
+   2
+  ],
+  [
+   "api/push.py",
+   "complexity",
+   1
+  ],
+  [
+   "api/smart_import.py",
+   "complexity",
+   1
   ],
   [
    "scripts/api-selftest.py",

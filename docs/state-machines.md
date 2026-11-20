@@ -83,7 +83,7 @@ labelled `state-machine`.
 - Weight edit: `_editingWeightId` (null means new).
 - Dose status: none stored. Next and overdue are computed from shot times.
 
-## Server (api/app.py)
+## Server (api/)
 
 ### Subscription: `users` billing columns
 - `subscription_status`: `trial | premium | lifetime | free` (free text, no CHECK).

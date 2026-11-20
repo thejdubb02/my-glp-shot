@@ -23,6 +23,7 @@ os.environ.update(
 )
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'api'))
 import app as api  # noqa: E402
+from apipatch import patch  # noqa: E402
 
 api.stripe.Webhook.construct_event = lambda payload, *_: json.loads(payload)
 
@@ -138,11 +139,11 @@ def test_test_mode_concurrent_duplicate_is_excluded():
             inner[0] = post('/api/stripe/webhook/test', TEST_SUB_EVENT).get_json()
         real(sub)
 
-    api._apply_subscription_test = apply_with_duplicate
+    patch('_apply_subscription_test', apply_with_duplicate)
     try:
         assert post('/api/stripe/webhook/test', TEST_SUB_EVENT).status_code == 200
     finally:
-        api._apply_subscription_test = real
+        patch('_apply_subscription_test', real)
     assert inner[0].get('duplicate') is True, f'concurrent duplicate ran: {inner[0]}'
     assert user('test_subscription_status') == 'premium'
     assert event_rows() == ['TEST:evt_3']
@@ -171,13 +172,13 @@ def test_second_live_sub_pings_operator():
     reset()
     pings = []
     real = api.notify_herald
-    api.notify_herald = lambda *a: pings.append(a)
+    patch('notify_herald', lambda *a: pings.append(a))
     try:
         with db() as c:
             c.execute("UPDATE users SET stripe_subscription_id = 'sub_old' WHERE id = 1")
         assert post('/api/stripe/webhook', SUB_EVENT).status_code == 200
     finally:
-        api.notify_herald = real
+        patch('notify_herald', real)
     assert any(p[0] == 'money' and 'sub_old' in p[2] and 'sub_1' in p[2] for p in pings), pings
 
 
@@ -206,7 +207,8 @@ TOK = 'a' * 64
 def test_checkout_expires_older_open_sessions():
     # #27: a second checkout must kill the first, so both cannot be paid.
     reset()
-    api.STRIPE_PRICE_MONTHLY, api.STRIPE_PRICE_YEARLY = 'price_m', 'price_y'
+    patch('STRIPE_PRICE_MONTHLY', 'price_m')
+    patch('STRIPE_PRICE_YEARLY', 'price_y')
     with db() as c:
         c.execute("INSERT INTO sessions (token, user_id, created_at, expires_at) VALUES (?, 1, ?, ?)",
                   (TOK, api.now_ts(), api.now_ts() + 3600))
