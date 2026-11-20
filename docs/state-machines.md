@@ -89,6 +89,14 @@ labelled `state-machine`.
 - Install prompt: `deferredInstallPrompt` + `installDismissedAt`.
 - Notifications: browser permission x `settings.notify` x push subscription,
   read together in `updateNotifyStatus`.
+- Native app reminders (`IS_NATIVE`): no push subscription and no server.
+  `scheduleNativeReminders` in `js/reminders.js` is the only writer: each run
+  cancels everything pending on the phone and queues the list again (one
+  repeating entry per enabled daily reminder, one dated entry per upcoming
+  shot), and queues nothing unless the phone's notification permission is
+  granted. It runs wherever the web app would re-arm its timer, so shot
+  reminders only reach as far ahead as the last time the app was open.
+  Test: `scripts/platform-selftest.mjs`.
 - Weight edit: `_editingWeightId` (null means new).
 - Dose status: none stored. Next and overdue are computed from shot times.
 

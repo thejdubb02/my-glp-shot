@@ -48,7 +48,7 @@ const TRIGGERS_SUPPORTED = (typeof window !== 'undefined') && ('Notification' in
 
 // One permission question for the browser and the native shell.
 async function askNotifyPermission() {
-  if (!IS_NATIVE) return (await Notification.requestPermission()) === 'granted';
+  if (!IS_NATIVE) return typeof Notification !== 'undefined' && (await Notification.requestPermission()) === 'granted';
   try { return (await window.Capacitor.Plugins.LocalNotifications.requestPermissions()).display === 'granted'; }
   catch (_) { return false; }
 }

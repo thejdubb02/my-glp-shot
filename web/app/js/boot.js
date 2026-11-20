@@ -347,6 +347,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     await dbDelSynced(STORES.shots, id);
     $('#shot-dialog').close();
     await renderShots();
+    maybeScheduleNotification();   // the next-shot reminder was planned from the shot just deleted
     markSyncDirty();
   });
 
@@ -413,9 +414,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     await saveSettings();
     markSyncDirty();
     await renderShots();
+    maybeScheduleNotification();
   });
   $('#set-dose').addEventListener('change', async (e) => { settings.defaultDose = parseFloat(e.target.value) || 0; await saveSettings(); markSyncDirty(); });
-  $('#set-cadence').addEventListener('change', async (e) => { settings.cadenceDays = parseInt(e.target.value, 10) || 7; await saveSettings(); markSyncDirty(); await renderShots(); });
+  $('#set-cadence').addEventListener('change', async (e) => { settings.cadenceDays = parseInt(e.target.value, 10) || 7; await saveSettings(); markSyncDirty(); await renderShots(); maybeScheduleNotification(); });
   $('#set-halflife').addEventListener('change', async (e) => { settings.halfLifeDays = parseFloat(e.target.value) || 5; await saveSettings(); markSyncDirty(); await renderShots(); });
   $('#set-notify').addEventListener('change', async (e) => {
     if (e.target.checked) {

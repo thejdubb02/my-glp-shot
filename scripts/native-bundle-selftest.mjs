@@ -35,6 +35,10 @@ try {
   ok('CSP allows scripts from the app only', /script-src 'self'(;|$)/.test(csp));
   ok('CSP names no third-party host', !/stripe|analytics|googleapis/.test(csp));
   ok('CSP lets the app reach an https sync server', /connect-src 'self' https:(;|$)/.test(csp));
+  // Old Android WebViews get the native bridge as an inline script placed right
+  // after a literal <head>. It must land before the CSP tag or the CSP blocks it
+  // and the app quietly runs as a website.
+  ok('bridge fallback lands before the CSP', index.includes('<head>') && index.indexOf('<head>') < index.indexOf('Content-Security-Policy'));
   ok('CSP comes before the first script', index.indexOf('Content-Security-Policy') < index.indexOf('<script'));
 
   const pages = fs.readdirSync(out).filter(f => f.endsWith('.html'));

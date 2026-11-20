@@ -22,7 +22,7 @@ function applySettingsToInputs() {
   if ($('#set-maintenance'))  $('#set-maintenance').checked = !!settings.maintenanceMode;
   if ($('#set-mixing-calc'))  $('#set-mixing-calc').checked = !!settings.showMixingCalc;
   applyMixingCalcVisibility();
-  $('#set-notify').checked = !!settings.notify && (typeof Notification !== 'undefined' && Notification.permission === 'granted');
+  $('#set-notify').checked = !!settings.notify && (IS_NATIVE || (typeof Notification !== 'undefined' && Notification.permission === 'granted'));
   $('#set-lead').value = String(settings.notifyLeadMinutes ?? 60);
   const tzSel = $('#set-timezone');
   if (tzSel) {

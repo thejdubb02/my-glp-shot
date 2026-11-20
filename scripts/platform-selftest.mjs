@@ -176,10 +176,32 @@ for (const mode of ['web', 'capacitor-web', 'native-android', 'native-ios']) {
     await R('maybeScheduleNotification()');
     A.eq('native: nothing queued without permission', phone.scheduled.length, 0);
     A.eq('native: permission refused', await R('askNotifyPermission()'), false);
+    // The switch shows the saved choice: the app's web view has no browser
+    // notification permission to read, the phone's own permission decides.
+    R('settings.notify = true; applySettingsToInputs()');
+    A.eq('native: reminder switch shows the saved choice', nodeFor('#set-notify').checked, true);
+    R('settings.notify = false');
     R('settings.dailyReminders = {}');
     phone.permission = 'granted';
     await R('maybeScheduleNotification()');
     A.eq('native: nothing queued with reminders off', phone.scheduled.length, 0);
+  }
+}
+
+// A deleted shot or a new cadence must re-plan reminders at once: on the phone
+// the old alarms would otherwise still fire with the app closed. The handlers
+// live in the page's start-up code, which this harness does not run, so this
+// reads the source.
+{
+  const fs = await import('node:fs');
+  const boot = fs.readFileSync(new URL('../web/app/js/boot.js', import.meta.url), 'utf8');
+  const handler = id => {
+    const rest = boot.slice(boot.indexOf(`$('#${id}').addEventListener(`));
+    const line = rest.split('\n')[0];
+    return line.endsWith('});') ? line : rest.split('\n  });')[0];
+  };
+  for (const id of ['shot-delete', 'set-cadence', 'set-med-preset']) {
+    A.check(id + ' re-plans reminders', handler(id).includes('maybeScheduleNotification()'));
   }
 }
 
