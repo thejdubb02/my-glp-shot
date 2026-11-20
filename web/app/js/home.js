@@ -87,22 +87,30 @@ function renderBodyDiagram(shots) {
     return { fill: '#5eead4', stroke: '#14b8a6', label: 'fresh' };
   }
   // Render only the 8 canonical sites as dots (legacy keys fold into new ones).
+  // The clear r=16 circle is the tap target; the visible dot is r=11.
   const sites = CANONICAL_SITES.map(name => {
     const pos = SITE_POSITIONS[name];
     const c = colorFor(name);
     const days = recencyMs[name] ? Math.floor((now - recencyMs[name]) / 86400000) : null;
     const tip = days == null ? `${name} · unused` : `${name} · ${days}d ago`;
-    return `<g class="body-site" data-site="${name}"><title>${tip}</title>
-      <circle cx="${pos.x}" cy="${pos.y}" r="9" fill="${c.fill}" stroke="${c.stroke}" stroke-width="2"></circle>
-      <text x="${pos.x}" y="${pos.y + 22}">${pos.short}</text>
+    return `<g class="body-site" data-site="${name}" role="button" tabindex="0" aria-label="${tip}"><title>${tip}</title>
+      <circle cx="${pos.x}" cy="${pos.y}" r="16" fill="transparent"></circle>
+      <circle class="body-dot" cx="${pos.x}" cy="${pos.y}" r="11" fill="${c.fill}" stroke="${c.stroke}" stroke-width="2.5"></circle>
+      <text x="${pos.x}" y="${pos.y + 23}">${pos.short}</text>
     </g>`;
   }).join('');
 
-  // Anatomical front silhouettes — single continuous outline per sex.
-  // Both fit viewBox 200x320 so SITE_POSITIONS dots (arms 60/140@y=90, abd 84/116@y=145, thighs 70/130@y=220) land on the body.
-  // Male: broad shoulders (~108 wide at y=70), straight torso, narrow hips, straight legs.
-  // Hand-authored male anatomical silhouette (CC0). Female version removed 2026-05-03 pending a better draft.
-  const bodyPath = "M 100 8 C 110 8 118 17 118 30 C 118 40 114 47 108 50 L 108 58 C 124 60 138 64 146 72 C 152 78 156 86 156 96 L 156 160 C 156 164 152 166 148 164 C 144 162 142 158 142 154 L 142 96 C 142 88 138 82 132 78 C 128 76 124 76 122 80 L 122 158 C 122 168 124 178 126 188 L 130 250 L 132 316 C 132 318 128 318 124 318 L 118 318 C 116 318 114 316 114 314 L 110 250 L 106 200 L 104 188 L 100 188 L 96 188 L 94 200 L 90 250 L 86 314 C 86 316 84 318 82 318 L 76 318 C 72 318 68 318 68 316 L 70 250 L 74 188 C 76 178 78 168 78 158 L 78 80 C 76 76 72 76 68 78 C 62 82 58 88 58 96 L 58 154 C 58 158 56 162 52 164 C 48 166 44 164 44 160 L 44 96 C 44 86 48 78 54 72 C 62 64 76 60 92 58 L 92 50 C 86 47 82 40 82 30 C 82 17 90 8 100 8 Z";
+  // Front-view figure drawn from rounded shapes, head to knee (every site is
+  // above the knee). viewBox 240x300; SITE_POSITIONS in data.js sit on it.
+  const figure = `<g class="body-fig">
+      <circle cx="120" cy="30" r="20"/>
+      <rect x="111" y="46" width="18" height="16"/>
+      <path d="M 92 58 L 148 58 Q 170 58 170 78 L 160 128 Q 158 150 164 172 Q 164 188 148 188 L 92 188 Q 76 188 76 172 Q 82 150 80 128 L 70 78 Q 70 58 92 58 Z"/>
+      <line x1="64" y1="74" x2="46" y2="166" stroke-width="22"/>
+      <line x1="176" y1="74" x2="194" y2="166" stroke-width="22"/>
+      <line x1="98" y1="182" x2="94" y2="276" stroke-width="38"/>
+      <line x1="142" y1="182" x2="146" y2="276" stroke-width="38"/>
+    </g>`;
   // Custom-site chips below the diagram (the body-silhouette can't host them positionally).
   const customNames = Object.keys(customRecency);
   const customChips = customNames.length
@@ -115,8 +123,8 @@ function renderBodyDiagram(shots) {
       }</div>`
     : '';
   wrap.innerHTML = `
-    <svg class="body-svg" viewBox="0 0 200 320" xmlns="http://www.w3.org/2000/svg" aria-label="Body diagram showing injection sites">
-      <path class="body-shape" d="${bodyPath}"/>
+    <svg class="body-svg" viewBox="0 0 240 300" xmlns="http://www.w3.org/2000/svg" aria-label="Body diagram showing injection sites">
+      ${figure}
       ${sites}
     </svg>
     ${customChips}
@@ -131,17 +139,20 @@ function renderBodyDiagram(shots) {
   });
   // Site click → suggest as next shot site if user opens dialog
   wrap.querySelectorAll('.body-site').forEach(g => {
-    g.addEventListener('click', () => {
+    const pick = () => {
       const name = g.getAttribute('data-site');
       $('#site-suggest-label').textContent = `Tap "+ Log" to start a shot at ${name}`;
       window._preferredNextSite = name;
-    });
+      wrap.querySelectorAll('.body-site').forEach(o => o.classList.toggle('picked', o === g));
+    };
+    g.addEventListener('click', pick);
+    g.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(); } });
   });
   // Legend
   $('#site-legend').innerHTML = `
     <span><span class="swatch unused"></span>Unused</span>
     <span><span class="swatch fresh"></span>2+ weeks</span>
-    <span><span class="swatch medium"></span>1–2 weeks</span>
+    <span><span class="swatch medium"></span>1 to 2 weeks</span>
     <span><span class="swatch recent"></span>This week</span>
   `;
 }

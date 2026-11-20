@@ -351,11 +351,13 @@ canvas{width:100% !important;height:auto !important;max-height:200px}
 /* Body diagram */
 .body-diagram-wrap{display:flex;justify-content:center;padding:6px 0}
 .body-svg{max-width:280px;width:100%;height:auto}
-.body-shape{fill:var(--surface-alt);stroke:var(--line);stroke-width:1.5}
-.body-site{cursor:pointer;transition:opacity .2s,transform .2s}
-.body-site circle{transition:fill .3s,stroke .3s,r .3s}
-.body-site:hover circle{stroke-width:3}
-.body-site text{font-size:8px;font-weight:600;fill:var(--muted);text-anchor:middle;pointer-events:none}
+.body-fig{fill:var(--surface-alt);stroke:var(--surface-alt);stroke-linecap:round}
+.body-fig circle,.body-fig rect,.body-fig path{stroke:none}
+.body-site{cursor:pointer;outline:none}
+.body-dot{transition:fill .3s,stroke .3s}
+.body-site:hover .body-dot,.body-site:focus-visible .body-dot,.body-site.picked .body-dot{stroke-width:4}
+.body-site.picked .body-dot{stroke:var(--ink)}
+.body-site text{font-size:8.5px;font-weight:600;fill:var(--muted);text-anchor:middle;pointer-events:none}
 .site-legend{display:flex;gap:10px;flex-wrap:wrap;font-size:.75rem;color:var(--muted);margin-top:6px;justify-content:center}
 .site-legend span.swatch{display:inline-block;width:10px;height:10px;border-radius:50%;vertical-align:-1px;margin-right:4px}
 .swatch.recent{background:#fb923c}

@@ -28,7 +28,7 @@ const DB_NAME = 'shotclock';
 //   asked for something the app had nowhere to put.
 const DB_VERSION = 12;  // 12: tombstones store, so deletions sync
 
-const APP_VERSION = '0.67.12';
+const APP_VERSION = '0.67.13';
 
 const STORES = { shots: 'shots', weights: 'weights', settings: 'settings', moods: 'moods', supplies: 'supplies' };
 
@@ -531,18 +531,18 @@ const MED_PRESETS = [
 // kept so shots logged before the split still anchor to a sensible dot. The
 // dropdown only surfaces the canonical 8 + any custom sites the user adds.
 const SITE_POSITIONS = {
-  'Upper arm — Left':           { x: 60,  y: 90,  short: 'L Arm' },
-  'Upper arm — Right':          { x: 140, y: 90,  short: 'R Arm' },
-  'Abdomen — Upper Left':       { x: 86,  y: 132, short: 'UL Abd' },
-  'Abdomen — Upper Right':      { x: 114, y: 132, short: 'UR Abd' },
-  'Abdomen — Lower Left':       { x: 86,  y: 162, short: 'LL Abd' },
-  'Abdomen — Lower Right':      { x: 114, y: 162, short: 'LR Abd' },
-  'Thigh — Left':               { x: 70,  y: 220, short: 'L Thigh' },
-  'Thigh — Right':              { x: 130, y: 220, short: 'R Thigh' },
+  'Upper arm — Left':           { x: 55,  y: 118, short: 'L Arm' },
+  'Upper arm — Right':          { x: 185, y: 118, short: 'R Arm' },
+  'Abdomen — Upper Left':       { x: 98,  y: 116, short: 'UL Abd' },
+  'Abdomen — Upper Right':      { x: 142, y: 116, short: 'UR Abd' },
+  'Abdomen — Lower Left':       { x: 98,  y: 156, short: 'LL Abd' },
+  'Abdomen — Lower Right':      { x: 142, y: 156, short: 'LR Abd' },
+  'Thigh — Left':               { x: 96,  y: 228, short: 'L Thigh' },
+  'Thigh — Right':              { x: 144, y: 228, short: 'R Thigh' },
   // Legacy (pre-quadrant split). Mapped to lower abdomen since most users
   // injected lower-abdomen by default.
-  'Abdomen — Left':             { x: 86,  y: 162, short: 'L Abd' },
-  'Abdomen — Right':            { x: 114, y: 162, short: 'R Abd' },
+  'Abdomen — Left':             { x: 98,  y: 156, short: 'L Abd' },
+  'Abdomen — Right':            { x: 142, y: 156, short: 'R Abd' },
 };
 
 // Sites surfaced in the dropdown (legacy keys hidden).
