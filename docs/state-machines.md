@@ -43,8 +43,16 @@ labelled `state-machine`.
   after the delete (newer `updatedAt`) wins. Never delete a synced row
   directly. A pulled mood, appetite or food-noise row replaces the local one
   only when its `updatedAt` is newer (no stamp counts as oldest).
+- A device whose last push (`syncLastPushAt`, taken when the push starts) is
+  older than the 180-day prune window may have missed tombstones. On an
+  account cloud pull (`applyPulledPayload(p, { cloud: true })`) it first drops
+  local rows no newer than that push that the cloud copy no longer holds
+  (`dropRowsDeletedWhileAway`). Only when `syncLastPushV` equals the cloud
+  payload version; file and legacy restores never delete, and they (and
+  `importRows`) clear `syncLastPushV`, since imported rows keep old stamps the
+  cloud has not seen. The next successful push sets it again.
   Tests: `scripts/sync-merge-selftest.mjs`, `scripts/daily-delete-selftest.mjs`,
-  `scripts/daily-lww-selftest.mjs`.
+  `scripts/daily-lww-selftest.mjs`, `scripts/stale-device-selftest.mjs`.
 
 ### Account / session: `account = { user, encryptionKey }`
 - signed out (both null); signed in (both set); signed in without key

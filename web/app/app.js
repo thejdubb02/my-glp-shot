@@ -3219,7 +3219,7 @@ function setupSyncFlushAndVisibilityPull() {
           const cloudUpdatedAt = result.updatedAt || 0;
           const lastSeen = settings.syncLastUpdatedAt || 0;
           if (cloudUpdatedAt > lastSeen) {
-            await applyPulledPayload(result.payload);
+            await applyPulledPayload(result.payload, { cloud: true });
             track('visibility_pull_applied');
           }
         }
@@ -6406,7 +6406,7 @@ async function tryRestoreAccount() {
     try {
       const result = await accountSyncPull();
       if (result && result.payload) {
-        await applyPulledPayload(result.payload);
+        await applyPulledPayload(result.payload, { cloud: true });
         track('cross_device_auto_pull', {
           shots: (result.payload.shots || []).length,
           merged: (window._lastMergeStats && window._lastMergeStats.shots) || null,
@@ -6479,8 +6479,12 @@ async function withSyncPushHeld(fn) {
 
 async function pushToCloud() {
   if (!account.user || !account.encryptionKey) throw new Error('Not unlocked');
+  // startedAt is taken before reading the data, so an edit made mid-push counts as newer.
+  let startedAt, pushedV;
   const put = async (baseUpdatedAt) => {
+    startedAt = new Date().toISOString();
     const payload = await buildPayload();
+    pushedV = payload.version;
     const iv = crypto.getRandomValues(new Uint8Array(12));
     const plaintext = await encodePayloadBytes(payload);
     const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, account.encryptionKey, plaintext);
@@ -6492,13 +6496,14 @@ async function pushToCloud() {
     // Another device pushed since we last saw the cloud. Merge its rows in,
     // then push the union once on top of the version we just pulled.
     const pulled = await accountSyncPull();
-    if (pulled && pulled.payload) await applyPulledPayload(pulled.payload);
+    if (pulled && pulled.payload) await applyPulledPayload(pulled.payload, { cloud: true });
     r = await put(pulled ? pulled.updatedAt : null);
   }
   if (r.status === 413) throw new Error('Your data is too large to back up. Export a copy and contact support.');
   if (!r.ok) throw new Error('Sync failed: ' + r.status);
   const j = await r.json();
-  settings.syncLastPushAt = new Date().toISOString();
+  settings.syncLastPushAt = startedAt;
+  settings.syncLastPushV = pushedV;
   settings.syncLastUpdatedAt = j.updatedAt;
   settings.syncLastError = '';
   await saveSettings();
@@ -6688,7 +6693,7 @@ async function handleAccountSubmit(ev) {
     if (account.encryptionKey) {
       try {
         const result = mode === 'login' ? await accountSyncPull() : null;
-        if (result && result.payload) await applyPulledPayload(result.payload);
+        if (result && result.payload) await applyPulledPayload(result.payload, { cloud: true });
         await accountSyncPush();
       } catch (e) { noteSyncFailure(e); }
     }
@@ -7895,6 +7900,32 @@ async function mergeTombstones(incoming) {
   }
   return new Map((await liveTombstones()).map(t => [t.key, t]));
 }
+// A device that last pushed longer ago than TOMBSTONE_TTL_MS can hold rows deleted
+// elsewhere whose tombstones are already pruned, and a union merge would bring
+// them back (#22). Everything it had at that push reached the cloud then, so a row
+// no newer than the push and missing from the cloud now was deleted elsewhere.
+// Rows added or edited since are kept. Only when that push wrote the same payload
+// version as the cloud copy: an older version may have left whole stores out.
+// shortcut: symptoms reconcile per day, not per symptom; a single symptom deleted
+// elsewhere can return on such a device. Upgrade if that is ever reported.
+async function dropRowsDeletedWhileAway(payload) {
+  const pushedAt = Date.parse(settings.syncLastPushAt) || 0;
+  if (!pushedAt || Date.now() - pushedAt <= TOMBSTONE_TTL_MS || settings.syncLastPushV !== Number(payload.version)) return;
+  for (const store of UID_STORES) {
+    const cloud = (Array.isArray(payload[store]) ? payload[store] : []).filter(r => r && typeof r === 'object');
+    const uids = new Set(cloud.map(r => r.uid));
+    const cks = new Set(cloud.map(r => CONTENT_KEYS[store](r)));
+    for (const r of (await dbAll(store)) || []) {
+      if (r && rowTs(r) <= pushedAt && !uids.has(r.uid) && !cks.has(CONTENT_KEYS[store](r))) await dbDel(store, r.id);
+    }
+  }
+  for (const store of DAILY_SYNCED) {
+    const dates = new Set((Array.isArray(payload[store]) ? payload[store] : []).map(r => r && r.date));
+    for (const r of (await dbAll(store)) || []) {
+      if (r && rowTs(r) <= pushedAt && !dates.has(r.date)) await dbDel(store, r.date);
+    }
+  }
+}
 // UID stores stamp updatedAt in ms, the daily stores as an ISO string.
 const rowTs = (row) => Number(row.updatedAt) || Date.parse(row.updatedAt) || 0;
 const symTs = (row, k) => Number(row.seAt && row.seAt[k]) || rowTs(row);
@@ -8011,8 +8042,13 @@ async function mergeStore(storeName, incoming, contentKey, tombs) {
 // File imports (CSV, old shots+weights backup, Smart Import) add rows through the
 // same content-key dedupe a sync pull uses, so importing the same file twice adds
 // nothing. mergeStore writes rows as received, so stamp updatedAt like dbAdd does.
-const importRows = (store, rows) =>
-  mergeStore(store, rows.map(r => ({ ...r, updatedAt: r.updatedAt || Date.now() })), CONTENT_KEYS[store]);
+// Imported rows keep their old updatedAt, so they are not yet in the cloud even
+// though they look older than the last push: forget its version until the next one.
+const importRows = async (store, rows) => {
+  settings.syncLastPushV = null;
+  await saveSettings();
+  return mergeStore(store, rows.map(r => ({ ...r, updatedAt: r.updatedAt || Date.now() })), CONTENT_KEYS[store]);
+};
 
 // Notes are the one daily store that can't take last-write-wins. Mood is a number
 // you can re-tap in a second; a note is sentences someone wrote about their life,
@@ -8049,7 +8085,8 @@ async function mergeNotes(incoming) {
   return stats;
 }
 
-async function applyPulledPayload(payload) {
+// opts.cloud: this is the account's own cloud copy, not a file or legacy restore.
+async function applyPulledPayload(payload, opts) {
   // Refuse newer payloads we can't safely interpret — avoids silent data loss
   // if a stale client pulls a blob written by a future schema.
   const SUPPORTED_PAYLOAD_VERSION = 12;
@@ -8063,6 +8100,10 @@ async function applyPulledPayload(payload) {
   // every store first, which silently destroyed anything logged on this device
   // since its last push — and left the database empty if the tab closed midway.
   const stats = {};
+  // A file or legacy restore adds rows with old timestamps the cloud has not seen
+  // (see importRows); saved with syncLastPullAt below.
+  if (opts && opts.cloud) await dropRowsDeletedWhileAway(payload);
+  else settings.syncLastPushV = null;
   const tombs = await mergeTombstones(payload.tombstones);
   stats.shots = await mergeStore(STORES.shots, (payload.shots || []).map(sanitizeShot).filter(Boolean), CONTENT_KEYS.shots, tombs);
   stats.weights = await mergeStore(STORES.weights, (payload.weights || []).map(sanitizeWeight).filter(Boolean), CONTENT_KEYS.weights, tombs);
@@ -8110,7 +8151,7 @@ async function applyPulledPayload(payload) {
 
   window._lastMergeStats = stats;
   if (payload.settings) {
-    const preserve = { syncEnabled: settings.syncEnabled, syncUsername: settings.syncUsername, syncLastPushAt: settings.syncLastPushAt, syncLastPullAt: settings.syncLastPullAt, syncLastUpdatedAt: settings.syncLastUpdatedAt };
+    const preserve = { syncEnabled: settings.syncEnabled, syncUsername: settings.syncUsername, syncLastPushAt: settings.syncLastPushAt, syncLastPushV: settings.syncLastPushV, syncLastPullAt: settings.syncLastPullAt, syncLastUpdatedAt: settings.syncLastUpdatedAt };
     settings = { ...DEFAULT_SETTINGS, ...sanitizeSettings(payload.settings), ...preserve };
     await saveSettings();
     applySettingsToInputs();
