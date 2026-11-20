@@ -52,6 +52,7 @@ const OPTIONAL = [
   'icons/icon-512.png',
   'icons/apple-touch-icon.png',
   'icons/favicon.ico',
+  'icons/body-front.webp',
 ];
 
 self.addEventListener('install', (e) => {

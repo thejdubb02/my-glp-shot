@@ -100,17 +100,10 @@ function renderBodyDiagram(shots) {
     </g>`;
   }).join('');
 
-  // Front-view figure drawn from rounded shapes, head to knee (every site is
-  // above the knee). viewBox 240x300; SITE_POSITIONS in data.js sit on it.
-  const figure = `<g class="body-fig">
-      <circle cx="120" cy="30" r="20"/>
-      <rect x="111" y="46" width="18" height="16"/>
-      <path d="M 92 58 L 148 58 Q 170 58 170 78 L 160 128 Q 158 150 164 172 Q 164 188 148 188 L 92 188 Q 76 188 76 172 Q 82 150 80 128 L 70 78 Q 70 58 92 58 Z"/>
-      <line x1="64" y1="74" x2="46" y2="166" stroke-width="22"/>
-      <line x1="176" y1="74" x2="194" y2="166" stroke-width="22"/>
-      <line x1="98" y1="182" x2="94" y2="276" stroke-width="38"/>
-      <line x1="142" y1="182" x2="146" y2="276" stroke-width="38"/>
-    </g>`;
+  // Front-view figure, head to just above the knee (every site is above the
+  // knee). A picture, placed in the 240x300 viewBox; SITE_POSITIONS in data.js
+  // sit on it.
+  const figure = '<image class="body-fig" href="icons/body-front.webp" x="41" y="0" width="158" height="300"/>';
   // Custom-site chips below the diagram (the body-silhouette can't host them positionally).
   const customNames = Object.keys(customRecency);
   const customChips = customNames.length

@@ -531,18 +531,18 @@ const MED_PRESETS = [
 // kept so shots logged before the split still anchor to a sensible dot. The
 // dropdown only surfaces the canonical 8 + any custom sites the user adds.
 const SITE_POSITIONS = {
-  'Upper arm — Left':           { x: 55,  y: 118, short: 'L Arm' },
-  'Upper arm — Right':          { x: 185, y: 118, short: 'R Arm' },
-  'Abdomen — Upper Left':       { x: 98,  y: 116, short: 'UL Abd' },
-  'Abdomen — Upper Right':      { x: 142, y: 116, short: 'UR Abd' },
-  'Abdomen — Lower Left':       { x: 98,  y: 156, short: 'LL Abd' },
-  'Abdomen — Lower Right':      { x: 142, y: 156, short: 'LR Abd' },
-  'Thigh — Left':               { x: 96,  y: 228, short: 'L Thigh' },
-  'Thigh — Right':              { x: 144, y: 228, short: 'R Thigh' },
+  'Upper arm — Left':           { x: 66,  y: 121, short: 'L Arm' },
+  'Upper arm — Right':          { x: 174, y: 121, short: 'R Arm' },
+  'Abdomen — Upper Left':       { x: 96,  y: 145, short: 'UL Abd' },
+  'Abdomen — Upper Right':      { x: 144, y: 145, short: 'UR Abd' },
+  'Abdomen — Lower Left':       { x: 96,  y: 195, short: 'LL Abd' },
+  'Abdomen — Lower Right':      { x: 144, y: 195, short: 'LR Abd' },
+  'Thigh — Left':               { x: 95,  y: 256, short: 'L Thigh' },
+  'Thigh — Right':              { x: 145, y: 256, short: 'R Thigh' },
   // Legacy (pre-quadrant split). Mapped to lower abdomen since most users
   // injected lower-abdomen by default.
-  'Abdomen — Left':             { x: 98,  y: 156, short: 'L Abd' },
-  'Abdomen — Right':            { x: 142, y: 156, short: 'R Abd' },
+  'Abdomen — Left':             { x: 96,  y: 195, short: 'L Abd' },
+  'Abdomen — Right':            { x: 144, y: 195, short: 'R Abd' },
 };
 
 // Sites surfaced in the dropdown (legacy keys hidden).
