@@ -13,10 +13,17 @@ for (const mode of ['web', 'capacitor-web', 'native-android', 'native-ios']) {
   const requests = [];
   const opened = [];
   const registrations = [];
+  const phone = { calls: 0, permission: 'granted', cancelled: [], scheduled: [] };
   const { sandbox, R, nodeFor } = await loadApp({
     domMode: 'sticky',
     configureSandbox(sandbox) {
-      if (mode !== 'web') sandbox.Capacitor = { isNativePlatform: () => native };
+      if (mode !== 'web') sandbox.Capacitor = { isNativePlatform: () => native, Plugins: { LocalNotifications: {
+        getPending: async () => { phone.calls++; return { notifications: [{ id: 99 }] }; },
+        cancel: async arg => { phone.cancelled.push(...arg.notifications.map(n => n.id)); },
+        checkPermissions: async () => ({ display: phone.permission }),
+        requestPermissions: async () => { phone.calls++; return { display: phone.permission }; },
+        schedule: async arg => { phone.scheduled.push(...arg.notifications); },
+      } } };
       sandbox.location.origin = origin;
       sandbox.location.assign = url => opened.push([url]);
       sandbox.open = (...args) => opened.push(args);
@@ -139,6 +146,40 @@ for (const mode of ['web', 'capacitor-web', 'native-android', 'native-ios']) {
     A.eq(mode + ': ' + endpoint + ' request', requests.shift()?.url, native ? undefined : base + '/billing/' + endpoint);
     A.eq(mode + ': ' + endpoint + ' destination', JSON.stringify(opened.shift()),
       JSON.stringify(native ? [hosted, '_system'] : ['https://billing.example']));
+  }
+
+  // Reminders: the phone's own scheduler on native, never touched on the web.
+  R("settings.notify = false; settings.dailyReminders = { [DAILY_REMINDERS[0].key]: { enabled: true, time: '09:00' } }");
+  await R('maybeScheduleNotification()');
+  A.eq(mode + ': reminders use the phone scheduler only on native', phone.calls > 0, native);
+  if (native) {
+    const now = Date.now();
+    A.eq('native: old reminders are cleared first', phone.cancelled.join(','), '99');
+    A.eq('native: one repeating entry per daily reminder', phone.scheduled.length, 1);
+    A.eq('native: daily reminder repeats at its time', JSON.stringify(phone.scheduled[0].schedule.on), '{"hour":9,"minute":0}');
+    A.eq('native: reminder carries the daily text', phone.scheduled[0].title, R('DAILY_REMINDERS[0].title'));
+    // Shot reminders ride alongside and are never crowded out by the dailies.
+    phone.scheduled.length = 0;
+    R("settings.notify = true; settings.cadenceDays = 7; settings.medication = 'TestMed'; settings.dailyReminders = Object.fromEntries(DAILY_REMINDERS.map(d => [d.key, { enabled: true, time: '08:30' }])); getShotsSorted = async () => [{ when: new Date(Date.now() - 86400000).toISOString() }]");
+    await R('maybeScheduleNotification()');
+    const shots = phone.scheduled.filter(n => n.schedule.at);
+    A.eq('native: every daily reminder is queued', phone.scheduled.length - shots.length, R('DAILY_REMINDERS.length'));
+    A.check('native: several shot reminders are queued ahead', shots.length >= 3);
+    A.check('native: every shot reminder is in the future', shots.every(n => n.schedule.at.getTime() > now));
+    A.check('native: shot reminder names the medication', shots[0].body.includes('TestMed'));
+    A.eq('native: reminder ids are unique', new Set(phone.scheduled.map(n => n.id)).size, phone.scheduled.length);
+    A.check('native: reminders may wake an idle phone', phone.scheduled.every(n => n.schedule.allowWhileIdle));
+    R('settings.notify = false');
+    A.eq('native: permission granted', await R('askNotifyPermission()'), true);
+    phone.permission = 'denied';
+    phone.scheduled.length = 0;
+    await R('maybeScheduleNotification()');
+    A.eq('native: nothing queued without permission', phone.scheduled.length, 0);
+    A.eq('native: permission refused', await R('askNotifyPermission()'), false);
+    R('settings.dailyReminders = {}');
+    phone.permission = 'granted';
+    await R('maybeScheduleNotification()');
+    A.eq('native: nothing queued with reminders off', phone.scheduled.length, 0);
   }
 }
 

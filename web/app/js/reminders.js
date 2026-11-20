@@ -46,7 +46,46 @@ let notifyTimer = null;
 let dailyReminderTimers = [];
 const TRIGGERS_SUPPORTED = (typeof window !== 'undefined') && ('Notification' in window) && ('showTrigger' in Notification.prototype || (typeof TimestampTrigger !== 'undefined'));
 
-function scheduleNativeReminders() {}
+// One permission question for the browser and the native shell.
+async function askNotifyPermission() {
+  if (!IS_NATIVE) return (await Notification.requestPermission()) === 'granted';
+  try { return (await window.Capacitor.Plugins.LocalNotifications.requestPermissions()).display === 'granted'; }
+  catch (_) { return false; }
+}
+
+function shotReminderBody() {
+  const lead = (settings.notifyLeadMinutes || 0) * 60000;
+  return lead > 0
+    ? `Your ${settings.medication} shot is due in ${humanLead(lead)}.`
+    : `${settings.medication} shot is due now.`;
+}
+
+// Native shell: the phone itself holds the schedule, no server involved. Every
+// call replaces the whole queue, and calls run one after another so two quick
+// settings changes cannot leave a stale reminder behind. Daily check-ins repeat
+// on the phone's clock, so they keep firing however long the app stays closed.
+let _nativeReminderRun = Promise.resolve();
+function scheduleNativeReminders() {
+  _nativeReminderRun = _nativeReminderRun.then(async () => {
+    const LN = window.Capacitor?.Plugins?.LocalNotifications;
+    if (!LN) return;
+    const pending = (await LN.getPending()).notifications || [];
+    if (pending.length) await LN.cancel({ notifications: pending.map(n => ({ id: n.id })) });
+    const cfg = settings.dailyReminders || {};
+    const list = [];
+    for (const r of DAILY_REMINDERS) {
+      const first = cfg[r.key]?.enabled && nextDailyTriggerAt(cfg[r.key].time);
+      if (first) list.push({ title: r.title, body: r.body, schedule: { on: { hour: first.getHours(), minute: first.getMinutes() } } });
+    }
+    for (const r of await computeUpcomingReminders(true)) {
+      list.push({ title: 'My GLP Shot', body: shotReminderBody(), schedule: { at: new Date(r.fireAt * 1000) } });
+    }
+    if (!list.length || (await LN.checkPermissions()).display !== 'granted') return;
+    list.forEach((n, i) => { n.id = i + 1; n.schedule.allowWhileIdle = true; });
+    await LN.schedule({ notifications: list });
+  }).catch(() => {});
+  return _nativeReminderRun;
+}
 
 async function maybeScheduleNotification() {
   if (IS_NATIVE) return scheduleNativeReminders();
@@ -89,9 +128,7 @@ async function scheduleShotReminder() {
   if (ms > 86400000 * 30) return;
 
   const title = 'My GLP Shot';
-  const body = lead > 0
-    ? `Your ${settings.medication} shot is due in ${humanLead(lead)}.`
-    : `${settings.medication} shot is due now.`;
+  const body = shotReminderBody();
   const tag = `shot-${next.toISOString()}`;
 
   if (TRIGGERS_SUPPORTED && 'serviceWorker' in navigator) {
@@ -248,6 +285,7 @@ async function enablePushReminders() {
 }
 
 async function disablePushReminders() {
+  if (IS_NATIVE) return;
   const sub = await getPushSubscription();
   try {
     await accountFetch('push/unsubscribe', {
@@ -277,7 +315,7 @@ async function dropDevicePushOnSignOut() {
 
 // Compute the upcoming fire times from local data. Returns only {kind, fireAt}
 // pairs — deliberately the least the server can be told and still send on time.
-async function computeUpcomingReminders() {
+async function computeUpcomingReminders(shotsOnly) {
   const out = [];
   const now = Date.now();
   const horizon = now + PUSH_HORIZON_DAYS * 86400000;
@@ -299,7 +337,7 @@ async function computeUpcomingReminders() {
     }
   }
 
-  const cfg = settings.dailyReminders || {};
+  const cfg = shotsOnly ? {} : settings.dailyReminders || {};
   for (const r of DAILY_REMINDERS) {
     const entry = cfg[r.key];
     if (!entry || !entry.enabled) continue;

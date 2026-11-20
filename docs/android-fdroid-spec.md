@@ -20,7 +20,11 @@ F-Droid build is a different package built a different way.
 - Fastest way into testers' hands is our own F-Droid repo (hours). IzzyOnDroid is
   days. The official F-Droid catalogue is weeks (median 41 days to merge when
   checked, 495 merge requests open).
-- Nothing here is built yet. Section 6 lists the work in order.
+- Built so far (2026-11-20): steps 1 to 3 of section 6. `npm ci && npm run
+  sync:android`, then `./gradlew assembleDebug` in `android/`, gives a debug
+  APK. It was checked in desktop phone browsers with a stand-in for the native
+  layer, not on a phone or emulator (the build box cannot run one), so the
+  step 3 acceptance list is still open.
 
 ## 1. Why not reuse the Play Store TWA
 
@@ -112,6 +116,14 @@ same time, and open the official merge request once the build has settled.
 4. Fastlane metadata and screenshots.
 5. Signed APK from a tagged release, built on the cezar1 runner.
 6. Our own F-Droid repo, then IzzyOnDroid, then the fdroiddata merge request.
+
+Build notes for step 3: the generated Android project had its Google services
+lines removed (nothing in the app uses them), and Android's cloud backup is off
+(`allowBackup="false"`) so health data never leaves the phone that way. The
+version is kept equal in `web/app/data.js`, `package.json` and
+`android/app/build.gradle`; `scripts/native-bundle-selftest.mjs` fails if they
+drift. Reminders use inexact alarms (no exact-alarm permission asked for), so
+Android may deliver them a few minutes late.
 
 Acceptance for step 3: the app opens with the network off, logs a shot, fires a
 reminder with the app closed, signs in and syncs against production, and makes

@@ -417,10 +417,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   $('#set-dose').addEventListener('change', async (e) => { settings.defaultDose = parseFloat(e.target.value) || 0; await saveSettings(); markSyncDirty(); });
   $('#set-cadence').addEventListener('change', async (e) => { settings.cadenceDays = parseInt(e.target.value, 10) || 7; await saveSettings(); markSyncDirty(); await renderShots(); });
   $('#set-halflife').addEventListener('change', async (e) => { settings.halfLifeDays = parseFloat(e.target.value) || 5; await saveSettings(); markSyncDirty(); await renderShots(); });
-  if (!IS_NATIVE) $('#set-notify').addEventListener('change', async (e) => {
+  $('#set-notify').addEventListener('change', async (e) => {
     if (e.target.checked) {
-      const perm = await Notification.requestPermission();
-      settings.notify = perm === 'granted';
+      settings.notify = await askNotifyPermission();
       e.target.checked = settings.notify;
       // Register for push where we can. Failing here is not fatal — the in-page
       // timer still works while the app is open — so it must not block the
@@ -483,9 +482,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (t.matches('input[type="checkbox"]')) {
         if (t.checked) {
           // Enabling any daily reminder requires notification permission once.
-          if (typeof Notification !== 'undefined' && Notification.permission !== 'granted') {
-            const perm = await Notification.requestPermission();
-            if (perm !== 'granted') { t.checked = false; return; }
+          if (IS_NATIVE || (typeof Notification !== 'undefined' && Notification.permission !== 'granted')) {
+            if (!(await askNotifyPermission())) { t.checked = false; return; }
           }
           entry.enabled = true;
         } else {

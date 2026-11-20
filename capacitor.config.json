@@ -1,0 +1,5 @@
+{
+  "appId": "com.myglpshot.app",
+  "appName": "My GLP Shot",
+  "webDir": "build/native-www"
+}

@@ -1,0 +1,32 @@
+{
+  "name": "my-glp-shot-native",
+  "version": "0.67.15",
+  "private": true,
+  "description": "Native shell (Capacitor) for My GLP Shot. The website in web/ needs none of this.",
+  "license": "MIT",
+  "scripts": {
+    "build:www": "bash scripts/build-native-www.sh",
+    "sync:android": "bash scripts/build-native-www.sh && cap sync android"
+  },
+  "dependencies": {
+    "@capacitor/android": "7.6.10",
+    "@capacitor/core": "7.6.10",
+    "@capacitor/local-notifications": "7.0.7",
+    "chart.js": "4.4.6"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "7.6.10"
+  },
+  "knip": {
+    "entry": [
+      "scripts/**/*.{js,mjs,cjs}",
+      "web/**/*.js"
+    ],
+    "ignoreDependencies": [
+      "@capacitor/local-notifications",
+      "chart.js",
+      "@capacitor/android",
+      "@capacitor/core"
+    ]
+  }
+}

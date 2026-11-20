@@ -24,6 +24,12 @@ $19.99/yr). README.md has the overview.
   `share`, `billing`, `billing_test_mode`, `admin` (incl. Umami), `health`,
   `push`, `smart_import`.
   `push_dispatch.py`, `push_send.py`: web push. `requirements.txt`: pinned deps.
+- `android/`, `capacitor.config.json`, `package.json`: the native app shell
+  (Capacitor), Android only for now. It ships a copy of `web/app/` made by
+  `scripts/build-native-www.sh` (no analytics, no service worker). Code switches
+  on `IS_NATIVE`, never on "android", so iOS can reuse it. Plan and open
+  decisions: `docs/android-fdroid-spec.md`. Debug builds only; no release
+  signing key exists yet.
 - `docker/`: Dockerfile and compose. `deploy/`: nginx vhosts and rate limits.
 - `scripts/`: selftests, admin tools (grant-premium, list-users), backups.
 - `docs/`: internal notes, code review record, launch plans. `content/`: site copy.
@@ -70,7 +76,8 @@ No lint config exists. When you fix a client bug, add or extend a
 
 - Vanilla JS in `web/app/`; a new script file must also go in the service worker
   `CRITICAL` list in `sw.js` and load after `data.js`. Bump the cache/version when
-  shipped files change.
+  shipped files change (the same version also goes in `package.json` and
+  `android/app/build.gradle`; a selftest checks they match).
 - API is plain Flask modules (no Blueprints) on one `app` from `config.py`, with
   SQLite and plain SQL. Keep dependency pins exact. A new module must be imported
   in `app.py`. API selftests stub names with `patch()` from `scripts/apipatch.py`;
