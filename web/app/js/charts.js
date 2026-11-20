@@ -266,7 +266,7 @@ function setupBenchmarkSelector() {
   sel.addEventListener('change', async (e) => {
     if (!isPremium() && e.target.value) {
       e.target.value = '';
-      $('#upgrade-dialog').showModal();
+      openUpgradeDialog();
       return;
     }
     _benchmarkChoice = e.target.value;

@@ -12,7 +12,7 @@
     return;
   }
   try {
-    const r = await fetch(`/api/share/${token}`);
+    const r = await fetch(apiUrl(`share/${token}`, true), IS_NATIVE ? { credentials: 'omit' } : undefined);
     if (r.status === 404) { root.innerHTML = '<p class="err">This share link expired or has been revoked.</p>'; return; }
     if (!r.ok) throw new Error('Failed to fetch shared data.');
     const j = await r.json();

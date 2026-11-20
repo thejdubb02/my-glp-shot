@@ -18,6 +18,7 @@ function isStandalone() {
 }
 
 function showInstallDialog() {
+  if (IS_NATIVE) return;
   const dlg = $('#install-dialog');
   if (!dlg) return;
   $('#install-ios').classList.add('hidden');
@@ -34,6 +35,7 @@ function showInstallDialog() {
 }
 
 function setupInstallBanner() {
+  if (IS_NATIVE) return;
   // Capture Android/Chrome/Edge install event whenever it fires.
   window.addEventListener('beforeinstallprompt', (e) => {
     e.preventDefault();
@@ -83,6 +85,7 @@ function setupInstallBanner() {
 
 // Auto-show install dialog once per 7 days, after sign-in. Called from onAccountChanged.
 function maybeAutoShowInstall() {
+  if (IS_NATIVE) return;
   try {
     if (isStandalone()) return;
     if (document.body.classList.contains('auth-active')) return;

@@ -2,6 +2,19 @@
 'use strict';
 
 // ----- Setup helpers -----
+function openUpgradeDialog(refreshCopy = false) {
+  if (IS_NATIVE) {
+    window.open(APP_ORIGIN, '_system');
+    return;
+  }
+  if (refreshCopy) {
+    const err = $('#upgrade-error');
+    if (err) err.textContent = '';
+    refreshUpgradeCopy();
+  }
+  $('#upgrade-dialog')?.showModal();
+}
+
 function setupAccountUI() {
   $('#show-signup').addEventListener('click', () => openAccountDialog('signup'));
   $('#show-login').addEventListener('click', () => openAccountDialog('login'));
@@ -19,12 +32,7 @@ function setupAccountUI() {
   const tebCta = document.getElementById('trial-end-cta');
   if (tebCta) tebCta.addEventListener('click', () => {
     track('trial_end_banner_clicked');
-    // Open the dialog directly rather than synthesising a click on a button that
-    // may be hidden or absent — the same trap that broke the weight deep link.
-    const err = document.getElementById('upgrade-error');
-    if (err) err.textContent = '';
-    refreshUpgradeCopy();
-    document.getElementById('upgrade-dialog')?.showModal();
+    openUpgradeDialog(true);
   });
   $('#account-form').addEventListener('submit', handleAccountSubmit);
 
@@ -50,14 +58,18 @@ function setupAccountUI() {
     await accountLogout(true);
     onAccountChanged();
   });
-  $('#upgrade-cta').addEventListener('click', () => { $('#upgrade-error').textContent = ''; refreshUpgradeCopy(); $('#upgrade-dialog').showModal(); });
+  $('#upgrade-cta').addEventListener('click', () => openUpgradeDialog(true));
   // Premium hero buttons reuse the same dialogs as the Settings card.
   const heroUp = document.getElementById('premium-hero-upgrade');
-  if (heroUp) heroUp.addEventListener('click', () => { $('#upgrade-error').textContent = ''; refreshUpgradeCopy(); $('#upgrade-dialog').showModal(); });
+  if (heroUp) heroUp.addEventListener('click', () => openUpgradeDialog(true));
   const heroMan = document.getElementById('premium-hero-manage');
   if (heroMan) heroMan.addEventListener('click', () => $('#manage-billing-cta').click());
   $('#upgrade-cancel').addEventListener('click', () => $('#upgrade-dialog').close());
   $('#upgrade-confirm').addEventListener('click', async () => {
+    if (IS_NATIVE) {
+      window.open(APP_ORIGIN, '_system');
+      return;
+    }
     const btn = $('#upgrade-confirm');
     const err = $('#upgrade-error');
     err.textContent = '';
@@ -78,6 +90,10 @@ function setupAccountUI() {
     }
   });
   $('#manage-billing-cta').addEventListener('click', async () => {
+    if (IS_NATIVE) {
+      window.open(APP_ORIGIN, '_system');
+      return;
+    }
     const btn = $('#manage-billing-cta');
     btn.disabled = true;
     const orig = btn.textContent;
@@ -158,7 +174,7 @@ function setupAccountUI() {
   if (exportMore) exportMore.addEventListener('click', exportPDFReport);
   const shareMore = document.getElementById('show-share-more');
   if (shareMore) shareMore.addEventListener('click', () => {
-    if (!isPremium()) { $('#upgrade-dialog').showModal(); return; }
+    if (!isPremium()) { openUpgradeDialog(); return; }
     document.getElementById('show-share').click();
   });
   const pdfDlg = document.getElementById('pdf-dialog');
@@ -176,7 +192,7 @@ function setupAccountUI() {
 
 function setupSupplyUI() {
   $('#add-supply-btn').addEventListener('click', () => {
-    if (!isPremium() && account.user) { $('#upgrade-dialog').showModal(); return; }
+    if (!isPremium() && account.user) { openUpgradeDialog(); return; }
     openSupplyDialog(null);
   });
   $('#supply-cancel').addEventListener('click', () => $('#supply-dialog').close());
@@ -235,7 +251,7 @@ function setupMeasurementUI() {
     showHint();
   }
   $('#add-measurement-btn').addEventListener('click', () => {
-    if (!isPremium() && account.user) { $('#upgrade-dialog').showModal(); return; }
+    if (!isPremium() && account.user) { openUpgradeDialog(); return; }
     $('#measurement-value').value = '';
     $('#measurement-date').value = todayISODate();
     $('#measurement-dialog').showModal();
@@ -259,7 +275,7 @@ function setupExpenseUI() {
   const btn = $('#add-expense-btn');
   if (!btn) return;
   btn.addEventListener('click', () => {
-    if (!isPremium() && account.user) { $('#upgrade-dialog').showModal(); return; }
+    if (!isPremium() && account.user) { openUpgradeDialog(); return; }
     openExpenseDialog(null);
   });
   $('#expense-cancel').addEventListener('click', () => $('#expense-dialog').close());
@@ -293,7 +309,7 @@ function setupExpenseUI() {
 
 function setupLabUI() {
   $('#add-lab-btn').addEventListener('click', () => {
-    if (!isPremium() && account.user) { $('#upgrade-dialog').showModal(); return; }
+    if (!isPremium() && account.user) { openUpgradeDialog(); return; }
     $('#lab-value').value = '';
     $('#lab-date').value = todayISODate();
     $('#lab-notes').value = '';
@@ -316,7 +332,7 @@ function setupLabUI() {
 
 function setupShareUI() {
   $('#show-share').addEventListener('click', () => {
-    if (!isPremium()) { $('#upgrade-dialog').showModal(); return; }
+    if (!isPremium()) { openUpgradeDialog(); return; }
     $('#share-result').classList.add('hidden');
     $('#share-label').value = '';
     $('#share-dialog').showModal();
@@ -351,6 +367,7 @@ async function ensurePersisted() {
 }
 
 async function checkForStaleBundle() {
+  if (IS_NATIVE) return;
   // Fetch the live HTML (no-store), parse the data.js?v=N param (every script tag shares one number), compare to ours.
   // If the server is serving a newer ?v= than we shipped with, the loaded JS is stale -> nuke and reload.
   try {
@@ -390,6 +407,7 @@ async function dropCachesAndReload() {
 }
 
 function registerSW() {
+  if (IS_NATIVE) return;
   if (!('serviceWorker' in navigator)) return;
   let reloading = false;
   // Reload as soon as a new SW takes control so the user is on the latest code.

@@ -15,7 +15,8 @@
     document.getElementById('reset-status').textContent = 'Deriving keys…';
     try {
       const creds = await deriveAccountCreds(email, pw);
-      const r = await fetch('/api/reset', {
+      const r = await fetch(apiUrl('reset', true), {
+        ...(IS_NATIVE ? { credentials: 'omit' } : {}),
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token, authToken: creds.authToken }),

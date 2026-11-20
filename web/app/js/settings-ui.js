@@ -53,3 +53,33 @@ function applyTheme() {
 }
 
 let _editingWeightId = null; // null = logging a new weight
+
+function setupNativeSettings() {
+  if (!IS_NATIVE) return;
+  document.querySelectorAll('[data-web-only]').forEach(el => el.classList.add('hidden'));
+  const card = $('#native-server-settings');
+  if (!card) return;
+  const input = $('#native-server-address');
+  const status = $('#native-server-status');
+  function save(url) {
+    // The session token belongs to the server that issued it. Never let it
+    // travel to another address.
+    let token = null;
+    try { token = localStorage.getItem('mgs_session_token'); } catch (_) {}
+    if (account.user || token) {
+      status.textContent = 'Sign out before changing the server address.';
+      return;
+    }
+    try {
+      setApiBase(url);
+      input.value = apiBase();
+      status.textContent = 'Server address saved. Signing in to a different server replaces the data on this phone.';
+    } catch (e) {
+      status.textContent = e.message;
+    }
+  }
+  input.value = apiBase();
+  $('#native-server-save').addEventListener('click', () => save(input.value));
+  $('#native-server-reset').addEventListener('click', () => save(''));
+  card.classList.remove('hidden');
+}

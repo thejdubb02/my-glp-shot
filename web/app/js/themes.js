@@ -89,7 +89,7 @@ function renderThemeGrid() {
   `).join('');
   grid.querySelectorAll('.theme-swatch').forEach(btn => {
     btn.addEventListener('click', async () => {
-      if (!isPremium() && account.user) { $('#upgrade-dialog').showModal(); return; }
+      if (!isPremium() && account.user) { openUpgradeDialog(); return; }
       const id = btn.dataset.themeId;
       settings.colorTheme = id;
       await saveSettings();
@@ -132,7 +132,7 @@ function renderAppetiteStyleGrid() {
   `).join('');
   grid.querySelectorAll('.emoji-style-swatch').forEach(btn => {
     btn.addEventListener('click', async () => {
-      if (!isPremium() && account.user) { $('#upgrade-dialog').showModal(); return; }
+      if (!isPremium() && account.user) { openUpgradeDialog(); return; }
       const id = btn.dataset.styleId;
       settings.appetiteStyle = id;
       await saveSettings();
@@ -157,7 +157,7 @@ function renderEmojiStyleGrid() {
   `).join('');
   grid.querySelectorAll('.emoji-style-swatch').forEach(btn => {
     btn.addEventListener('click', async () => {
-      if (!isPremium() && account.user) { $('#upgrade-dialog').showModal(); return; }
+      if (!isPremium() && account.user) { openUpgradeDialog(); return; }
       const id = btn.dataset.styleId;
       settings.moodStyle = id;
       await saveSettings();

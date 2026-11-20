@@ -8,8 +8,6 @@
 // server never sees: username, passphrase, encryption key, or plaintext.
 // ============================================================================
 
-const SYNC_API = 'api/sync';
-const ACCOUNT_API = 'api';
 const SYNC_PBKDF2_ITERS = 600000;
 const SYNC_PROTOCOL = 'shotclock-v1';
 const ACCOUNT_PROTOCOL = 'myglpshot-v1';
@@ -50,8 +48,8 @@ async function accountFetch(path, opts = {}) {
     const tok = localStorage.getItem('mgs_session_token');
     if (tok && !opts.headers.Authorization) opts.headers.Authorization = 'Bearer ' + tok;
   } catch (_) {}
-  opts.credentials = 'same-origin';
-  return fetch(`${ACCOUNT_API}/${path}`, opts);
+  opts.credentials = IS_NATIVE ? 'omit' : 'same-origin';
+  return fetch(apiUrl(path), opts);
 }
 
 function accountSignup(email, password) { return accountEnter('signup', 'Signup failed', email, password); }
@@ -275,9 +273,11 @@ async function claimDevice(user) {
   if (!user || user.id == null) return false;
   let owner = null;
   try { owner = localStorage.getItem(DEVICE_OWNER_KEY); } catch (_) {}
-  const switched = owner != null && owner !== String(user.id);
+  // User ids are only unique per server, so a custom server gets its own owner.
+  const id = (IS_NATIVE && apiBase() !== APP_ORIGIN + '/api' ? apiBase() + '#' : '') + user.id;
+  const switched = owner != null && owner !== id;
   if (switched) await eraseLocalData();
-  try { localStorage.setItem(DEVICE_OWNER_KEY, String(user.id)); } catch (_) {}
+  try { localStorage.setItem(DEVICE_OWNER_KEY, id); } catch (_) {}
   return switched;
 }
 async function eraseLocalData() {

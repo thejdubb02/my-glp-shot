@@ -514,10 +514,7 @@ async function renderInsights() {
     });
   });
   list.querySelectorAll('[data-insight-locked]').forEach(el => {
-    el.addEventListener('click', () => {
-      const dlg = document.getElementById('upgrade-dialog');
-      if (dlg) dlg.showModal();
-    });
+    el.addEventListener('click', () => openUpgradeDialog());
   });
 }
 

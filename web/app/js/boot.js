@@ -2,6 +2,7 @@
 'use strict';
 
 function wireCriticalUI() {
+  setupNativeSettings();
   // Bottom nav
   document.querySelectorAll('#bottom-nav .nav-btn').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -24,7 +25,7 @@ function wireCriticalUI() {
   // Manual install-prompt trigger from Settings — wire synchronously so it works
   // even if setupInstallBanner hasn't run yet.
   const showInstall = document.getElementById('show-install-prompt');
-  if (showInstall) {
+  if (showInstall && !IS_NATIVE) {
     showInstall.addEventListener('click', () => {
       if (typeof isStandalone === 'function' && isStandalone()) {
         alert('Already installed! 🎉');
@@ -128,11 +129,11 @@ function wireCriticalUI() {
           const a = getAttribution();
           if (a) payload.attribution = a;
         }
-        const resp = await fetch(mode === 'signup' ? '/api/signup' : '/api/login', {
+        const resp = await fetch(apiUrl(mode, true), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
-          credentials: 'include',
+          credentials: IS_NATIVE ? 'omit' : 'include',
         });
         let body = {}; try { body = await resp.json(); } catch (_) {}
         return { resp, body };
@@ -416,7 +417,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   $('#set-dose').addEventListener('change', async (e) => { settings.defaultDose = parseFloat(e.target.value) || 0; await saveSettings(); markSyncDirty(); });
   $('#set-cadence').addEventListener('change', async (e) => { settings.cadenceDays = parseInt(e.target.value, 10) || 7; await saveSettings(); markSyncDirty(); await renderShots(); });
   $('#set-halflife').addEventListener('change', async (e) => { settings.halfLifeDays = parseFloat(e.target.value) || 5; await saveSettings(); markSyncDirty(); await renderShots(); });
-  $('#set-notify').addEventListener('change', async (e) => {
+  if (!IS_NATIVE) $('#set-notify').addEventListener('change', async (e) => {
     if (e.target.checked) {
       const perm = await Notification.requestPermission();
       settings.notify = perm === 'granted';
@@ -449,7 +450,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     markSyncDirty();
     applyTheme();
   });
-  $('#test-notify').addEventListener('click', sendTestNotification);
+  if (!IS_NATIVE) $('#test-notify').addEventListener('click', sendTestNotification);
 
   // Timezone picker — changing TZ rewrites "today" everywhere, so we re-render
   // shots/weights/moods and re-plan reminders.
@@ -593,7 +594,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   $('#import-btn').addEventListener('click', () => $('#import-file').click());
   $('#import-file').addEventListener('change', importData);
   const smartBtn = $('#smart-import-btn');
-  if (smartBtn) {
+  if (smartBtn && !IS_NATIVE) {
     smartBtn.addEventListener('click', () => $('#smart-import-file').click());
     $('#smart-import-file').addEventListener('change', smartImport);
   }

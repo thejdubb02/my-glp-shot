@@ -47,6 +47,7 @@ function summarisePayload(p) {
     .map(k => `${p[k].length} ${LABELS[k]}`);
 }
 async function smartImport(e) {
+  if (IS_NATIVE) return;
   const file = e.target.files[0];
   if (!file) return;
   const btn = $('#smart-import-btn');

@@ -3,7 +3,7 @@
 
 // ----- PDF report (client-side print) -----
 async function exportPDFReport() {
-  if (!isPremium()) { $('#upgrade-dialog').showModal(); return; }
+  if (!isPremium()) { openUpgradeDialog(); return; }
   const dlg = $('#pdf-dialog');
   if (dlg) { dlg.showModal(); return; }
   await runPdfExport({ range: '90', sections: ['shots','weights','measurements','labs','sideEffects'] });
@@ -166,7 +166,8 @@ async function createShareLink(label, opts) {
   if (!r.ok) throw new Error('Share creation failed.');
   const j = await r.json();
   const keyHex = HEX(rawKey);
-  const url = `${location.origin}/view.html#t=${j.token}&k=${keyHex}`;
+  // The link must point at the server that holds the share.
+  const url = `${IS_NATIVE ? new URL(apiBase()).origin : APP_ORIGIN}/view.html#t=${j.token}&k=${keyHex}`;
   return { url, expiresAt: j.expiresAt };
 }
 
@@ -264,7 +265,10 @@ async function buildPayload(opts) {
 
 async function syncPullNow() {
   if (!syncCreds) throw new Error('Not signed in to sync');
-  const res = await fetch(`${SYNC_API}/${syncCreds.lookupId}`, { headers: { 'Accept': 'application/json' } });
+  const res = await fetch(apiUrl(`sync/${syncCreds.lookupId}`), {
+    headers: { 'Accept': 'application/json' },
+    ...(IS_NATIVE ? { credentials: 'omit' } : {}),
+  });
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`Sync server returned ${res.status}`);
   const { iv, ciphertext, updated_at } = await res.json();

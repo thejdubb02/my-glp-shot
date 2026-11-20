@@ -60,6 +60,15 @@ labelled `state-machine`.
 - Persisted: `mgs_session_token`, `account.cred` (key), `mgs_last_user`
   (offline cache, trusted only when the network fails).
 - Writers: signup, login, `tryRestoreAccount`, `accountLogout`, delete account.
+- Native API requests omit cookies and use the stored Bearer token for sessions.
+  The API ignores session cookies on requests from `https://localhost`,
+  `capacitor://localhost`, and exact origins added through `MGS_NATIVE_ORIGINS`
+  (comma-separated). These origins receive CORS headers without credential
+  support. Stripe webhooks are excluded. Web sessions still prefer the cookie
+  and fall back to the Bearer token.
+- Native server address (`mgs_api_base`) may change only while signed out, so a
+  session token never reaches another server. On a custom server the device
+  owner is stored as `<api base>#<user id>`, since ids are unique per server.
 - Device owner: `mgs_device_owner` (localStorage, kept across sign-out and
   account delete). Every sign-in calls `claimDevice(user)` before any push; a
   different account erases local data first (`eraseLocalData`). No owner

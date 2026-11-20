@@ -1,7 +1,7 @@
 """Shared request, user, attempt-throttle, email and Herald helpers, plus retention."""
 from flask import jsonify, request
 
-from config import HERALD_URL, MAIL_FROM, RESEND_API_KEY, SESSION_TOUCH_INTERVAL, TOKEN_RE, app
+from config import HERALD_URL, MAIL_FROM, NATIVE_APP_ORIGINS, RESEND_API_KEY, SESSION_TOUCH_INTERVAL, TOKEN_RE, app
 from db import get_db, now_ts
 
 
@@ -10,18 +10,48 @@ def err(code, message, status=400):
     return jsonify(error=code, message=message), status
 
 
+STRIPE_WEBHOOK_PATHS = ('/api/stripe/webhook', '/api/stripe/webhook/test')
+
+
+def is_native_origin():
+    return request.headers.get('Origin') in NATIVE_APP_ORIGINS
+
+
+def _supports_native_cors():
+    return request.path.startswith('/api/') and request.path not in STRIPE_WEBHOOK_PATHS
+
+
+@app.before_request
+def _native_preflight():
+    if request.method == 'OPTIONS' and _supports_native_cors() and is_native_origin():
+        return '', 204
+    return None
+
+
+@app.after_request
+def _native_cors(response):
+    if _supports_native_cors():
+        response.vary.add('Origin')
+        if is_native_origin():
+            response.headers['Access-Control-Allow-Origin'] = request.headers['Origin']
+            if request.method == 'OPTIONS':
+                response.headers['Access-Control-Allow-Methods'] = 'GET, HEAD, POST, PUT, DELETE, OPTIONS'
+                response.headers['Access-Control-Allow-Headers'] = 'Authorization, Content-Type, Accept'
+    return response
+
+
 @app.before_request
 def _enforce_json_for_mutations():
     """CSRF mitigation: state-changing endpoints must use application/json.
-    Cross-origin form posts can't send that without a preflight (which our CORS rejects),
-    so this structurally blocks CSRF without a token. Stripe webhook is exempt
-    (it sends application/json anyway, but its signature is HMAC-verified).
+    Cross-origin form posts cannot send JSON. CORS permits JSON preflights only
+    for native origins, whose sessions require an explicit Bearer token.
+    Stripe webhooks are exempt because their signatures are verified.
     """
     if request.method not in ('POST', 'PUT', 'DELETE', 'PATCH'):
         return None
     p = request.path or ''
     # Stripe webhook signs its body; no need to gate on content-type.
-    if p in ('/api/stripe/webhook', '/api/stripe/webhook/test'):
+    if p in STRIPE_WEBHOOK_PATHS:
         return None
     ct = (request.headers.get('Content-Type') or '').split(';', 1)[0].strip().lower()
     # Allow methods with no body to skip the check.
@@ -148,8 +178,8 @@ def _safe_col(row, name, default=0):
 
 
 def get_session_user():
-    """Read session cookie or Authorization: Bearer header."""
-    token = request.cookies.get('mgs_session')
+    """Read a web session cookie or an Authorization: Bearer header."""
+    token = None if is_native_origin() else request.cookies.get('mgs_session')
     if not token:
         auth = request.headers.get('Authorization', '')
         if auth.startswith('Bearer '):

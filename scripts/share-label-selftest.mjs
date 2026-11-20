@@ -59,11 +59,13 @@ const root = { innerHTML: '', textContent: '', appendChild(n) { this.innerHTML +
 const hash = '#' + result.url.split('#')[1];
 const ctx = vm.createContext({
   document: { getElementById: () => root, createElement: () => ({}) },
-  location: { hash },
+  location: { hash, origin: 'https://app.myglpshot.com' },
+  window: {},
   URLSearchParams, Uint8Array, TextDecoder, Blob, DecompressionStream, Response, crypto, atob,
   // The server's share_fetch answer: iv, ciphertext, expiry. No label.
   fetch: async () => ({ ok: true, status: 200, json: async () => ({ iv: body.iv, ciphertext: body.ciphertext, expiresAt: 4000000000 }) }),
 });
+vm.runInContext(fs.readFileSync(path.join(here, '..', 'web', 'app', 'js', 'platform.js'), 'utf8'), ctx);
 vm.runInContext(viewJs, ctx, { filename: 'view.js' });
 for (let i = 0; i < 50 && !root.innerHTML; i++) await new Promise((r) => setTimeout(r, 10));
 A.check('viewer rendered', root.innerHTML.includes('Patient summary'), root.innerHTML.slice(0, 200));

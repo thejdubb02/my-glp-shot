@@ -10,7 +10,7 @@ from config import (
     UMAMI_WEBSITE_ID_PWA, app,
 )
 from db import get_db, now_ts
-from helpers import NOT_TEST_SQL, REAL_USER_IDS_SQL, err, get_session_user, is_premium_now
+from helpers import NOT_TEST_SQL, REAL_USER_IDS_SQL, err, get_session_user, is_native_origin, is_premium_now
 from billing import _stripe_ready, _stripe_test_ready
 
 
@@ -59,7 +59,7 @@ def require_admin():
     token = ''
     if auth.startswith('Bearer '):
         token = auth[7:].strip()
-    if not token:
+    if not token and not is_native_origin():
         token = request.headers.get('X-Admin-Token', '').strip()
     if not token:
         return False

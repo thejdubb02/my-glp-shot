@@ -168,7 +168,7 @@ export function makeSandbox({ indexedDB, IDBKeyRange }, domMode = 'absent') {
 // Loads the app and returns { sandbox, R }. R(expr) evaluates an expression in
 // the app's own scope, which is how the suites reach functions that are module-
 // private (the app declares everything at top level in a classic script).
-export async function loadApp({ fakeIndexedDBPath, domMode = 'absent' } = {}) {
+export async function loadApp({ fakeIndexedDBPath, domMode = 'absent', configureSandbox } = {}) {
   let idb;
   try {
     idb = loadFakeIndexedDB(fakeIndexedDBPath);
@@ -178,6 +178,7 @@ export async function loadApp({ fakeIndexedDBPath, domMode = 'absent' } = {}) {
     process.exit(2);
   }
   const sandbox = makeSandbox(idb, domMode);
+  configureSandbox?.(sandbox);
   vm.createContext(sandbox);
   let name = '';
   try {

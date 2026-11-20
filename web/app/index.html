@@ -698,9 +698,9 @@
   <section class="card">
     <h2>Reminders</h2>
 
-    <h3 class="reminders-subhead">Shot reminder</h3>
-    <label class="row"><input id="set-notify" type="checkbox"> Notify me when my shot is due</label>
-    <label>Lead time
+    <h3 class="reminders-subhead" data-web-only>Shot reminder</h3>
+    <label class="row" data-web-only><input id="set-notify" type="checkbox"> Notify me when my shot is due</label>
+    <label data-web-only>Lead time
       <select id="set-lead">
         <option value="0">At shot time</option>
         <option value="30">30 minutes before</option>
@@ -710,19 +710,19 @@
         <option value="1440">1 day before</option>
       </select>
     </label>
-    <p id="notify-status" class="muted small"></p>
+    <p data-web-only id="notify-status" class="muted small"></p>
 
-    <h3 class="reminders-subhead">Daily check-ins</h3>
-    <p class="muted small">Pick which sections to be reminded about each day, and when (in your timezone above).</p>
-    <div id="daily-reminders-list" class="daily-reminders"></div>
+    <h3 class="reminders-subhead" data-web-only>Daily check-ins</h3>
+    <p class="muted small" data-web-only>Pick which sections to be reminded about each day, and when (in your timezone above).</p>
+    <div data-web-only id="daily-reminders-list" class="daily-reminders"></div>
 
-    <div class="btn-row">
+    <div class="btn-row" data-web-only>
       <button id="save-reminders" class="btn-primary" type="button" data-save-group="reminders">Save</button>
       <span class="save-status muted small" data-save-status="reminders"></span>
     </div>
-    <button id="test-notify" class="btn-ghost">Send test notification</button>
+    <button data-web-only id="test-notify" class="btn-ghost">Send test notification</button>
     <button id="download-ics" class="btn-ghost">Download calendar reminder (.ics)</button>
-    <p class="muted small">Best results: install My GLP Shot to your home screen first. On Android Chrome, scheduled reminders fire even when the app is closed. On iOS 16.4+, install to Home Screen and enable notifications when prompted.</p>
+    <p class="muted small" data-web-only>Best results: install My GLP Shot to your home screen first. On Android Chrome, scheduled reminders fire even when the app is closed. On iOS 16.4+, install to Home Screen and enable notifications when prompted.</p>
   </section>
 
   <section class="card" id="legacy-cloud-sync-card">
@@ -762,7 +762,7 @@
     <div class="row-buttons">
       <button id="export-btn" class="btn-primary">Export full backup</button>
       <button id="import-btn" class="btn-ghost">Import JSON or CSV</button>
-      <button id="smart-import-btn" class="btn-ghost">✨ Smart import (any tracker)</button>
+      <button data-web-only id="smart-import-btn" class="btn-ghost">✨ Smart import (any tracker)</button>
       <input id="import-file" type="file" accept="application/json,.json,.csv,text/csv" hidden>
       <input id="smart-import-file" type="file" accept=".csv,.txt,.json,application/json,text/csv,text/plain" hidden>
     </div>
@@ -778,17 +778,31 @@
     </div>
   </section>
 
-  <section class="card" id="install-card">
+  <section class="card" id="install-card" data-web-only>
     <h2>📱 Install the app</h2>
     <p class="muted small" id="install-card-text">Add My GLP Shot to your home screen for one-tap access and reliable reminders.</p>
     <button id="show-install-prompt" class="btn-primary" type="button">Show install steps</button>
   </section>
 
+  <section class="card hidden" id="native-server-settings">
+    <details>
+      <summary>Advanced</summary>
+      <label>Server address
+        <input id="native-server-address" type="url" autocomplete="off" spellcheck="false">
+      </label>
+      <div class="btn-row">
+        <button id="native-server-save" class="btn-primary" type="button">Save</button>
+        <button id="native-server-reset" class="btn-ghost" type="button">Reset to default</button>
+      </div>
+      <p id="native-server-status" class="muted small" role="status"></p>
+    </details>
+  </section>
+
   <section class="card">
     <h2>Troubleshooting</h2>
     <p class="muted small" id="app-version-line">Loading version…</p>
-    <button id="force-update-btn" class="btn-ghost" type="button">Force latest version</button>
-    <p class="muted small">Clears the offline cache and reloads the app fresh. Use if something looks stale.</p>
+    <button data-web-only id="force-update-btn" class="btn-ghost" type="button">Force latest version</button>
+    <p class="muted small" data-web-only>Clears the offline cache and reloads the app fresh. Use if something looks stale.</p>
   </section>
 
   <section class="card">
@@ -1266,40 +1280,41 @@
      file may run code at load that reads something an earlier file declared.
      This list is the single source of truth: the test harness reads it, and
      run-tests.sh checks reset.html and the service worker against it. -->
-<script src="data.js?v=438"></script>
-<script src="js/common.js?v=438"></script>
-<script src="js/storage.js?v=438"></script>
-<script src="js/views.js?v=438"></script>
-<script src="js/weight-units.js?v=438"></script>
-<script src="js/shots.js?v=438"></script>
-<script src="js/boot.js?v=438"></script>
-<script src="js/settings-ui.js?v=438"></script>
-<script src="js/weight.js?v=438"></script>
-<script src="js/charts.js?v=438"></script>
-<script src="js/import-export.js?v=438"></script>
-<script src="js/reminders.js?v=438"></script>
-<script src="js/install.js?v=438"></script>
-<script src="js/sync-triggers.js?v=438"></script>
-<script src="js/setup-ui.js?v=438"></script>
-<script src="js/daily.js?v=438"></script>
-<script src="js/guidance.js?v=438"></script>
-<script src="js/insights.js?v=438"></script>
-<script src="js/home.js?v=438"></script>
-<script src="js/symptoms.js?v=438"></script>
-<script src="js/achievements.js?v=438"></script>
-<script src="js/ui-effects.js?v=438"></script>
-<script src="js/account.js?v=438"></script>
-<script src="js/sync-push.js?v=438"></script>
-<script src="js/account-ui.js?v=438"></script>
-<script src="js/calculator.js?v=438"></script>
-<script src="js/supply.js?v=438"></script>
-<script src="js/measurements.js?v=438"></script>
-<script src="js/labs.js?v=438"></script>
-<script src="js/themes.js?v=438"></script>
-<script src="js/costs.js?v=438"></script>
-<script src="js/plateau.js?v=438"></script>
-<script src="js/pdf-report.js?v=438"></script>
-<script src="js/sync-merge.js?v=438"></script>
-<script src="js/sync-legacy.js?v=438"></script>
+<script src="data.js?v=439"></script>
+<script src="js/platform.js?v=439"></script>
+<script src="js/common.js?v=439"></script>
+<script src="js/storage.js?v=439"></script>
+<script src="js/views.js?v=439"></script>
+<script src="js/weight-units.js?v=439"></script>
+<script src="js/shots.js?v=439"></script>
+<script src="js/boot.js?v=439"></script>
+<script src="js/settings-ui.js?v=439"></script>
+<script src="js/weight.js?v=439"></script>
+<script src="js/charts.js?v=439"></script>
+<script src="js/import-export.js?v=439"></script>
+<script src="js/reminders.js?v=439"></script>
+<script src="js/install.js?v=439"></script>
+<script src="js/sync-triggers.js?v=439"></script>
+<script src="js/setup-ui.js?v=439"></script>
+<script src="js/daily.js?v=439"></script>
+<script src="js/guidance.js?v=439"></script>
+<script src="js/insights.js?v=439"></script>
+<script src="js/home.js?v=439"></script>
+<script src="js/symptoms.js?v=439"></script>
+<script src="js/achievements.js?v=439"></script>
+<script src="js/ui-effects.js?v=439"></script>
+<script src="js/account.js?v=439"></script>
+<script src="js/sync-push.js?v=439"></script>
+<script src="js/account-ui.js?v=439"></script>
+<script src="js/calculator.js?v=439"></script>
+<script src="js/supply.js?v=439"></script>
+<script src="js/measurements.js?v=439"></script>
+<script src="js/labs.js?v=439"></script>
+<script src="js/themes.js?v=439"></script>
+<script src="js/costs.js?v=439"></script>
+<script src="js/plateau.js?v=439"></script>
+<script src="js/pdf-report.js?v=439"></script>
+<script src="js/sync-merge.js?v=439"></script>
+<script src="js/sync-legacy.js?v=439"></script>
 </body>
 </html>

@@ -14,6 +14,11 @@ MAIL_FROM = os.environ.get('MAIL_FROM', 'My GLP Shot <hello@myglpshot.com>')
 TRIAL_DAYS = 14
 SESSION_DAYS = 90
 SESSION_TOUCH_INTERVAL = 300  # seconds between last_seen writes for one session
+NATIVE_APP_ORIGINS = frozenset({'https://localhost', 'capacitor://localhost'} | {
+    origin for value in os.environ.get('MGS_NATIVE_ORIGINS', '').split(',')
+    if re.fullmatch(r'[a-z][a-z0-9+.-]*://(?:[a-z0-9.-]+|\[[0-9a-f:]+\])(?::[0-9]+)?',
+                    origin := value.strip())
+})
 SHARE_TTL_HOURS = 24
 MAX_BLOB_BYTES = 2 * 1024 * 1024  # 2 MB ciphertext cap
 STRIPE_API_KEY = os.environ.get('STRIPE_API_KEY', '')

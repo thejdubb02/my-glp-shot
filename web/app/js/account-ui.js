@@ -343,7 +343,7 @@ function applyPremiumGates() {
     if (!el) return;
     el.classList.toggle('unlocked', premium);
     if (!premium && !el._wired) {
-      el.addEventListener('click', () => $('#upgrade-dialog').showModal());
+      el.addEventListener('click', () => openUpgradeDialog());
       el._wired = true;
     }
   });

@@ -46,7 +46,10 @@ let notifyTimer = null;
 let dailyReminderTimers = [];
 const TRIGGERS_SUPPORTED = (typeof window !== 'undefined') && ('Notification' in window) && ('showTrigger' in Notification.prototype || (typeof TimestampTrigger !== 'undefined'));
 
+function scheduleNativeReminders() {}
+
 async function maybeScheduleNotification() {
+  if (IS_NATIVE) return scheduleNativeReminders();
   // Top-level entry: re-plans the shot reminder and every enabled daily reminder.
   // Called on settings change, on pageshow, and after sync pull so changes
   // made on another device land immediately.
@@ -187,7 +190,7 @@ async function scheduleDailyReminders() {
 // local (encrypted, server-unreadable) schedule; the wording is picked by the
 // server from a fixed list keyed on `kind`. The medication, dose, sites and
 // history never leave the device.
-const PUSH_SUPPORTED = typeof window !== 'undefined'
+const PUSH_SUPPORTED = !IS_NATIVE && typeof window !== 'undefined'
   && 'serviceWorker' in navigator && 'PushManager' in window;
 const PUSH_HORIZON_DAYS = 30;
 const PUSH_MAX_QUEUED = 32;
@@ -425,7 +428,7 @@ function handleReminderDeepLink() {
   }
 }
 window.addEventListener('pageshow', () => { try { handleReminderDeepLink(); } catch (_) {} });
-if ('serviceWorker' in navigator) {
+if (!IS_NATIVE && 'serviceWorker' in navigator) {
   navigator.serviceWorker.addEventListener('message', (e) => {
     const data = e.data || {};
     if (data.type !== 'reminder-click' || !data.url) return;
@@ -438,6 +441,7 @@ if ('serviceWorker' in navigator) {
 }
 
 function updateNotifyStatus() {
+  if (IS_NATIVE) return;
   const el = $('#notify-status');
   if (!el) return;
   const standalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
