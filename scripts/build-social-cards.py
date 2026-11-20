@@ -37,7 +37,7 @@ CARDS = [
 TARGETS = [ROOT / 'web' / 'landing', ROOT / 'web' / 'app']
 
 TAGLINE = 'Log shots. Track weight. Spot patterns.'
-SUBLINE = 'Private by design — your data is encrypted on your device.'
+SUBLINE = 'Private by design. Your data is encrypted on your device.'
 URL = 'myglpshot.com'
 
 

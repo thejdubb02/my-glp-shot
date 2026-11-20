@@ -69,7 +69,7 @@ h2{font-size:1rem}
 
 .app-header{display:flex;align-items:center;justify-content:space-between;padding:8px 14px;border-bottom:1px solid var(--line);background:var(--surface);position:sticky;top:0;z-index:10}
 .brand{font-weight:700;letter-spacing:.3px;display:flex;align-items:center;gap:6px;font-size:.95rem}
-.brand-mark{color:var(--bronze);font-size:1rem}
+.brand-mark{width:22px;height:22px;border-radius:5px;vertical-align:-5px}
 .icon-btn{background:none;border:0;font-size:1.2rem;cursor:pointer;padding:2px 6px;color:var(--bronze-dk)}
 
 .view{display:none;padding:10px 12px;max-width:560px;margin:0 auto;gap:10px}
@@ -576,7 +576,7 @@ body.auth-active{padding-bottom:env(safe-area-inset-bottom)}
 .auth-view{padding:0 !important}
 body.auth-active .auth-view{display:flex !important;flex-direction:column;min-height:100vh;justify-content:flex-start;padding:24px 16px 32px !important;background:linear-gradient(180deg,var(--bronze-lt) 0%,var(--bg) 60%)}
 .auth-hero{text-align:center;margin:24px 0 18px}
-.auth-logo{width:64px;height:64px;margin:0 auto 12px;border-radius:18px;background:var(--grad);color:#fff;font-size:2rem;display:flex;align-items:center;justify-content:center;box-shadow:var(--shadow)}
+.auth-logo{display:block;width:64px;height:64px;margin:0 auto 12px;border-radius:14px;box-shadow:var(--shadow)}
 .auth-hero h1{font-size:1.6rem;font-weight:800;letter-spacing:-.01em;margin-bottom:4px}
 .auth-tag{color:var(--muted);margin:0;font-size:.95rem}
 .auth-card{max-width:420px;width:100%;margin:0 auto}
