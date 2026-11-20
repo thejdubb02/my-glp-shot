@@ -103,7 +103,7 @@ function renderBodyDiagram(shots) {
   // Front-view figure, head to just above the knee (every site is above the
   // knee). A picture, placed in the 240x300 viewBox; SITE_POSITIONS in data.js
   // sit on it.
-  const figure = '<image class="body-fig" href="icons/body-front.webp" x="41" y="0" width="158" height="300"/>';
+  const figure = '<image class="body-fig" href="icons/body-front.webp" x="20" y="0" width="200" height="300"/>';
   // Custom-site chips below the diagram (the body-silhouette can't host them positionally).
   const customNames = Object.keys(customRecency);
   const customChips = customNames.length
