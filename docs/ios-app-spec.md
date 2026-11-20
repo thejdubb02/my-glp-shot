@@ -43,7 +43,7 @@ Code-specific medical review targets:
 
 - `web/app/data.js:138`: mixing calculator help and syringe-unit instructions.
 - `web/app/data.js:225`: modeled active drug levels.
-- `web/app/app.js:4898`: schedule drift interpretation.
+- `web/app/js/` (was `app.js` line 4898 before the 2026-11-20 split): schedule drift interpretation.
 - `web/app/index.html:809`: existing medical disclaimer.
 
 Provide a review account with synthetic data, working Premium access, offline demonstration instructions and explicit notes identifying native functionality.
@@ -102,15 +102,15 @@ Keep the existing account trial separate from StoreKit introductory eligibility.
 
 | Existing code | Required change |
 |---|---|
-| `web/app/app.js:6079` | Replace relative API constants with platform-configured `https://app.myglpshot.com/api` for native. |
-| `web/app/app.js:1027` | Route the separate signup/login fetch through the same adapter. Audit reset, legacy sync and share fetches too. |
-| `web/app/app.js:6114` | Native requests use Bearer auth with `credentials: 'omit'`; web retains its existing cookie path. |
+| `web/app/js/account.js:12` | Replace relative API constants with platform-configured `https://app.myglpshot.com/api` for native. |
+| `web/app/js/boot.js:131` | Route the separate signup/login fetch through the same adapter. Audit reset, legacy sync and share fetches too. |
+| `web/app/js/account.js` (`accountFetch`) | Native requests use Bearer auth with `credentials: 'omit'`; web retains its existing cookie path. |
 | `api/app.py:401` | Existing Bearer support can serve native clients. Authenticate every request independently of Origin. |
 | `api/app.py:1012` | Keep web cookies Secure, HttpOnly and SameSite=Lax. Avoid a SameSite=None workaround for WKWebView cookie restrictions. |
 | `api/app.py:264` | Retain JSON mutation checks and review CSRF assumptions when introducing CORS. |
 | `deploy/nginx-app.myglpshot.com.conf:9` and `:50` | Ensure OPTIONS and actual responses receive consistent CORS handling across specialized and generic API locations. |
 | `deploy/mgs-security-headers.conf:21` | Native bundled documents need their own CSP; nginx headers do not protect locally loaded assets. |
-| `web/app/app.js:7708` | Generate doctor-share URLs using the HTTPS app domain, not `location.origin`. |
+| `web/app/js/pdf-report.js:169` | Generate doctor-share URLs using the HTTPS app domain, not `location.origin`. |
 
 Implement CORS in one layer, preferably Flask:
 
@@ -128,7 +128,7 @@ Open external sites in the system browser. Never navigate the bridge-enabled web
 
 The native bundle supplies the shell. **Do not rely on service workers under `capacitor://localhost`.**
 
-Skip native SW registration, controller reloads, browser installation UI and web update checks at `web/app/app.js:3616` and `:3645`. Keep the existing PWA SW unchanged for browsers.
+Skip native SW registration, controller reloads, browser installation UI and web update checks in `web/app/js/setup-ui.js` (`registerSW`, `checkForStaleBundle`). Keep the existing PWA SW unchanged for browsers.
 
 Retain IndexedDB initially. Test persistence across app termination and signed upgrades; never clear website data during updates. Safari/PWA and native storage are separate: migrate using encrypted account sync or explicit file import.
 
@@ -138,7 +138,7 @@ Offline Premium uses the last verified server snapshot with a documented bounded
 
 ## 6. Keys and privacy
 
-Move native session tokens and remembered AES keys from localStorage (`web/app/app.js:6118`, `:6327`) into a narrowly scoped Keychain bridge.
+Move native session tokens and remembered AES keys from localStorage (`web/app/js/account.js`) into a narrowly scoped Keychain bridge.
 
 - Use device-only, nonsynchronizing accessibility, normally `WhenUnlockedThisDeviceOnly`.
 - Optional biometric unlock can gate access; avoid requiring background decryption.
@@ -150,8 +150,8 @@ Move native session tokens and remembered AES keys from localStorage (`web/app/a
 
 Two existing privacy conflicts need explicit resolution:
 
-1. Smart Import sends plaintext health files to the API and OpenRouter (`web/app/app.js:2142`, `api/app.py:2499`). Disable that path for native launch and resolve the web exception against the stated privacy rule.
-2. Analytics receives health-related counts during export (`web/app/app.js:2120`, approximately). Exclude analytics from native packaging and audit all event properties.
+1. Smart Import sends plaintext health files to the API and OpenRouter (`web/app/js/import-export.js`, `smartImport`, `api/app.py:2499`). Disable that path for native launch and resolve the web exception against the stated privacy rule.
+2. Analytics receives health-related counts during export (`web/app/js/import-export.js`). Exclude analytics from native packaging and audit all event properties.
 
 The server already holds email and billing metadata. Document necessary identity/payment metadata separately from the promise that health content remains ciphertext.
 
@@ -195,7 +195,7 @@ Owner approves uploads and public releases. Include privacy labels/manifests, en
 
 Extend the existing `DELETE /api/me` and `_delete_user_everywhere()` at `api/app.py:718` and `:746`.
 
-Apple subscriptions cannot be canceled like Stripe subscriptions. Replace the current UI promise that deletion cancels every subscription (`web/app/app.js:1505`) with provider-specific wording.
+Apple subscriptions cannot be canceled like Stripe subscriptions. Replace the current UI promise that deletion cancels every subscription (in `web/app/js/`, was `app.js` line 1505 before the 2026-11-20 split) with provider-specific wording.
 
 Offer Apple subscription management, explain continuing billing, and allow immediate deletion without requiring cancellation first. Remove cloud data, credentials, notification registrations and account links. Retain only legally necessary billing records with documented minimization and retention.
 
