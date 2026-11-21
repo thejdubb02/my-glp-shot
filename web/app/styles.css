@@ -8,6 +8,7 @@
   --bg:#f6faf9;            /* near-white with hint of mint */
   --surface:#ffffff;
   --surface-alt:#eefaf7;
+  --text:var(--ink);
   --ink:#0f172a;           /* slate-900 */
   --muted:#64748b;         /* slate-500 */
   --line:#e2e8f0;          /* slate-200 */
@@ -423,10 +424,10 @@ canvas{width:100% !important;height:auto !important;max-height:200px}
 /* Badges */
 .badges-list{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
 @media (max-width: 380px){.badges-list{grid-template-columns:repeat(2,1fr)}}
-.badge-tile{display:flex;flex-direction:column;align-items:center;gap:6px;padding:10px 8px;background:linear-gradient(160deg,#fff,var(--surface-alt));border:1px solid var(--line);border-radius:14px;cursor:pointer;transition:transform .15s ease,box-shadow .15s ease,border-color .15s ease;text-align:center}
+.badge-tile{display:flex;flex-direction:column;align-items:center;gap:6px;padding:10px 8px;background:linear-gradient(160deg,var(--surface),var(--surface-alt));border:1px solid var(--line);border-radius:14px;cursor:pointer;transition:transform .15s ease,box-shadow .15s ease,border-color .15s ease;text-align:center}
 .badge-tile:hover{transform:translateY(-2px);border-color:var(--bronze);box-shadow:0 6px 16px rgba(0,0,0,.08)}
 .badge-tile-art{width:72px;height:72px;border-radius:50%;object-fit:cover;background:linear-gradient(135deg,var(--bronze-lt),var(--bronze));box-shadow:0 2px 8px rgba(0,0,0,.15),inset 0 0 0 2px rgba(255,255,255,.6)}
-.badge-tile-label{font-size:.78rem;font-weight:600;color:var(--text);line-height:1.2}
+.badge-tile-label{font-size:.78rem;font-weight:600;color:var(--ink);line-height:1.2}
 .badges-list .badges-toggle{grid-column:1/-1}
 .badge{background:var(--surface);border:1.5px solid var(--line);border-radius:999px;padding:8px 14px 8px 12px;font-size:.82rem;display:flex;align-items:center;gap:8px;animation:badge-pop .4s ease-out;transition:transform .12s,box-shadow .15s}
 .badge.unlocked{background:linear-gradient(135deg,var(--bronze) 0%,var(--bronze-dk) 100%);border-color:transparent;color:#fff;box-shadow:0 2px 6px rgba(15,23,42,.10),0 0 0 1px rgba(255,255,255,.06) inset}

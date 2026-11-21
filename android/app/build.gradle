@@ -7,8 +7,8 @@ android {
         applicationId "com.myglpshot.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 6715
-        versionName "0.67.15"
+        versionCode 6716
+        versionName "0.67.16"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

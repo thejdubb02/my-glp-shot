@@ -1,6 +1,6 @@
 {
   "name": "my-glp-shot-native",
-  "version": "0.67.15",
+  "version": "0.67.16",
   "private": true,
   "description": "Native shell (Capacitor) for My GLP Shot. The website in web/ needs none of this.",
   "license": "MIT",
