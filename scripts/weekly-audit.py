@@ -129,9 +129,11 @@ def _post(url, headers, body, extract):
     except Exception as e:
         return f'[error] {e}'
     try:
-        return data['choices'][0]['message']['content']
+        content = data['choices'][0]['message']['content']
     except (KeyError, IndexError, TypeError):
         return f'[malformed response] {json.dumps(data)[:300]}'
+    # A reasoning model can answer with content null; the caller writes this to a file.
+    return content if isinstance(content, str) and content else f'[empty response] {json.dumps(data)[:300]}'
 
 
 FINDING_RE = re.compile(

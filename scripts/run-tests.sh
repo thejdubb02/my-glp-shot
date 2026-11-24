@@ -77,10 +77,12 @@ print(f"  ok ({len(index)} scripts)")
 PYEOF
 
 FAILED=()
-for suite in scripts/*-selftest.mjs; do
+# weekly-audit-selftest.py is the one Python suite that is fully offline.
+for suite in scripts/*-selftest.mjs scripts/weekly-audit-selftest.py; do
   [ -e "$suite" ] || continue
-  name="$(basename "$suite" .mjs)"
-  out="$(node "$suite" 2>&1)"
+  name="$(basename "${suite%.*}")"
+  case "$suite" in *.py) run=python3 ;; *) run=node ;; esac
+  out="$($run "$suite" 2>&1)"
   rc=$?
   if [ $rc -eq 0 ] && echo "$out" | grep -q '^SKIPPED'; then
     # Suites that need a live API skip rather than fail, but the skip is always
