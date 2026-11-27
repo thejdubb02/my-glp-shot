@@ -1,6 +1,4 @@
 User-agent: *
 Allow: /
-Disallow: /api/
-Disallow: /admin/
 
 Sitemap: https://app.myglpshot.com/sitemap.xml
