@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Sitemap for app.myglpshot.com. Only the app homepage is indexable; the
+     inner pages (reset, view, privacy, terms) are noindex. Lives on this host
+     because search engines ignore cross-host URLs in myglpshot.com's sitemap. -->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://app.myglpshot.com/</loc>
+    <lastmod>2026-11-27</lastmod>
+  </url>
+</urlset>

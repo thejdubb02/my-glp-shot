@@ -23,11 +23,12 @@ rm -rf "$OUT"
 mkdir -p "$OUT"
 cp -R "$ROOT/web/app/." "$OUT/"
 
-# Website-only files: service worker, install manifest, store art, social cards,
+# Website-only files: service worker, robots and sitemap, install manifest, store art, social cards,
 # and the two pages people reach from a link (doctor view, password reset).
 rm -rf "$OUT/sw.js" "$OUT/manifest.webmanifest" "$OUT/store" "$OUT/screenshots" \
        "$OUT/README.md" "$OUT/og-image.png" "$OUT/twitter-image.png" \
-       "$OUT/view.html" "$OUT/view.js" "$OUT/reset.html" "$OUT/reset.js"
+       "$OUT/view.html" "$OUT/view.js" "$OUT/reset.html" "$OUT/reset.js" \
+       "$OUT/robots.txt" "$OUT/sitemap.xml"
 
 cp "$CHART" "$OUT/lib/chart.min.js"
 
