@@ -163,6 +163,12 @@ Justin Willhite (jdubb@commquest.io) is the founder and primary engineer. Code i
 
 Backups are encrypted with AES-256-CBC PBKDF2 and rotated daily to a second VPS for disaster recovery.
 
+More about the product and its safeguards:
+
+- [About My GLP Shot](https://myglpshot.com/about.html) - what it is, how it works, what it costs, and who built it.
+- [GLP-1 glossary](https://myglpshot.com/glossary.html) - plain-English definitions: tirzepatide, semaglutide, titration, half-life, peak and trough, reconstitution, microdosing, injection sites, plateau.
+- [Security](https://myglpshot.com/security.html) - local-first by default, cloud sync encrypted with AES-256-GCM, and how to report a vulnerability.
+
 ## How to use it (step by step)
 
 1. Open https://app.myglpshot.com on your phone (Safari on iPhone, Chrome on Android).
