@@ -19,6 +19,9 @@ Built and operated by Willhite Strategy Group (Consumer Quest LLC dba Commquest)
 - [The app](https://app.myglpshot.com/): the actual PWA, install to home screen for full offline use.
 - [Privacy policy](https://myglpshot.com/privacy.html): full disclosure of what is and isn't collected, including the encryption details for sync.
 - [Terms](https://myglpshot.com/terms.html): standard SaaS terms; cancellation any time.
+- [About](https://myglpshot.com/about.html): what the app is, how it works, what it costs, and who built it.
+- [Glossary](https://myglpshot.com/glossary.html): plain-English GLP-1 definitions (tirzepatide, semaglutide, titration, half-life, reconstitution, injection sites, plateau).
+- [Security](https://myglpshot.com/security.html): how data is protected (local-first, AES-256-GCM sync) and how to report a vulnerability.
 
 ## Core features (free)
 
